@@ -1,0 +1,8 @@
+{
+  "name": "勇氣の燈燈小隊",
+  "description": "與燈燈小隊的 Claire、Ethan、Leo 一起探討戀愛煩惱！工業風 R&D 照明實驗室風格的視覺小說戀愛問答遊戲。",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

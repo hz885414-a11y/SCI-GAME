@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap');
+@import "tailwindcss";
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-size: 20px 20px;
+    background-image: 
+      linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+.animate-scale-up {
+  animation: scaleUp 0.32s cubic-bezier(0.34, 1.45, 0.64, 1) forwards;
+}
+
+.bg-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    #dc2626,
+    #dc2626 6px,
+    #ffffff 6px,
+    #ffffff 12px
+  );
+}
+
+@keyframes walkBob {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.02);
+  }
+}
+
+@keyframes leftFootstep {
+  0%, 100% { opacity: 0.15; transform: translateY(10px) scale(0.95); }
+  25% { opacity: 1; transform: translateY(0) scale(1.05); }
+}
+
+@keyframes rightFootstep {
+  0%, 100% { opacity: 0.15; transform: translateY(10px) scale(0.95); }
+  75% { opacity: 1; transform: translateY(0) scale(1.05); }
+}
+
+.animate-walk-bob {
+  animation: walkBob 0.6s ease-in-out infinite;
+}
+
+.animate-left-step {
+  animation: leftFootstep 1.2s ease-in-out infinite;
+}
+
+.animate-right-step {
+  animation: rightFootstep 1.2s ease-in-out infinite;
+}
+
+/* 🎭 Scene Character Layout Styles */
+.scene-characters {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.character-image {
+  position: absolute;
+  bottom: 0;
+  max-height: 90%;
+  width: auto;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.character-left {
+  left: 5%;
+}
+
+.character-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.character-right {
+  right: 5%;
+}
+
+
+
+
