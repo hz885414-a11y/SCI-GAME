@@ -270,7 +270,7 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
           {character.role}
         </span>
         <h3 className="text-xs sm:text-sm font-sans font-black text-white tracking-wide mt-0.5 flex items-center justify-center gap-1">
-          {character.name}
+          {character.englishName}
           {isSpeaking && (
             <span className="flex h-1.5 w-1.5 sm:h-2 sm:w-2 relative">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${

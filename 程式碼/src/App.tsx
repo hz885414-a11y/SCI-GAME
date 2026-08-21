@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-// @ts-ignore
-import labBackground from "./lab_bg.png";
-// @ts-ignore
-import opsBackground from "./營業事業機動組.png";
+import { BACKGROUND_ASSETS } from "./data/backgroundAssets";
 import {
   CHARACTERS,
   SCENARIOS,
@@ -20,6 +17,8 @@ import { StartScreen, BootingScreen } from "./components/StartScreen";
 import { OpsDivision } from "./components/OpsDivision";
 import { SupplyDivision } from "./components/SupplyDivision";
 import { MissionGame } from "./components/MissionGame";
+import { RobotLabPanel } from "./components/RobotLabPanel";
+import { createDefaultRobotUpgrades, createEmptyMaterialInventory, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import {
   Lightbulb,
@@ -100,6 +99,9 @@ export default function App() {
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
+  const [pendingBossChapter, setPendingBossChapter] = useState<number | null>(null);
+  const [missionActive, setMissionActive] = useState(false);
+  const desiredTrackRef = useRef<"theme" | "normal">("theme");
 
   // Coins and Upgrades Systems
   const [coins, setCoins] = useState<number>(() => {
@@ -130,6 +132,25 @@ export default function App() {
     }
   });
 
+  const [modificationMaterials, setModificationMaterials] = useState<MaterialInventory>(() => {
+    const defaults = createEmptyMaterialInventory();
+    try {
+      const saved = localStorage.getItem("c2_932_materials");
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
+  });
+
+  const [robotUpgrades, setRobotUpgrades] = useState<RobotUpgradeLevels>(() => {
+    const defaults = createDefaultRobotUpgrades();
+    try {
+      const saved = localStorage.getItem("c2_932_upgrades");
+      return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+    } catch {
+      return defaults;
+    }
+  });
   const [unlockedChapters, setUnlockedChapters] = useState<number[]>(() => {
     try {
       const saved = localStorage.getItem("squad_unlocked_chapters");
@@ -147,6 +168,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("light_crew_upgrades", JSON.stringify(purchasedUpgrades));
   }, [purchasedUpgrades]);
+
+  useEffect(() => {
+    localStorage.setItem("c2_932_materials", JSON.stringify(modificationMaterials));
+  }, [modificationMaterials]);
+
+  useEffect(() => {
+    localStorage.setItem("c2_932_upgrades", JSON.stringify(robotUpgrades));
+  }, [robotUpgrades]);
 
   useEffect(() => {
     localStorage.setItem("squad_unlocked_chapters", JSON.stringify(unlockedChapters));
@@ -315,6 +344,8 @@ export default function App() {
   }, [isMuted]);
 
   // Manage Background Music (BGM) loop based on isMusicMuted, user gesture, and app phase
+  const desiredTrack = appPhase === "start" || missionActive ? "theme" : "normal";
+  desiredTrackRef.current = desiredTrack;
   useEffect(() => {
     if (isMusicMuted) {
       stopBackgroundMusic();
@@ -324,13 +355,13 @@ export default function App() {
     // In 'start' phase, the StartScreen component handles its own BGM trigger state.
     // In 'booting' and 'main' phases, we run background music seamlessly.
     if (appPhase === "booting" || appPhase === "main") {
-      startBackgroundMusic();
+      startBackgroundMusic(desiredTrack);
     }
 
     // Setup interactive gesture listener to satisfy browser autoplay restrictions
     const handleGesture = () => {
       if (!isMusicMuted && (appPhase === "booting" || appPhase === "main")) {
-        startBackgroundMusic();
+        startBackgroundMusic(desiredTrackRef.current);
       }
     };
 
@@ -341,7 +372,15 @@ export default function App() {
       document.removeEventListener("click", handleGesture);
       document.removeEventListener("touchstart", handleGesture);
     };
-  }, [isMusicMuted, appPhase]);
+  }, [isMusicMuted, appPhase, desiredTrack]);
+
+  const handleMissionOpenChange = (open: boolean) => {
+    setMissionActive(open);
+    setIsGameOpen(open);
+    desiredTrackRef.current = open ? "theme" : "normal";
+    startBackgroundMusic(open ? "theme" : "normal");
+  };
+
 
   // Save mute settings
   const handleMuteToggle = (muted: boolean) => {
@@ -403,6 +442,11 @@ export default function App() {
       damage_boost: 0,
       speed_boost: 0
     }));
+
+    setModificationMaterials(createEmptyMaterialInventory());
+    setRobotUpgrades(createDefaultRobotUpgrades());
+    localStorage.removeItem("c2_932_materials");
+    localStorage.removeItem("c2_932_upgrades");
 
     // Reset unlocked chapters in game missions
     setUnlockedChapters([1]);
@@ -558,7 +602,7 @@ export default function App() {
       },
       {
         speakerId: "player",
-        text: `「${query}」`,
+        text: `${query}`,
       },
       {
         speakerId: "claire",
@@ -608,51 +652,6 @@ export default function App() {
       // Completed full dialogue cycle, stay on final page
       // Do nothing, show results screen
     }
-  };
-
-  // Shortcut for autofill tags
-  const handleTagAutofill = (scenario: Scenario) => {
-    playSound("click");
-    // Get a nice placeholder query
-    let dummyText = "";
-    switch (scenario.id) {
-      case "ghosted":
-        dummyText = "傳了訊息好幾天，他都已讀不回，我是不是被討厭了？";
-        break;
-      case "confession":
-        dummyText = "我想跟喜歡的男生告白，但好怕被拒絕，該怎麼做？";
-        break;
-      case "breakup":
-        dummyText = "剛分手沒多久，整天都在哭，覺得世界都要垮了怎麼辦？";
-        break;
-      case "reunion":
-        dummyText = "分手三個月了，還是好想前任，我該主動提復合嗎？";
-        break;
-      case "silent":
-        dummyText = "昨天跟男朋友吵架開始冷戰，誰都不想先低頭認錯。";
-        break;
-      case "jealous":
-        dummyText = "看到他跟其他女生聊得很開心，我就吃醋心裡很酸。";
-        break;
-      case "insecure":
-        dummyText = "在感情中好沒安全感，總覺得自己不夠好，害怕被丟下。";
-        break;
-      case "busy":
-        dummyText = "女朋友最近加班很忙沒時間陪我，我們感情變淡了。";
-        break;
-      case "unsure_love":
-        dummyText = "跟同事互動滿多的，但不知道他是不是真的喜歡我？";
-        break;
-      case "flirting":
-        dummyText = "我們正在曖昧期聊天很甜，要怎麼不露痕跡地靠近他？";
-        break;
-      case "single":
-        dummyText = "目前我還是單身，想要提升自己，不知該怎麼在單身季節裡過得更好？";
-        break;
-      default:
-        dummyText = "我有其他千奇百怪的戀愛問題想請教燈燈小隊！";
-    }
-    setInputText(dummyText);
   };
 
   // Speaker configuration
@@ -717,14 +716,17 @@ export default function App() {
       <div className="absolute inset-0 z-0 pointer-events-none select-none">
         {/* Background Image: Moody concrete industrial lab workshop or Mobile operations van garage */}
         <div 
-          className="absolute inset-0 bg-cover bg-center opacity-65 filter brightness-75 contrast-100 transition-all duration-700 ease-in-out"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-65 filter brightness-75 contrast-100 transition-all duration-700 ease-in-out"
           style={{ 
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
             backgroundImage:
               currentScene === "lab"
-                ? `url(${labBackground})`
+                ? `url(${BACKGROUND_ASSETS.lab})`
                 : currentScene === "ops"
-                ? `url(${opsBackground})`
-                : "none",
+                ? `url(${BACKGROUND_ASSETS.business})`
+                : `url(${BACKGROUND_ASSETS.purchase})`,
           }}
         />
 
@@ -912,6 +914,15 @@ export default function App() {
 
       {currentScene === "lab" ? (
         <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-4 md:px-6 py-1 sm:py-3 flex flex-col justify-end relative z-20 overflow-hidden">
+        <RobotLabPanel materials={modificationMaterials} setMaterials={setModificationMaterials} upgrades={robotUpgrades} setUpgrades={setRobotUpgrades} playSound={playSound} />
+        {pendingBossChapter !== null && (
+          <button
+            onClick={() => handleMissionOpenChange(true)}
+            className="mx-auto mt-2 min-h-11 w-full max-w-md rounded-xl bg-gradient-to-r from-rose-500 to-orange-400 px-4 text-sm font-black text-zinc-950"
+          >
+            繼續挑戰 Boss（C2-932）
+          </button>
+        )}
         
         {/* Three Characters Container */}
         <div className="flex justify-center items-center sm:items-end sm:grid sm:grid-cols-3 gap-1.5 sm:gap-3 md:gap-6 w-full relative mb-2 sm:mb-4 flex-1 min-h-0">
@@ -1032,7 +1043,7 @@ export default function App() {
               <div className="absolute bottom-1 xs:bottom-2 right-2 sm:right-4 flex items-center gap-1 text-[7px] xs:text-[8px] sm:text-[10px] font-mono text-zinc-500 select-none">
                 {isBanterOnGoing() && (
                   <span className="text-amber-500/80 font-bold bg-amber-950/30 px-1.5 py-0.5 rounded-none border border-amber-800/30 animate-pulse">
-                    ⚡ BANTER_FLOW
+                    ??BANTER_FLOW
                   </span>
                 )}
                 <span>
@@ -1057,24 +1068,6 @@ export default function App() {
                 系統將自動進行情感訊號抓取，並由三位照明專家 Claire、Ethan、Leo 為你進行愛情電路診斷。
               </p>
               
-              {/* Display Scenario guide buttons directly */}
-              <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1 sm:pt-2 max-w-2xl mx-auto py-1 px-1 w-full">
-                {SCENARIOS.map((sc) => {
-                  if (sc.id === "others") return null;
-                  return (
-                    <button
-                      key={sc.id}
-                      onClick={() => handleTagAutofill(sc)}
-                      className="text-[9px] sm:text-[10px] font-mono px-2 py-1 bg-zinc-950 border border-zinc-850 text-zinc-400 hover:text-orange-400 hover:border-orange-500/50 transition-all duration-200 rounded-none cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <span className="text-orange-500">❖</span>
-                      <span>{sc.name.toUpperCase()}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-
             </div>
           )}
         </div>
@@ -1085,7 +1078,7 @@ export default function App() {
           isMuted={isMuted}
           playSound={playSound}
           isGameOpen={isGameOpen}
-          setIsGameOpen={setIsGameOpen}
+          setIsGameOpen={handleMissionOpenChange}
           coins={coins}
           purchasedUpgrades={purchasedUpgrades}
         />
@@ -1225,13 +1218,25 @@ export default function App() {
 
       {isGameOpen && (
         <MissionGame
-          onClose={() => setIsGameOpen(false)}
+          onClose={() => { setPendingBossChapter(null); handleMissionOpenChange(false); }}
+          onReturnToLab={(chapter) => {
+            setPendingBossChapter(chapter);
+            setCurrentScene("lab");
+            handleMissionOpenChange(false);
+          }}
+          resumeBossChapter={pendingBossChapter}
           affectionPoints={affectionPoints}
           setAffectionPoints={setAffectionPoints}
           playSound={playSound}
           coins={coins}
           setCoins={setCoins}
           purchasedUpgrades={purchasedUpgrades}
+          robotUpgrades={robotUpgrades}
+          onMaterialsEarned={(earned) => setModificationMaterials((previous) => {
+            const next = { ...previous };
+            Object.entries(earned).forEach(([id, amount]) => { next[id as keyof MaterialInventory] += amount || 0; });
+            return next;
+          })}
           unlockedChapters={unlockedChapters}
           setUnlockedChapters={setUnlockedChapters}
         />

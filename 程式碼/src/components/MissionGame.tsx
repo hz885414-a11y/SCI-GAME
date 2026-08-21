@@ -5,21 +5,46 @@ import {
   Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock
 } from "lucide-react";
 import { SpriteAnimator } from "./SpriteAnimator";
+import { BossWarningTransition } from "./BossWarningTransition";
 import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites";
 
+import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
+import {
+  MISSION_MAP_CONFIG,
+  getCoverPlacement,
+  type MissionMaskData,
+} from "../data/missionMapConfig";
+import {
+  MATERIAL_CONFIG,
+  MATERIAL_IDS,
+  ROBOT_UPGRADE_CONFIG,
+  ROBOT_UPGRADE_IDS,
+  createEmptyMaterialInventory,
+  type MaterialId,
+  type MaterialInventory,
+  type RobotUpgradeLevels
+} from "../data/modificationSystem";
 interface MissionGameProps {
   onClose: () => void;
+  onReturnToLab: (chapter: number) => void;
+  resumeBossChapter?: number | null;
   affectionPoints: Record<string, number>;
   setAffectionPoints: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   playSound: (sound: string) => void;
   coins: number;
   setCoins: React.Dispatch<React.SetStateAction<number>>;
   purchasedUpgrades: Record<string, number>;
+  robotUpgrades: RobotUpgradeLevels;
+  onMaterialsEarned: (materials: MaterialInventory) => void;
   unlockedChapters: number[];
   setUnlockedChapters: React.Dispatch<React.SetStateAction<number[]>>;
 }
 
-type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER";
+type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER";
+
+const C2_932_PUNCHES_REQUIRED = 3;
+const C2_932_FIELD_DURATION_MS = 3000;
+const C2_932_FIELD_RADIUS = 145;
 
 interface Agent {
   id: string;
@@ -159,58 +184,32 @@ interface WeaponInfo {
 }
 
 const WEAPONS_INFO: Record<string, WeaponInfo> = {
-  "C2-927": {
-    id: "C2-927",
-    name: "C2-927 摺疊式手持檢修燈",
-    desc: "主力扇形泛光照明裝置，驅散前方大範圍陰影。",
-    lowEffect: "前進方向 45° 扇形中距離低耗能照射",
-    highEffect: "前方 90° 超廣角高傷害，擊退效果強烈"
-  },
-  "C2-928": {
-    id: "C2-928",
-    name: "C2-928 輕薄型手持檢修燈",
-    desc: "高攻速光束投射。快速穿透發射多道光波射線。",
-    lowEffect: "快速朝最近敵人發射單發凝聚光束",
-    highEffect: "超高速散射 3 道強光射線，穿透多個敵人"
-  },
-  "C2-929": {
-    id: "C2-929",
-    name: "C2-929 萬向蛇管檢修燈",
-    desc: "萬向曲折追蹤。光束自動追蹤連接附近的黑霧。",
-    lowEffect: "釋放 1 條光斑雷射鎖定最近敵人持續燃燒",
-    highEffect: "同時釋放 3 條追蹤雷射連結鎖定多名目標"
-  },
-  "C2-932": {
-    id: "C2-932",
-    name: "C2-932 工地工作燈",
-    desc: "區域防守型燈具。在地面佈署大型防護性光圈。",
-    lowEffect: "在身後佈署一個小型光圈，緩慢燒灼敵人",
-    highEffect: "佈署巨型強光力場，敵人進入緩速 60% 並重創"
-  },
-  "C2-934": {
-    id: "C2-934",
-    name: "C2-934 精準契合工作手電筒",
-    desc: "精準聚焦契合光源。發射超高能聚焦電漿炮，穿透多重阻礙並強化裝備。",
-    lowEffect: "向最近的單體目標發射高能聚焦光柱",
-    highEffect: "釋放全方位脈衝光波，並附帶短暫自我修復與充能"
-  }
+  range_attack: { id: "range_attack", name: "廣域照明", desc: "C2-932 的扇形範圍攻擊。", lowEffect: "中距離扇形照射", highEffect: "廣角高傷害照射" },
+  laser_weapon: { id: "laser_weapon", name: "脈衝雷射", desc: "C2-932 的高速雷射武器。", lowEffect: "單發凝聚光束", highEffect: "高速散射光束" },
+  tracking_weapon: { id: "tracking_weapon", name: "追蹤光束", desc: "C2-932 的自動追蹤武器。", lowEffect: "鎖定最近目標", highEffect: "同時追蹤多個目標" },
+  special_lighting: { id: "special_lighting", name: "特殊照明", desc: "C2-932 的地面淨化光圈。", lowEffect: "小型持續照明區", highEffect: "大型淨化力場" },
+  heavy_beam: { id: "heavy_beam", name: "重型光砲", desc: "C2-932 的高能聚焦光束。", lowEffect: "單體聚焦光柱", highEffect: "重型穿透光砲" }
 };
 
 export function MissionGame({ 
   onClose, 
+  onReturnToLab,
+  resumeBossChapter = null,
   affectionPoints, 
   setAffectionPoints, 
   playSound,
   coins,
   setCoins,
   purchasedUpgrades,
+  robotUpgrades,
+  onMaterialsEarned,
   unlockedChapters,
   setUnlockedChapters
 }: MissionGameProps) {
   // Screens state
-  const [stage, setStage] = useState<GameStage>("START");
+  const [stage, setStage] = useState<GameStage>(resumeBossChapter ? "BOSS_WARNING" : "START");
   const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0]);
-  const [selectedChapter, setSelectedChapter] = useState<number>(1);
+  const [selectedChapter, setSelectedChapter] = useState<number>(resumeBossChapter || 1);
   const [startStep, setStartStep] = useState<number>(1);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true); // Demo mode enabled by default (30s round) for faster testing
   const [assemblyTab, setAssemblyTab] = useState<"lamps" | "specs">("lamps");
@@ -256,23 +255,17 @@ export function MissionGame({
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
 
-  // Weapon levels and collected parts count (influences assembly)
-  const [weaponLevels, setWeaponLevels] = useState<Record<string, number>>({
-    "C2-927": 1,
-    "C2-928": 0,
-    "C2-929": 0,
-    "C2-932": 0,
-    "C2-934": 0
+  // C2-932 combat modules are installed in the laboratory. Mission pickups only fill this run's material inventory.
+  const getInstalledWeaponLevels = () => ({
+    range_attack: Math.max(1, robotUpgrades.range_attack || 0),
+    laser_weapon: robotUpgrades.laser_weapon || 0,
+    tracking_weapon: robotUpgrades.tracking_weapon || 0,
+    special_lighting: robotUpgrades.special_lighting || 0,
+    heavy_beam: robotUpgrades.attack_power || 0
   });
-  const [collectedLamps, setCollectedLamps] = useState<Record<string, number>>({
-    "C2-927": 1,
-    "C2-928": 0,
-    "C2-929": 0,
-    "C2-932": 0,
-    "C2-934": 0
-  });
-
-  const totalCollectedCount = Object.keys(collectedLamps).reduce((acc, key) => acc + (collectedLamps[key] || 0), 0);
+  const [weaponLevels, setWeaponLevels] = useState<Record<string, number>>(getInstalledWeaponLevels);
+  const [collectedMaterials, setCollectedMaterials] = useState<MaterialInventory>(createEmptyMaterialInventory);
+  const materialsBankedRef = useRef(false);
 
   // Upgrades overlay choice
   const [showUpgradeChoice, setShowUpgradeChoice] = useState<boolean>(false);
@@ -288,6 +281,21 @@ export function MissionGame({
   const [mechaShieldDurability, setMechaShieldDurability] = useState<number>(4);
   const [mechaShieldBroken, setMechaShieldBroken] = useState<boolean>(false);
   const [bossStunActive, setBossStunActive] = useState<boolean>(false);
+  const [robotSelection, setRobotSelection] = useState<RobotSelectionState | null>(() =>
+    resumeBossChapter ? createC2932Deployment(robotUpgrades) : null
+  );
+  const [c2932PunchCount, setC2932PunchCount] = useState<number>(0);
+  const [c2932FieldRemainingMs, setC2932FieldRemainingMs] = useState<number>(0);
+
+  const robotSelectionRef = useRef<RobotSelectionState | null>(
+    resumeBossChapter ? createC2932Deployment(robotUpgrades) : null
+  );
+  const c2932SkillRef = useRef({ punchCount: 0, fieldEndsAt: 0 });
+
+  useEffect(() => {
+    robotSelectionRef.current = robotSelection;
+  }, [robotSelection]);
+
 
   // Refs for low latency canvas rendering and keyboard management
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -295,6 +303,9 @@ export function MissionGame({
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const missionBackgroundImgRef = useRef<HTMLImageElement | null>(null);
+  const missionMaskDataRef = useRef<MissionMaskData | null>(null);
+  const [missionMapReady, setMissionMapReady] = useState(false);
 
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
   const [spriteLoaded, setSpriteLoaded] = useState<boolean>(false);
@@ -310,22 +321,136 @@ export function MissionGame({
   const [companionsLoaded, setCompanionsLoaded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const urls: Record<string, string> = {
-      "C2-927": "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-C2-927.png",
-      "C2-928": "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-C2-928.png",
-      "C2-929": "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-C2-929.png",
-      "C2-932": "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-C2-932.png",
-      "C2-934": "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-C2-934.png"
+    let disposed = false;
+
+    const backgroundImage = new Image();
+    backgroundImage.crossOrigin = "anonymous";
+    backgroundImage.src = MISSION_MAP_CONFIG.backgroundUrl;
+    backgroundImage.onload = () => {
+      if (!disposed) missionBackgroundImgRef.current = backgroundImage;
+    };
+    backgroundImage.onerror = () => {
+      if (!disposed) missionBackgroundImgRef.current = null;
     };
 
-    Object.keys(urls).forEach((key) => {
-      const img = new Image();
-      img.src = urls[key];
-      img.onload = () => {
-        companionRobotImagesRef.current[key] = img;
-        setCompanionsLoaded((prev) => ({ ...prev, [key]: true }));
-      };
-    });
+    const maskImage = new Image();
+    maskImage.crossOrigin = "anonymous";
+    maskImage.src = MISSION_MAP_CONFIG.maskUrl;
+    maskImage.onload = () => {
+      if (disposed) return;
+
+      const { width, height } = MISSION_MAP_CONFIG.worldSize;
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = width;
+      maskCanvas.height = height;
+      const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+      if (!maskContext) return;
+
+      const placement = getCoverPlacement(
+        maskImage.naturalWidth,
+        maskImage.naturalHeight,
+        width,
+        height,
+      );
+      maskContext.imageSmoothingEnabled = false;
+      maskContext.drawImage(
+        maskImage,
+        placement.x,
+        placement.y,
+        placement.width,
+        placement.height,
+      );
+
+      try {
+        const pixels = maskContext.getImageData(0, 0, width, height).data;
+        const walkable = new Uint8Array(width * height);
+        const { walkableColor, colorTolerance } = MISSION_MAP_CONFIG;
+
+        for (let pixelIndex = 0, mapIndex = 0; pixelIndex < pixels.length; pixelIndex += 4, mapIndex++) {
+          const matchesWalkableColor =
+            Math.abs(pixels[pixelIndex] - walkableColor.r) <= colorTolerance &&
+            Math.abs(pixels[pixelIndex + 1] - walkableColor.g) <= colorTolerance &&
+            Math.abs(pixels[pixelIndex + 2] - walkableColor.b) <= colorTolerance;
+          walkable[mapIndex] = matchesWalkableColor ? 1 : 0;
+        }
+
+        missionMaskDataRef.current = { width, height, walkable };
+        setMissionMapReady(true);
+      } catch (error) {
+        console.error("Failed to read mission collision mask", error);
+        missionMaskDataRef.current = null;
+        setMissionMapReady(false);
+      }
+    };
+    maskImage.onerror = () => {
+      if (!disposed) {
+        missionMaskDataRef.current = null;
+        setMissionMapReady(false);
+      }
+    };
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const isMissionPositionWalkable = (x: number, y: number, radius = 0) => {
+    const mask = missionMaskDataRef.current;
+    if (!mask) return false;
+
+    const samplePoint = (sampleX: number, sampleY: number) => {
+      const pixelX = Math.floor(sampleX);
+      const pixelY = Math.floor(sampleY);
+      if (pixelX < 0 || pixelX >= mask.width || pixelY < 0 || pixelY >= mask.height) return false;
+      return mask.walkable[pixelY * mask.width + pixelX] === 1;
+    };
+
+    if (!samplePoint(x, y)) return false;
+    if (radius <= 0) return true;
+
+    for (let index = 0; index < MISSION_MAP_CONFIG.collisionSamples; index++) {
+      const angle = (index / MISSION_MAP_CONFIG.collisionSamples) * Math.PI * 2;
+      if (!samplePoint(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius)) return false;
+    }
+    return true;
+  };
+
+  const findWalkableSpawn = (radius: number, center?: { x: number; y: number }, distance = 0) => {
+    const { width, height } = MISSION_MAP_CONFIG.worldSize;
+    for (let attempt = 0; attempt < MISSION_MAP_CONFIG.spawnAttempts; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const candidateDistance = center ? distance * (0.8 + Math.random() * 0.4) : 0;
+      const x = center
+        ? center.x + Math.cos(angle) * candidateDistance
+        : radius + Math.random() * (width - radius * 2);
+      const y = center
+        ? center.y + Math.sin(angle) * candidateDistance
+        : radius + Math.random() * (height - radius * 2);
+      if (isMissionPositionWalkable(x, y, radius)) return { x, y };
+    }
+    return null;
+  };
+
+  const moveWithinMissionMask = (
+    entity: { x: number; y: number },
+    deltaX: number,
+    deltaY: number,
+    radius: number,
+  ) => {
+    const nextX = entity.x + deltaX;
+    if (isMissionPositionWalkable(nextX, entity.y, radius)) entity.x = nextX;
+
+    const nextY = entity.y + deltaY;
+    if (isMissionPositionWalkable(entity.x, nextY, radius)) entity.y = nextY;
+  };
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = ROBOT_CONFIG.c2_932.portrait;
+    img.onload = () => {
+      companionRobotImagesRef.current["C2-932"] = img;
+      setCompanionsLoaded({ "C2-932": true });
+    };
   }, []);
 
   useEffect(() => {
@@ -408,7 +533,7 @@ export function MissionGame({
       actionEndTime: 0
     },
     enemies: [] as Array<{ x: number; y: number; hp: number; maxHp: number; speed: number; radius: number; color: string; type: "mote" | "clumper" | "stalker"; points: number }>,
-    collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "lamp" | "coin"; amount: number; lampType?: string; radius: number; pulse: number }>,
+    collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean }>,
     lightZones: [] as Array<{ x: number; y: number; radius: number; damage: number; duration: number; maxDuration: number; highMode: boolean }>,
@@ -432,7 +557,7 @@ export function MissionGame({
     } | null,
     ticks: 0,
     spawnTimer: 0,
-    mapSize: { width: 1500, height: 1000 },
+    mapSize: { ...MISSION_MAP_CONFIG.worldSize },
     camera: { x: 0, y: 0 },
     lowBatteryCooldown: 0,
     screenShake: 0,
@@ -492,28 +617,7 @@ export function MissionGame({
     triggerSound("upgrade");
     const options: Array<{ id: string; type: "weapon" | "stat"; name: string; desc: string; icon: string }> = [];
 
-    // Weapon upgrade options
-    Object.keys(WEAPONS_INFO).forEach((wId) => {
-      const info = WEAPONS_INFO[wId];
-      const curLvl = currentWeapons[wId] || 0;
-      if (curLvl === 0) {
-        options.push({
-          id: wId,
-          type: "weapon",
-          name: `獲得 ${wId}`,
-          desc: info.desc,
-          icon: "💡"
-        });
-      } else if (curLvl < 5) {
-        options.push({
-          id: wId,
-          type: "weapon",
-          name: `升級 ${wId} (Lv.${curLvl} ➔ Lv.${curLvl + 1})`,
-          desc: `提升此款工作燈的光源半徑、驅散威力和冷卻頻率。`,
-          icon: "⚡"
-        });
-      }
-    });
+    // Mission level-ups are temporary character stats only. Permanent C2-932 modules are laboratory-only.
 
     // Stat options
     options.push({
@@ -546,30 +650,17 @@ export function MissionGame({
 
   const handleSelectUpgrade = (choice: { id: string; type: "weapon" | "stat"; name: string }) => {
     triggerSound("click");
-    if (choice.type === "weapon") {
-      setWeaponLevels((prev) => {
-        const next = { ...prev, [choice.id]: (prev[choice.id] || 0) + 1 };
-        return next;
+    if (choice.id === "stat_hp") {
+      setMaxHp((maximum) => {
+        const nextMaximum = maximum + 1;
+        setHp(nextMaximum);
+        return nextMaximum;
       });
-      // also increase collected parts counter
-      setCollectedLamps((prev) => ({
-        ...prev,
-        [choice.id]: (prev[choice.id] || 0) + 1
-      }));
-    } else {
-      if (choice.id === "stat_hp") {
-        setMaxHp((m) => {
-          const nextMax = m + 1;
-          setHp(nextMax);
-          return nextMax;
-        });
-      } else if (choice.id === "stat_battery") {
-        // Handled dynamically or via state
-        setSelectedAgent((prev) => ({ ...prev, maxBattery: prev.maxBattery + 20 }));
-        engineRef.current.player.batteryVal = Math.min(engineRef.current.player.batteryVal + 50, selectedAgent.maxBattery + 20);
-      } else if (choice.id === "stat_speed") {
-        setSelectedAgent((prev) => ({ ...prev, speed: prev.speed * 1.15 }));
-      }
+    } else if (choice.id === "stat_battery") {
+      setSelectedAgent((previous) => ({ ...previous, maxBattery: previous.maxBattery + 20 }));
+      engineRef.current.player.batteryVal = Math.min(engineRef.current.player.batteryVal + 50, selectedAgent.maxBattery + 20);
+    } else if (choice.id === "stat_speed") {
+      setSelectedAgent((previous) => ({ ...previous, speed: previous.speed * 1.15 }));
     }
     setShowUpgradeChoice(false);
   };
@@ -591,6 +682,7 @@ export function MissionGame({
   };
 
   const startGame = () => {
+    if (!missionMapReady) return;
     triggerSound("click");
     setSessionCoins(0);
     const bonusHp = purchasedUpgrades.shield_boost || 0;
@@ -604,28 +696,23 @@ export function MissionGame({
     setBatteryMode("LOW");
     setTimeLeft(isDemoMode ? 30 : 90);
     setScore(0);
-    setWeaponLevels({
-      "C2-927": 1,
-      "C2-928": 0,
-      "C2-929": 0,
-      "C2-932": 0,
-      "C2-934": 0
-    });
-    setCollectedLamps({
-      "C2-927": 1,
-      "C2-928": 0,
-      "C2-929": 0,
-      "C2-932": 0,
-      "C2-934": 0
-    });
+    setWeaponLevels(getInstalledWeaponLevels());
+    setCollectedMaterials(createEmptyMaterialInventory());
+    materialsBankedRef.current = false;
+    setRobotSelection(null);
+    robotSelectionRef.current = null;
 
     const initMaxBattery = getPlayerMaxBattery();
+    const configuredSpawn = MISSION_MAP_CONFIG.playerSpawn;
+    const initialPlayerPosition = isMissionPositionWalkable(configuredSpawn.x, configuredSpawn.y, 14)
+      ? configuredSpawn
+      : findWalkableSpawn(14) || configuredSpawn;
 
     // Reset loop engine state
     engineRef.current = {
       player: { 
-        x: 750, 
-        y: 500, 
+        x: initialPlayerPosition.x,
+        y: initialPlayerPosition.y,
         radius: 14, 
         vx: 0, 
         vy: 0, 
@@ -649,16 +736,18 @@ export function MissionGame({
       boss: null,
       ticks: 0,
       spawnTimer: 0,
-      mapSize: { width: 1800, height: 1200 },
+      mapSize: { ...MISSION_MAP_CONFIG.worldSize },
       camera: { x: 375, y: 375 },
       lowBatteryCooldown: 0
     };
 
     // Spawn initial items & decorations
     for (let i = 0; i < 15; i++) {
+      const spawn = findWalkableSpawn(8);
+      if (!spawn) continue;
       engineRef.current.collectibles.push({
-        x: Math.random() * 1800,
-        y: Math.random() * 1200,
+        x: spawn.x,
+        y: spawn.y,
         type: "battery",
         amount: 30,
         radius: 8,
@@ -668,24 +757,27 @@ export function MissionGame({
 
     // Spawn initial gold coins for a welcoming feedback loop!
     for (let i = 0; i < 12; i++) {
+      const spawn = findWalkableSpawn(6);
+      if (!spawn) continue;
       engineRef.current.collectibles.push({
-        x: Math.random() * 1800,
-        y: Math.random() * 1200,
+        x: spawn.x,
+        y: spawn.y,
         type: "coin",
         amount: Math.floor(Math.random() * 3) + 1,
         radius: 6,
         pulse: Math.random() * Math.PI
       });
     }
-    // Spawn some weapon crates
-    const initialLamps = ["C2-928", "C2-929", "C2-932", "C2-934"];
-    initialLamps.forEach((lamp) => {
+    // Spawn modification materials. They are banked after the stage and never alter combat during the mission.
+    MATERIAL_IDS.forEach((materialId) => {
+      const spawn = findWalkableSpawn(12);
+      if (!spawn) return;
       engineRef.current.collectibles.push({
-        x: 200 + Math.random() * 1400,
-        y: 200 + Math.random() * 800,
-        type: "lamp",
+        x: spawn.x,
+        y: spawn.y,
+        type: "material",
         amount: 1,
-        lampType: lamp,
+        materialType: materialId,
         radius: 12,
         pulse: Math.random() * Math.PI
       });
@@ -708,14 +800,44 @@ export function MissionGame({
     setStage("REPORT");
   };
 
+
+  const bankCollectedMaterials = () => {
+    if (materialsBankedRef.current) return;
+    materialsBankedRef.current = true;
+    onMaterialsEarned(collectedMaterials);
+  };
+
+  const prepareRobotDeployment = () => {
+    triggerSound("click");
+    bankCollectedMaterials();
+    const selection = createC2932Deployment(robotUpgrades);
+    robotSelectionRef.current = selection;
+    setRobotSelection(selection);
+    setStage("ROBOT_DEPLOYMENT");
+  };
+  const startBossWarning = () => {
+    triggerSound("click");
+    const selection = createC2932Deployment(robotUpgrades);
+    robotSelectionRef.current = selection;
+    setRobotSelection(selection);
+    setStage("BOSS_WARNING");
+  };
+
   // Set up Boss Battle
   const startBossBattle = () => {
     triggerSound("click");
     setStage("BOSSBATTLE");
 
     // Recalculate player HP based on lamps collected plus purchased shields!
+
+    c2932SkillRef.current = { punchCount: 0, fieldEndsAt: 0 };
+    setC2932PunchCount(0);
+    setC2932FieldRemainingMs(0);
+
+    const activeRobotSelection = robotSelectionRef.current;
+    if (!activeRobotSelection) return;
     const bonusShieldHp = (purchasedUpgrades.shield_boost || 0) * 20;
-    const calculatedMechaHp = 100 + totalCollectedCount * 15 + bonusShieldHp;
+    const calculatedMechaHp = 100 + (robotUpgrades.defense_power || 0) * 25 + bonusShieldHp;
     setHp(calculatedMechaHp);
     setMaxHp(calculatedMechaHp);
 
@@ -727,8 +849,8 @@ export function MissionGame({
     setBossMaxHp(calculatedBossHp);
 
     const isMobileDevice = window.innerWidth < 640;
-    const arenaWidth = isMobileDevice ? 500 : 1000;
-    const arenaHeight = isMobileDevice ? 750 : 550;
+    const arenaWidth = isMobileDevice ? 500 : 1400;
+    const arenaHeight = isMobileDevice ? 750 : 700;
 
     // Reset Engine references for boss fight in bounded arena
     engineRef.current = {
@@ -842,6 +964,18 @@ export function MissionGame({
 
       if (!isPaused) {
         state.ticks++;
+        if (stage === "BOSSBATTLE") {
+          const selectedRobot = robotSelectionRef.current;
+          const fieldRemainingMs = Math.max(0, c2932SkillRef.current.fieldEndsAt - Date.now());
+          if (selectedRobot?.robotId === "c2_932" && (robotUpgrades.energy_shield || 0) > 0 && selectedRobot.fullyUnlocked) {
+            if (state.ticks % 6 === 0) setC2932FieldRemainingMs(fieldRemainingMs);
+            if (fieldRemainingMs === 0 && c2932SkillRef.current.fieldEndsAt !== 0) {
+              c2932SkillRef.current.fieldEndsAt = 0;
+              setC2932FieldRemainingMs(0);
+            }
+          }
+        }
+
 
         // Decrement companion skills active duration
         if (state.companionSkills) {
@@ -914,10 +1048,14 @@ export function MissionGame({
          dy *= 0.7071;
        }
 
-       const speedMultiplier = 1 + (purchasedUpgrades.speed_boost || 0) * 0.1;
+       const speedMultiplier = 1 + (purchasedUpgrades.speed_boost || 0) * 0.1 + (stage === "BOSSBATTLE" ? (robotUpgrades.movement_speed || 0) * 0.08 : 0);
        const currentSpeed = (stage === "BOSSBATTLE" ? 2.5 : selectedAgent.speed) * speedMultiplier;
-       player.x += dx * currentSpeed;
-       player.y += dy * currentSpeed;
+       if (stage === "PLAYING") {
+         moveWithinMissionMask(player, dx * currentSpeed, dy * currentSpeed, player.radius);
+       } else {
+         player.x += dx * currentSpeed;
+         player.y += dy * currentSpeed;
+       }
 
        if (stage === "BOSSBATTLE") {
          if (dx > 0) {
@@ -1048,6 +1186,35 @@ export function MissionGame({
           player.punchCooldown = 22; // 0.36s cooldown
           setMechaAction("punch", 90);
           triggerSound("hit");
+
+          const selectedRobot = robotSelectionRef.current;
+          if (selectedRobot?.robotId === "c2_932" && (robotUpgrades.energy_shield || 0) > 0 && selectedRobot.fullyUnlocked) {
+            const nextPunchCount = c2932SkillRef.current.punchCount + 1;
+            if (nextPunchCount >= C2_932_PUNCHES_REQUIRED) {
+              c2932SkillRef.current.punchCount = 0;
+              c2932SkillRef.current.fieldEndsAt = Date.now() + C2_932_FIELD_DURATION_MS;
+              setC2932PunchCount(0);
+              setC2932FieldRemainingMs(C2_932_FIELD_DURATION_MS);
+              for (let i = 0; i < 28; i++) {
+                const angle = (i / 28) * Math.PI * 2;
+                state.particles.push({
+                  x: player.x + Math.cos(angle) * C2_932_FIELD_RADIUS,
+                  y: player.y + Math.sin(angle) * C2_932_FIELD_RADIUS,
+                  vx: Math.cos(angle) * 1.5,
+                  vy: Math.sin(angle) * 1.5,
+                  radius: 3,
+                  color: "#22d3ee",
+                  life: 0,
+                  maxLife: 28,
+                  alpha: 1,
+                  text: i === 0 ? "\u9632\u79a6\u529b\u5834\u555f\u52d5" : undefined
+                });
+              }
+            } else {
+              c2932SkillRef.current.punchCount = nextPunchCount;
+              setC2932PunchCount(nextPunchCount);
+            }
+          }
 
           // Aim at Boss or facing direction
           const targetX = state.boss ? state.boss.x : player.x;
@@ -1368,35 +1535,21 @@ export function MissionGame({
 
       // 4. WEAPONS AUTO-FIRE LOGIC
       
-      // -- C2-927 Sector Sweep --
-      if (weaponLevels["C2-927"] > 0) {
+      // -- range_attack Sector Sweep --
+      if (weaponLevels["range_attack"] > 0) {
         const rate = isHigh ? 25 : 45;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
-            state.companionSkills["C2-927"] = 30;
+            state.companionSkills["range_attack"] = 30;
           }
           let srcX = player.x;
           let srcY = player.y;
           let angle = dx === 0 && dy === 0 ? 0 : Math.atan2(dy, dx);
-          if (stage === "BOSSBATTLE") {
-            const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-            const compIdx = collectedCompanionIDs.indexOf("C2-927");
-            if (compIdx !== -1) {
-              const numCompanions = collectedCompanionIDs.length;
-              const orbitAngle = (state.ticks / 50) + (compIdx * (Math.PI * 2 / numCompanions));
-              const orbitRadius = 65 + Math.sin(state.ticks / 15 + compIdx) * 5;
-              srcX = player.x + Math.cos(orbitAngle) * orbitRadius;
-              srcY = player.y + Math.sin(orbitAngle) * orbitRadius;
-              if (state.boss) {
-                angle = Math.atan2(state.boss.y - srcY, state.boss.x - srcX);
-              }
-            }
-          }
 
           const fanSize = isHigh ? Math.PI / 2 : Math.PI / 4;
           const dist = isHigh ? 170 : 85;
-          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-          const damage = (isHigh ? 45 : 18) * (1 + weaponLevels["C2-927"] * 0.15) * bonusDamageMult;
+          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+          const damage = (isHigh ? 45 : 18) * (1 + weaponLevels["range_attack"] * 0.15) * bonusDamageMult;
 
           // Purify enemies in sector
           state.enemies.forEach((enemy) => {
@@ -1411,8 +1564,12 @@ export function MissionGame({
                 enemy.hp -= damage;
                 // pushback
                 const push = isHigh ? 35 : 12;
-                enemy.x += Math.cos(eAngle) * push;
-                enemy.y += Math.sin(eAngle) * push;
+                moveWithinMissionMask(
+                  enemy,
+                  Math.cos(eAngle) * push,
+                  Math.sin(eAngle) * push,
+                  enemy.radius,
+                );
                 // sparks
                 for (let i = 0; i < 3; i++) {
                   state.particles.push({
@@ -1459,26 +1616,15 @@ export function MissionGame({
         }
       }
 
-      // -- C2-928 Slim Beam Laser --
-      if (weaponLevels["C2-928"] > 0) {
+      // -- laser_weapon Slim Beam Laser --
+      if (weaponLevels["laser_weapon"] > 0) {
         const rate = isHigh ? 12 : 25;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
-            state.companionSkills["C2-928"] = 25;
+            state.companionSkills["laser_weapon"] = 25;
           }
           let srcX = player.x;
           let srcY = player.y;
-          if (stage === "BOSSBATTLE") {
-            const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-            const compIdx = collectedCompanionIDs.indexOf("C2-928");
-            if (compIdx !== -1) {
-              const numCompanions = collectedCompanionIDs.length;
-              const orbitAngle = (state.ticks / 50) + (compIdx * (Math.PI * 2 / numCompanions));
-              const orbitRadius = 65 + Math.sin(state.ticks / 15 + compIdx) * 5;
-              srcX = player.x + Math.cos(orbitAngle) * orbitRadius;
-              srcY = player.y + Math.sin(orbitAngle) * orbitRadius;
-            }
-          }
 
           // Find closest target
           let target: { x: number; y: number } | null = null;
@@ -1497,8 +1643,8 @@ export function MissionGame({
 
           if (target) {
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
-            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-            const bulletDamage = (isHigh ? 22 : 10) * (1 + weaponLevels["C2-928"] * 0.2) * bonusDamageMult;
+            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+            const bulletDamage = (isHigh ? 22 : 10) * (1 + weaponLevels["laser_weapon"] * 0.2) * bonusDamageMult;
             
             if (isHigh) {
               // 3-way spread lasers
@@ -1530,26 +1676,15 @@ export function MissionGame({
         }
       }
 
-      // -- C2-929 Flexible Gooseneck Tracking --
-      if (weaponLevels["C2-929"] > 0) {
+      // -- tracking_weapon Flexible Gooseneck Tracking --
+      if (weaponLevels["tracking_weapon"] > 0) {
         // Periodically tick electrical laser connection links
         if (state.ticks % 10 === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
-            state.companionSkills["C2-929"] = 15;
+            state.companionSkills["tracking_weapon"] = 15;
           }
           let srcX = player.x;
           let srcY = player.y;
-          if (stage === "BOSSBATTLE") {
-            const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-            const compIdx = collectedCompanionIDs.indexOf("C2-929");
-            if (compIdx !== -1) {
-              const numCompanions = collectedCompanionIDs.length;
-              const orbitAngle = (state.ticks / 50) + (compIdx * (Math.PI * 2 / numCompanions));
-              const orbitRadius = 65 + Math.sin(state.ticks / 15 + compIdx) * 5;
-              srcX = player.x + Math.cos(orbitAngle) * orbitRadius;
-              srcY = player.y + Math.sin(orbitAngle) * orbitRadius;
-            }
-          }
 
           let targets: Array<{ x: number; y: number; hp: number }> = [];
           if (stage === "BOSSBATTLE" && state.boss) {
@@ -1565,8 +1700,8 @@ export function MissionGame({
           targets.forEach((t) => {
             const dist = Math.hypot(t.x - srcX, t.y - srcY);
             if (dist < (isHigh ? 240 : 130)) {
-              const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-              const dmg = (isHigh ? 12 : 5) * (1 + weaponLevels["C2-929"] * 0.25) * bonusDamageMult;
+              const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+              const dmg = (isHigh ? 12 : 5) * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
               t.hp -= dmg;
               if (stage === "BOSSBATTLE") {
                 setBossHp(Math.max(0, Math.ceil(state.boss!.hp)));
@@ -1592,29 +1727,18 @@ export function MissionGame({
       }
 
       // -- C2-932 Work Ground Lamp Light Circles --
-      if (weaponLevels["C2-932"] > 0) {
+      if (weaponLevels["special_lighting"] > 0) {
         const rate = isHigh ? 80 : 140;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
-            state.companionSkills["C2-932"] = 40;
+            state.companionSkills["special_lighting"] = 40;
           }
           let srcX = player.x;
           let srcY = player.y;
-          if (stage === "BOSSBATTLE") {
-            const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-            const compIdx = collectedCompanionIDs.indexOf("C2-932");
-            if (compIdx !== -1) {
-              const numCompanions = collectedCompanionIDs.length;
-              const orbitAngle = (state.ticks / 50) + (compIdx * (Math.PI * 2 / numCompanions));
-              const orbitRadius = 65 + Math.sin(state.ticks / 15 + compIdx) * 5;
-              srcX = player.x + Math.cos(orbitAngle) * orbitRadius;
-              srcY = player.y + Math.sin(orbitAngle) * orbitRadius;
-            }
-          }
 
           const zoneRadius = isHigh ? 110 : 60;
-          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-          const damage = (isHigh ? 3 : 1) * (1 + weaponLevels["C2-932"] * 0.3) * bonusDamageMult;
+          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+          const damage = (isHigh ? 3 : 1) * (1 + weaponLevels["special_lighting"] * 0.3) * bonusDamageMult;
           // Deploy behind/centered
           state.lightZones.push({
             x: srcX - dx * 40,
@@ -1629,26 +1753,15 @@ export function MissionGame({
         }
       }
 
-      // -- C2-934 Heavy Precision Handheld Flashlight Beam --
-      if (weaponLevels["C2-934"] > 0) {
+      // -- heavy_beam Heavy Precision Handheld Flashlight Beam --
+      if (weaponLevels["heavy_beam"] > 0) {
         const rate = isHigh ? 35 : 60;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
-            state.companionSkills["C2-934"] = 35;
+            state.companionSkills["heavy_beam"] = 35;
           }
           let srcX = player.x;
           let srcY = player.y;
-          if (stage === "BOSSBATTLE") {
-            const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-            const compIdx = collectedCompanionIDs.indexOf("C2-934");
-            if (compIdx !== -1) {
-              const numCompanions = collectedCompanionIDs.length;
-              const orbitAngle = (state.ticks / 50) + (compIdx * (Math.PI * 2 / numCompanions));
-              const orbitRadius = 65 + Math.sin(state.ticks / 15 + compIdx) * 5;
-              srcX = player.x + Math.cos(orbitAngle) * orbitRadius;
-              srcY = player.y + Math.sin(orbitAngle) * orbitRadius;
-            }
-          }
 
           // Find closest target
           let target: { x: number; y: number; hp: number } | null = null;
@@ -1667,8 +1780,8 @@ export function MissionGame({
 
           if (target) {
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
-            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-            const dmg = (isHigh ? 65 : 30) * (1 + weaponLevels["C2-934"] * 0.3) * bonusDamageMult;
+            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+            const dmg = (isHigh ? 65 : 30) * (1 + weaponLevels["heavy_beam"] * 0.3) * bonusDamageMult;
             
             // Deal damage
             target.hp -= dmg;
@@ -1728,13 +1841,11 @@ export function MissionGame({
         if (state.spawnTimer >= spawnLimit && state.enemies.length < 90) {
           state.spawnTimer = 0;
           
-          // Spawn just outside the viewport
-          const angle = Math.random() * Math.PI * 2;
+          // Spawn near the edge of the visible area, but only on white mask pixels.
           const spawnDist = 480;
-          const sx = player.x + Math.cos(angle) * spawnDist;
-          const sy = player.y + Math.sin(angle) * spawnDist;
+          const spawn = findWalkableSpawn(18, player, spawnDist);
 
-          if (sx >= 0 && sx <= state.mapSize.width && sy >= 0 && sy <= state.mapSize.height) {
+          if (spawn) {
             const rand = Math.random();
             let type: "mote" | "clumper" | "stalker" = "mote";
             let hpVal = 15 + selectedChapter * 12;
@@ -1757,8 +1868,8 @@ export function MissionGame({
             }
 
             state.enemies.push({
-              x: sx,
-              y: sy,
+              x: spawn.x,
+              y: spawn.y,
               hp: hpVal,
               maxHp: hpVal,
               speed: spd,
@@ -1781,8 +1892,13 @@ export function MissionGame({
           if (d <= zone.radius + enemy.radius) {
             enemy.hp -= zone.damage;
             // apply temporary speed debuff during this frame
-            enemy.x -= (enemy.x - zone.x) * (zone.highMode ? 0.05 : 0.01);
-            enemy.y -= (enemy.y - zone.y) * (zone.highMode ? 0.05 : 0.01);
+            const pullStrength = zone.highMode ? 0.05 : 0.01;
+            moveWithinMissionMask(
+              enemy,
+              -(enemy.x - zone.x) * pullStrength,
+              -(enemy.y - zone.y) * pullStrength,
+              enemy.radius,
+            );
           }
         });
 
@@ -1806,8 +1922,12 @@ export function MissionGame({
         const d = Math.hypot(dxToPlayer, dyToPlayer);
 
         if (d > 0.1) {
-          enemy.x += (dxToPlayer / d) * enemy.speed;
-          enemy.y += (dyToPlayer / d) * enemy.speed;
+          moveWithinMissionMask(
+            enemy,
+            (dxToPlayer / d) * enemy.speed,
+            (dyToPlayer / d) * enemy.speed,
+            enemy.radius,
+          );
         }
 
         // Deal contact damage to player
@@ -1821,8 +1941,12 @@ export function MissionGame({
           triggerSound("hit");
 
           // Knockback player slightly
-          player.x += (dxToPlayer / d) * -15;
-          player.y += (dyToPlayer / d) * -15;
+          moveWithinMissionMask(
+            player,
+            (dxToPlayer / d) * -15,
+            (dyToPlayer / d) * -15,
+            player.radius,
+          );
         }
 
         // Check if enemy died
@@ -1832,9 +1956,10 @@ export function MissionGame({
           
           // 35% chance to drop a shiny gold coin
           if (Math.random() < 0.35) {
+            const coinSpawn = findWalkableSpawn(6, enemy, 10) || enemy;
             state.collectibles.push({
-              x: enemy.x + (Math.random() - 0.5) * 10,
-              y: enemy.y + (Math.random() - 0.5) * 10,
+              x: coinSpawn.x,
+              y: coinSpawn.y,
               type: "coin",
               amount: Math.floor(Math.random() * 3) + 1,
               radius: 6,
@@ -1861,6 +1986,21 @@ export function MissionGame({
               type: "gem",
               amount: 15 + selectedChapter * 3,
               radius: 5,
+              pulse: 0
+            });
+          }
+
+          // Modification materials are mission rewards only; they do not change the current loadout.
+          if (Math.random() < 0.22) {
+            const materialId = MATERIAL_IDS[Math.floor(Math.random() * MATERIAL_IDS.length)];
+            const materialSpawn = findWalkableSpawn(10, enemy, 16) || enemy;
+            state.collectibles.push({
+              x: materialSpawn.x,
+              y: materialSpawn.y,
+              type: "material",
+              amount: materialId === "rare_tech_chip" ? 1 : Math.floor(Math.random() * 2) + 1,
+              materialType: materialId,
+              radius: 10,
               pulse: 0
             });
           }
@@ -1927,6 +2067,33 @@ export function MissionGame({
 
         b.x += b.vx;
         b.y += b.vy;
+
+        const selectedRobot = robotSelectionRef.current;
+        const c2932FieldActive =
+          selectedRobot?.robotId === "c2_932" &&
+          (robotUpgrades.energy_shield || 0) > 0 &&
+          selectedRobot.fullyUnlocked &&
+          c2932SkillRef.current.fieldEndsAt > Date.now();
+        if (
+          b.isEnemy &&
+          c2932FieldActive &&
+          Math.hypot(player.x - b.x, player.y - b.y) <= C2_932_FIELD_RADIUS + b.radius
+        ) {
+          for (let i = 0; i < 5; i++) {
+            state.particles.push({
+              x: b.x,
+              y: b.y,
+              vx: (Math.random() - 0.5) * 3,
+              vy: (Math.random() - 0.5) * 3,
+              radius: 2,
+              color: "#67e8f9",
+              life: 0,
+              maxLife: 18,
+              alpha: 1
+            });
+          }
+          return false;
+        }
 
         // Collision detection
         let hit = false;
@@ -2122,18 +2289,13 @@ export function MissionGame({
               setExp(p.exp);
             }
             triggerSound("click");
-          } else if (col.type === "lamp") {
-            const lampName = col.lampType || "C2-927";
-            setWeaponLevels((prev) => ({
-              ...prev,
-              [lampName]: Math.max(1, (prev[lampName] || 0) + 1)
-            }));
-            setCollectedLamps((prev) => ({
-              ...prev,
-              [lampName]: (prev[lampName] || 0) + 1
+          } else if (col.type === "material") {
+            const materialId = (col.materialType || "metal_material") as MaterialId;
+            setCollectedMaterials((previous) => ({
+              ...previous,
+              [materialId]: previous[materialId] + col.amount
             }));
             triggerSound("upgrade");
-            // show a brief visual particle splash
             for (let i = 0; i < 15; i++) {
               state.particles.push({
                 x: col.x,
@@ -2141,10 +2303,11 @@ export function MissionGame({
                 vx: (Math.random() - 0.5) * 6,
                 vy: (Math.random() - 0.5) * 6,
                 radius: 3,
-                color: "#f59e0b",
+                color: MATERIAL_CONFIG[materialId].color,
                 life: 0,
                 maxLife: 25,
-                alpha: 1
+                alpha: 1,
+                text: i === 0 ? MATERIAL_CONFIG[materialId].name : undefined
               });
             }
           } else if (col.type === "coin") {
@@ -2552,6 +2715,29 @@ export function MissionGame({
       ctx.fillStyle = activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
 
+      if (stage === "PLAYING") {
+        const backgroundImage = missionBackgroundImgRef.current;
+        if (backgroundImage?.complete && backgroundImage.naturalWidth > 0) {
+          const placement = getCoverPlacement(
+            backgroundImage.naturalWidth,
+            backgroundImage.naturalHeight,
+            state.mapSize.width,
+            state.mapSize.height,
+          );
+
+          ctx.save();
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(
+            backgroundImage,
+            placement.x,
+            placement.y,
+            placement.width,
+            placement.height,
+          );
+          ctx.restore();
+        }
+      }
+
       // Grid lines
       ctx.strokeStyle = activeChapter.gridColor;
       ctx.lineWidth = 1;
@@ -2889,7 +3075,7 @@ export function MissionGame({
 
       } else {
         const bossRobotImg = bossRobotSpriteImgRef.current;
-        if (bossRobotImg && bossRobotSpriteLoaded) {
+        if (robotSelectionRef.current?.robotId === "c2_932" && bossRobotImg && bossRobotSpriteLoaded) {
           const now = Date.now();
           const isActionActive = player.actionEndTime && now < player.actionEndTime;
           
@@ -3005,6 +3191,27 @@ export function MissionGame({
             ctx.restore();
           }
 
+        } else if (robotSelectionRef.current) {
+          const selectedRobotImage =
+            companionRobotImagesRef.current["C2-932"];
+          if (selectedRobotImage) {
+            const maxWidth = windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76;
+            const maxHeight = maxWidth * 1.15;
+            const scale = Math.min(
+              maxWidth / selectedRobotImage.width,
+              maxHeight / selectedRobotImage.height
+            );
+            const drawWidth = selectedRobotImage.width * scale;
+            const drawHeight = selectedRobotImage.height * scale;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(
+              selectedRobotImage,
+              player.x - drawWidth / 2,
+              player.y - drawHeight / 2,
+              drawWidth,
+              drawHeight
+            );
+          }
         } else {
           // Draw the assembled LAMPI ROBOT MECHA! (FALLBACK)
           ctx.save();
@@ -3012,10 +3219,10 @@ export function MissionGame({
           ctx.scale(1.35, 1.35); // Scale Mecha up by 35%
           ctx.translate(-player.x, -player.y);
 
-          const armFloodlights = collectedLamps["C2-927"] || 1;
-          const armLasers = collectedLamps["C2-928"] || 0;
-          const antennaGoose = collectedLamps["C2-929"] || 0;
-          const hoverBase = collectedLamps["C2-932"] || 0;
+          const armFloodlights = robotUpgrades.range_attack || 1;
+          const armLasers = robotUpgrades.laser_weapon || 0;
+          const antennaGoose = robotUpgrades.tracking_weapon || 0;
+          const hoverBase = robotUpgrades.special_lighting || 0;
 
           // Draw metal hover pad / legs
           if (hoverBase > 1) {
@@ -3046,7 +3253,7 @@ export function MissionGame({
           ctx.fillRect(player.x - 12, player.y - 17, 24, 5);
 
           // Arms matching weapons collections
-          // C2-927: Large Floodlight arms
+          // range_attack: Large Floodlight arms
           if (armFloodlights > 0) {
             ctx.fillStyle = "#64748b";
             ctx.fillRect(player.x - 30, player.y - 12, 10, 15); // left arm casing
@@ -3059,14 +3266,14 @@ export function MissionGame({
             ctx.fill();
           }
 
-          // C2-928: Sleek slim double-lasers
+          // laser_weapon: Sleek slim double-lasers
           if (armLasers > 0) {
             ctx.fillStyle = "#06b6d4"; // blue blaster muzzle
             ctx.fillRect(player.x - 34, player.y - 2, 6, 4);
             ctx.fillRect(player.x + 28, player.y - 2, 6, 4);
           }
 
-          // C2-929: Flexible gooseneck radar antennas waving
+          // tracking_weapon: Flexible gooseneck radar antennas waving
           if (antennaGoose > 0) {
             ctx.strokeStyle = "#10b981"; // green flexible tube lines
             ctx.lineWidth = 3;
@@ -3139,129 +3346,32 @@ export function MissionGame({
 
       ctx.restore();
 
-      // DRAW COMPANION ROBOTS (For Boss Battle)
-      if (stage === "BOSSBATTLE") {
-        const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-        collectedCompanionIDs.forEach((wId, idx) => {
-          const numCompanions = collectedCompanionIDs.length;
-          const orbitAngle = (state.ticks / 50) + (idx * (Math.PI * 2 / numCompanions));
-          const orbitRadius = 65 + Math.sin(state.ticks / 15 + idx) * 5;
-          const cx = player.x + Math.cos(orbitAngle) * orbitRadius;
-          const cy = player.y + Math.sin(orbitAngle) * orbitRadius;
-
-          // 用 C2-932 機器人代替全部，後續再更新
-          const compImg = companionRobotImagesRef.current["C2-932"] || companionRobotImagesRef.current[wId];
-          if (compImg) {
-            ctx.save();
-
-            const isSkillActive = state.companionSkills && state.companionSkills[wId] > 0;
-
-            // Draw shadow base shadow
-            ctx.fillStyle = isSkillActive ? "rgba(34, 211, 238, 0.25)" : "rgba(253, 224, 71, 0.12)";
-            ctx.beginPath();
-            ctx.arc(cx, cy + 10, 10, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Glowing Active Aura Ring
-            if (isSkillActive) {
-              const ringColor = wId === "C2-927" ? "#f97316" : wId === "C2-928" ? "#22d3ee" : wId === "C2-929" ? "#10b981" : wId === "C2-932" ? "#3b82f6" : "#f43f5e";
-              ctx.shadowColor = ringColor;
-              ctx.shadowBlur = 15;
-              ctx.strokeStyle = ringColor;
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.arc(cx, cy, 18, 0, Math.PI * 2);
-              ctx.stroke();
-              ctx.shadowBlur = 0; // Reset shadow
-            }
-
-            const robotSize = 34;
-            ctx.drawImage(
-              compImg,
-              cx - robotSize / 2,
-              cy - robotSize / 2,
-              robotSize,
-              robotSize
-            );
-
-            // Draw ID label above robot (if skill is not blocking)
-            if (!isSkillActive) {
-              ctx.fillStyle = "rgba(224, 242, 254, 0.9)";
-              ctx.font = "bold 8px monospace";
-              ctx.textAlign = "center";
-              ctx.fillText(wId, cx, cy - robotSize / 2 - 3);
-            }
-
-            // Draw beautiful retro skill speech bubble popup
-            if (isSkillActive) {
-              const skillNames: Record<string, string> = {
-                "C2-927": "扇形極光淨化 ⚡",
-                "C2-928": "高能脈衝直射 🎯",
-                "C2-929": "自動蛇管鎖定 🔗",
-                "C2-932": "慢速淨化力場 🌀",
-                "C2-934": "穿透致命光炮 💥"
-              };
-              const skillColors: Record<string, string> = {
-                "C2-927": "#fb923c",
-                "C2-928": "#22d3ee",
-                "C2-929": "#34d399",
-                "C2-932": "#60a5fa",
-                "C2-934": "#fb7185"
-              };
-
-              const skillName = skillNames[wId] || "輔助支援!";
-              const skillColor = skillColors[wId] || "#e2e8f0";
-
-              ctx.font = "bold 9px system-ui, sans-serif";
-              const txtWidth = ctx.measureText(skillName).width;
-              const paddingX = 6;
-              const paddingY = 4;
-              const bx_width = txtWidth + paddingX * 2;
-              const bx_height = 14;
-              const bx_x = cx - bx_width / 2;
-              const bx_y = cy - robotSize / 2 - 22;
-
-              // Rounded border box
-              ctx.fillStyle = "rgba(9, 9, 11, 0.95)";
-              ctx.strokeStyle = skillColor;
-              ctx.lineWidth = 1.2;
-              ctx.beginPath();
-              if (ctx.roundRect) {
-                ctx.roundRect(bx_x, bx_y, bx_width, bx_height, 3);
-              } else {
-                ctx.rect(bx_x, bx_y, bx_width, bx_height);
-              }
-              ctx.fill();
-              ctx.stroke();
-
-              // Tiny triangle arrow
-              ctx.fillStyle = "rgba(9, 9, 11, 0.95)";
-              ctx.beginPath();
-              ctx.moveTo(cx - 3, bx_y + bx_height);
-              ctx.lineTo(cx + 3, bx_y + bx_height);
-              ctx.lineTo(cx, bx_y + bx_height + 3);
-              ctx.closePath();
-              ctx.fill();
-
-              ctx.strokeStyle = skillColor;
-              ctx.lineWidth = 1.2;
-              ctx.beginPath();
-              ctx.moveTo(cx - 3, bx_y + bx_height);
-              ctx.lineTo(cx, bx_y + bx_height + 3);
-              ctx.lineTo(cx + 3, bx_y + bx_height);
-              ctx.stroke();
-
-              // Text
-              ctx.fillStyle = skillColor;
-              ctx.textAlign = "center";
-              ctx.textBaseline = "middle";
-              ctx.fillText(skillName, cx, bx_y + bx_height / 2 + 0.5);
-            }
-
-            ctx.restore();
-          }
-        });
+      if (
+        stage === "BOSSBATTLE" &&
+        robotSelectionRef.current?.robotId === "c2_932" &&
+        (robotUpgrades.energy_shield || 0) > 0 &&
+        robotSelectionRef.current.fullyUnlocked &&
+        c2932SkillRef.current.fieldEndsAt > Date.now()
+      ) {
+        const remainingSeconds = Math.max(0, c2932SkillRef.current.fieldEndsAt - Date.now()) / 1000;
+        ctx.save();
+        ctx.fillStyle = "rgba(34, 211, 238, 0.13)";
+        ctx.strokeStyle = "rgba(103, 232, 249, 0.95)";
+        ctx.lineWidth = 4 + Math.sin(state.ticks / 4) * 1.5;
+        ctx.shadowColor = "#22d3ee";
+        ctx.shadowBlur = 22;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, C2_932_FIELD_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#cffafe";
+        ctx.font = "bold 13px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`\u9632\u79a6\u529b\u5834 ${remainingSeconds.toFixed(1)}s`, player.x, player.y - C2_932_FIELD_RADIUS - 10);
+        ctx.restore();
       }
+
 
       // G. Draw Particles
       state.particles.forEach((p) => {
@@ -3332,7 +3442,7 @@ export function MissionGame({
           mctx.arc(px, py, baseRadius, 0, Math.PI * 2);
           mctx.fill();
 
-          // Cut extra sector cone if C2-927 sweep is active and in High Mode
+          // Cut extra sector cone if range_attack sweep is active and in High Mode
           const angle = dx === 0 && dy === 0 ? 0 : Math.atan2(dy, dx);
           const fanSize = isHigh ? Math.PI / 1.6 : Math.PI / 3.5;
           // Expanded sweep distances for brighter visuals
@@ -3416,6 +3526,10 @@ export function MissionGame({
 
   return (
     <div className="fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
+      <BossWarningTransition
+        active={stage === "BOSS_WARNING"}
+        onComplete={startBossBattle}
+      />
       
       {/* 1. START SCREEN */}
       {stage === "START" && (
@@ -3450,12 +3564,13 @@ export function MissionGame({
                   <span>SQUAD ACTION GAME • STEP 1/3</span>
                 </div>
                 
-                <h1 className="text-xl xs:text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-none">
-                  勇敢の燈燈小隊 <br />
-                  <span className="text-xs sm:text-lg font-medium text-orange-400 tracking-widest block mt-1 uppercase">
-                    SCI Industrial Light Purifier
-                  </span>
-                </h1>
+                <img
+                  src="https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/Title.png"
+                  alt="勇敢の燈燈小隊"
+                  className="mx-auto w-full max-w-[460px] h-auto max-h-[16vh] sm:max-h-[20vh] object-contain object-center"
+                  loading="eager"
+                  draggable={false}
+                />
 
                 <p className="text-[10px] sm:text-xs text-zinc-400 leading-relaxed font-sans">
                   世界被<b>「Dark Core（黑暗核心）」</b>侵蝕，所有城市失去電源，陰影中滋生了吞噬光源的暗黑魔怪。
@@ -3654,10 +3769,15 @@ export function MissionGame({
                     </button>
                     <button 
                       onClick={startGame}
-                      className="flex-1 py-2.5 sm:py-3.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-black text-[10px] sm:text-xs tracking-widest uppercase cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 active:scale-95 transition-transform rounded"
+                      disabled={!missionMapReady}
+                      className={`flex-1 py-2.5 sm:py-3.5 text-zinc-950 font-black text-[10px] sm:text-xs tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform rounded ${
+                        missionMapReady
+                          ? "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 cursor-pointer shadow-orange-500/20"
+                          : "bg-zinc-700 text-zinc-400 cursor-wait shadow-none"
+                      }`}
                     >
                       <Play className="w-3.5 h-3.5 fill-zinc-950" />
-                      <span>出發驅散黑暗</span>
+                      <span>{missionMapReady ? "出發驅散黑暗" : "載入地圖判定中…"}</span>
                     </button>
                   </div>
                 </div>
@@ -3782,16 +3902,23 @@ export function MissionGame({
           </div>
 
           {/* Core Interactive Web Game Canvas (Responsive vertical / horizontal) */}
-          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-2 sm:p-4 relative overflow-hidden">
-            <div className="relative w-full max-w-[1100px] flex items-center justify-center">
+          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-1.5 sm:p-2 relative overflow-hidden">
+            <div
+              className="relative flex items-center justify-center"
+              style={{
+                width: isMobile
+                  ? "100%"
+                  : "min(1400px, 100%, calc((100vh - 9rem) * 20 / 11))"
+              }}
+            >
               <canvas 
                 ref={canvasRef} 
-                width={isMobile ? 500 : 1000} 
-                height={isMobile ? 750 : 550} 
+                width={isMobile ? 500 : 1400}
+                height={isMobile ? 750 : 770}
                 className={
                   isMobile 
                     ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded" 
-                    : "max-w-full max-h-[580px] md:max-h-[660px] border border-zinc-800 bg-zinc-950 aspect-[10/5.5] shadow-2xl rounded"
+                    : "h-auto w-full aspect-[20/11] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
                 }
               />
             </div>
@@ -3885,7 +4012,7 @@ export function MissionGame({
           <div className="absolute bottom-4 inset-x-0 p-4 flex items-center justify-between pointer-events-none z-10 opacity-0 select-none">
             {/* Quick tips */}
             <div className="bg-zinc-900/90 border border-zinc-800 p-2.5 max-w-xs text-[10px] text-zinc-400 font-sans pointer-events-auto leading-relaxed">
-              💡 <span className="text-zinc-200">提示：</span>利用移動方向調整 C2-927 扇形強光方向。收集金色手提箱 💼 會直接升級或增加新的工作燈零件！
+              💡 <span className="text-zinc-200">提示：</span>利用移動方向調整 range_attack 扇形強光方向。收集金色手提箱 💼 會直接升級或增加新的工作燈零件！
             </div>
 
             {/* Score */}
@@ -3947,10 +4074,10 @@ export function MissionGame({
                 </div>
                 <div className="p-3 bg-zinc-950/80 border border-zinc-800 rounded text-[11px] sm:text-xs text-zinc-300 leading-relaxed text-left space-y-2 font-sans">
                   <p>
-                    • 利用移動方向調整 <strong>C2-927 扇形強光</strong> 的照射方向，驅散陰影怪物。
+                    • 利用移動方向調整角色的標準照明攻擊，驅散陰影怪物。
                   </p>
                   <p>
-                    • 收集金色手提箱 <span className="text-amber-400 font-bold">💼</span> 會直接升級或增加新的工作燈零件！
+                    • 收集改裝素材並帶回實驗室；素材不會在關卡中直接改變裝備。
                   </p>
                 </div>
                 <button
@@ -3979,353 +4106,91 @@ export function MissionGame({
         </div>
       )}
 
-      {/* 2.5 COLLECTION REPORT SCREEN */}
-      {stage === "REPORT" && (() => {
-        const totalCollectedCount = Object.values(collectedLamps).reduce<number>((acc, curr) => acc + (curr as number), 0);
-        return (
-          <div className="flex-1 w-full overflow-hidden p-3 sm:p-6 select-none animate-fade-in flex flex-col justify-between">
-            <div className="flex flex-col justify-between max-w-5xl mx-auto h-full w-full py-1">
-              
-              {/* Header section */}
-              <div className="text-center space-y-1">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] sm:text-xs font-black uppercase tracking-widest">
-                  <Award className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>SCI MISSION COLLECTION SUCCESS // 任務收集成果報告</span>
-                </div>
-                <h2 className="text-xl sm:text-3xl font-extrabold text-white tracking-widest leading-none">
-                  科部工業工作燈 ─ 成果結算報告
-                </h2>
-                <p className="text-[10px] sm:text-xs text-zinc-400 font-sans max-w-2xl mx-auto">
-                  戰區物資收集已結束。系統已解析本次任務中救回的所有 SCI 特規照明設備。
-                  根據核心協定，<span className="text-amber-400 font-bold">所有已收集的燈具產品將自動實體化召喚為輔助機器人</span>，隨同您的重裝機甲加入最終 Boss 決戰！
-                </p>
-              </div>
-
-              {/* Total summary board */}
-              <div className="my-2.5 p-3 sm:p-4 bg-zinc-900/40 border border-zinc-800/80 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl">
-                    ⚡
-                  </div>
-                  <div className="text-left">
-                    <div className="text-[10px] text-zinc-500 uppercase font-mono tracking-widest font-black">SYSTEM DEPLOYMENT DATA</div>
-                    <div className="text-[13px] font-bold text-white mt-0.5">
-                      本次共成功配置 <span className="text-emerald-400 font-extrabold text-sm">{totalCollectedCount}</span> 件 SCI 照明設備
-                    </div>
-                  </div>
-                </div>
-                <div className="text-zinc-400 max-w-md text-left leading-relaxed text-[11px] sm:text-xs">
-                  輔助機器人搭載了獨立光能核心，能夠自主射擊與施放力場，且不受敵方碰撞傷害。它們的加入將為 Boss 決戰提供強大的火力網支援！
-                </div>
-              </div>
-
-              {/* 5 Robots Windows Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5 my-2.5 overflow-y-auto max-h-[320px] md:max-h-none pr-1">
-                {[
-                  {
-                    id: "C2-927",
-                    name: "C2-927 摺疊式泛光手電筒",
-                    english: "Foldable Sector Purifier",
-                    stars: "★★★☆☆",
-                    speed: "★★☆☆☆",
-                    support: "★★☆☆☆",
-                    desc: "提供 120° 寬幅扇形極光淨化，掃描並重創大範圍暗影威脅。"
-                  },
-                  {
-                    id: "C2-928",
-                    name: "C2-928 輕巧型直射手電筒",
-                    english: "Slim Straight Pulsar",
-                    stars: "★★☆☆☆",
-                    speed: "★★★★★",
-                    support: "★☆☆☆☆",
-                    desc: "發射高能 Slim 光能直射脈衝，對最近的威脅展開超高速連射打擊。"
-                  },
-                  {
-                    id: "C2-929",
-                    name: "C2-929 蛇管工作燈",
-                    english: "Gooseneck Laser",
-                    stars: "★★★☆☆",
-                    speed: "★★★★☆",
-                    support: "★★★☆☆",
-                    desc: "利用靈活蛇管全方位自動鎖定周圍暗影怪物，發射自動追蹤的光束鏈。"
-                  },
-                  {
-                    id: "C2-932",
-                    name: "C2-932 夾式工作燈",
-                    english: "Clamp Slowing Field",
-                    stars: "★★★★☆",
-                    speed: "★☆☆☆☆",
-                    support: "★★★★★",
-                    desc: "在戰場中部署強力重壓光斑淨化力場，大幅減速並持續重創踏入力場內的所有怪物。"
-                  },
-                  {
-                    id: "C2-934",
-                    name: "C2-934 重型精準手持強光束",
-                    english: "Heavy Precision Beam",
-                    stars: "★★★★★",
-                    speed: "★☆☆☆☆",
-                    support: "★★☆☆☆",
-                    desc: "聚光超載發射一條毀滅性的穿透全螢幕超重型致命光炮，清除路徑上一切障礙。"
-                  }
-                ].map((robot) => {
-                  const count = collectedLamps[robot.id] || 0;
-                  const isCollected = count > 0;
-                  return (
-                    <div
-                      key={robot.id}
-                      className={`border p-3.5 flex flex-col justify-between rounded-lg transition-all relative overflow-hidden h-full ${
-                        isCollected
-                          ? "bg-zinc-900/80 border-emerald-500/50 shadow-lg shadow-emerald-950/20"
-                          : "bg-zinc-950/40 border-zinc-900 opacity-50"
-                      }`}
-                    >
-                      {/* Glowing active outline */}
-                      {isCollected && (
-                        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-500 animate-pulse" />
-                      )}
-
-                      {/* ID & Status badge */}
-                      <div className="flex justify-between items-center mb-2 font-mono">
-                        <span className={`text-[10px] font-black tracking-wider ${isCollected ? "text-emerald-400" : "text-zinc-600"}`}>
-                          {robot.id}
-                        </span>
-                        <span className={`text-[8px] px-1 py-0.5 rounded font-sans uppercase font-bold tracking-tight ${
-                          isCollected ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-900 text-zinc-600 border border-zinc-850"
-                        }`}>
-                          {isCollected ? `已召喚 x${count}` : "未配備"}
-                        </span>
-                      </div>
-
-                      {/* Robot 8-bit Image Screen */}
-                      <div className={`aspect-square w-full rounded border flex items-center justify-center p-2 mb-2 relative overflow-hidden ${
-                        isCollected 
-                          ? "bg-zinc-950 border-emerald-500/20" 
-                          : "bg-zinc-900/20 border-zinc-900"
-                      }`}>
-                        {/* Grid overlay */}
-                        <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none" />
-                        
-                        <img
-                          src={`https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-${robot.id}.png`}
-                          alt={robot.id}
-                          referrerPolicy="no-referrer"
-                          className={`w-14 h-14 object-contain transition-transform duration-300 ${
-                            isCollected ? "animate-bounce" : "grayscale opacity-20"
-                          }`}
-                        />
-
-                        {/* Locked Overlay */}
-                        {!isCollected && (
-                          <div className="absolute inset-0 flex items-center justify-center text-lg select-none text-zinc-800">
-                            🔒
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Meta info */}
-                      <div className="text-left flex-1 flex flex-col justify-between">
-                        <div>
-                          <h4 className={`text-[11px] font-black truncate leading-tight ${isCollected ? "text-white" : "text-zinc-600"}`}>
-                            {robot.name}
-                          </h4>
-                          <div className="text-[8px] font-mono text-zinc-500 uppercase tracking-widest truncate">{robot.english}</div>
-                        </div>
-
-                        {/* Stats details */}
-                        <div className="space-y-0.5 my-1.5 font-sans text-[8px] leading-none text-zinc-400">
-                          <div className="flex justify-between">
-                            <span>威力 (ATK):</span>
-                            <span className={isCollected ? "text-amber-500" : "text-zinc-600"}>{robot.stars}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>攻速 (SPD):</span>
-                            <span className={isCollected ? "text-sky-400" : "text-zinc-600"}>{robot.speed}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>輔助 (SUP):</span>
-                            <span className={isCollected ? "text-teal-400" : "text-zinc-600"}>{robot.support}</span>
-                          </div>
-                        </div>
-
-                        <p className={`text-[9px] leading-tight font-sans mt-1 text-zinc-400 border-t border-zinc-900 pt-1.5 line-clamp-3 ${isCollected ? "text-zinc-300" : "text-zinc-600"}`}>
-                          {robot.desc}
-                        </p>
-                      </div>
-
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Bottom Actions */}
-              <div className="border-t border-zinc-900 pt-3.5 flex items-center justify-between w-full font-mono text-xs">
-                <div className="text-left text-zinc-500 text-[10px] sm:text-xs font-sans max-w-sm hidden md:block leading-tight">
-                  💡 <b>溫馨提示：</b>點擊右下方按鈕，開始核心接駁程序。系統將根據收集的物資為您的主體裝配終極重裝機甲！
-                </div>
-                <button
-                  onClick={() => {
-                    triggerSound("click");
-                    setStage("ASSEMBLY");
-                  }}
-                  className="py-3 px-8 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-black tracking-widest uppercase cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-emerald-500/15 rounded-lg w-full md:w-auto"
-                >
-                  <span>進入機甲合體程序 (PROCEED TO ASSEMBLY)</span>
-                  <ChevronRight className="w-4 h-4 text-zinc-950" />
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 3. ASSEMBLY SEQUENCE MOUNT STATE */}
-      {stage === "ASSEMBLY" && (
-        <div className="flex-1 w-full overflow-hidden p-3 sm:p-6 select-none animate-fade-in flex flex-col justify-between">
-          <div className="flex flex-col items-center justify-between max-w-4xl mx-auto h-full w-full py-1">
-            <div className="text-center space-y-1">
-              <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
-                <Cpu className="w-3.5 h-3.5" />
-                <span>SCI ASSEMBLY SYSTEM</span>
-              </div>
-              <h2 className="text-lg sm:text-3xl font-black text-white tracking-wider leading-none">
-                燈燈機器人 (LAMPI ROBOT) 自動組裝程序
-              </h2>
-              <p className="text-[10px] sm:text-xs text-zinc-400 font-sans max-w-xl mx-auto line-clamp-1 sm:line-clamp-none">
-                收集到的所有 SCI 級工業工作燈已順利運抵軌道接駁庫。系統正根據本局收集的燈具配置裝配戰鬥機甲外裝！
-              </p>
+      {/* 2.5 MODIFICATION MATERIAL REPORT */}
+      {stage === "REPORT" && (
+        <div className="flex-1 w-full overflow-hidden p-3 sm:p-6 select-none">
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-emerald-500/25 bg-zinc-950/95 p-4 sm:p-6">
+            <div className="text-center">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300"><Award className="h-4 w-4" />改裝素材回收完成</div>
+              <h2 className="mt-2 text-2xl font-black text-white sm:text-4xl">C2-932 素材結算</h2>
+              <p className="mt-2 text-xs text-zinc-400">本次取得的素材不會在關卡中直接改變機器人；返回實驗室後才能安裝或升級模組。</p>
             </div>
 
-            {/* Mobile Tabs */}
-            <div className="flex md:hidden w-full border-b border-zinc-800 mt-2">
+            <div className="mt-4 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-4">
+              {MATERIAL_IDS.map((id) => (
+                <div key={id} className="flex min-h-20 flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/55 p-3 text-center">
+                  <span className="text-2xl" style={{ color: MATERIAL_CONFIG[id].color }}>{MATERIAL_CONFIG[id].icon}</span>
+                  <span className="mt-1 text-xs font-bold text-zinc-300">{MATERIAL_CONFIG[id].name}</span>
+                  <b className="mt-1 text-xl text-white">× {collectedMaterials[id]}</b>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
-                onClick={() => setAssemblyTab("lamps")}
-                className={`flex-1 py-1.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
-                  assemblyTab === "lamps" 
-                    ? "border-amber-500 text-amber-400" 
-                    : "border-transparent text-zinc-500 hover:text-zinc-300"
-                }`}
+                onClick={() => { bankCollectedMaterials(); onReturnToLab(selectedChapter); }}
+                className="min-h-12 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 text-sm font-black text-cyan-200"
               >
-                📂 收集物資報告
+                儲存素材並返回實驗室
               </button>
               <button
-                onClick={() => setAssemblyTab("specs")}
-                className={`flex-1 py-1.5 text-xs font-bold transition-all border-b-2 cursor-pointer ${
-                  assemblyTab === "specs" 
-                    ? "border-cyan-500 text-cyan-400" 
-                    : "border-transparent text-zinc-500 hover:text-zinc-300"
-                }`}
+                onClick={() => { bankCollectedMaterials(); startBossWarning(); }}
+                className="min-h-12 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-4 text-sm font-black text-zinc-950"
               >
-                📊 機甲核心戰力
+                使用目前實驗室改裝繼續挑戰
               </button>
-            </div>
-
-            <div className="w-full flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mt-3 overflow-hidden">
-              {/* Left Box: Blueprints & collected details */}
-              <div className={`bg-zinc-900/60 border border-zinc-800 p-3 sm:p-5 rounded flex flex-col justify-between overflow-hidden ${assemblyTab === "lamps" ? "flex" : "hidden md:flex"}`}>
-                <div className="overflow-hidden flex flex-col h-full justify-between">
-                  <h3 className="text-[10px] sm:text-xs font-bold text-amber-500 border-b border-zinc-800 pb-1.5">
-                    📂 收集物資報告及裝備卡位
-                  </h3>
-
-                  <div className="space-y-1.5 sm:space-y-3 my-2 overflow-y-auto max-h-[140px] xs:max-h-[170px] md:max-h-none pr-1">
-                    {Object.keys(collectedLamps).map((wId) => {
-                      const amt = collectedLamps[wId] || 0;
-                      const details = WEAPONS_INFO[wId];
-                      return (
-                        <div key={wId} className="flex items-center justify-between p-1.5 sm:p-2.5 bg-zinc-950 border border-zinc-800/80 rounded">
-                          <div className="space-y-0.5">
-                            <div className="text-[10px] sm:text-xs font-bold text-white">{wId}</div>
-                            <div className="text-[8px] sm:text-[10px] text-zinc-400 font-sans">{details.name}</div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] sm:text-[10px] text-zinc-500 font-sans">裝配數:</span>
-                            <span className="px-1.5 py-0.5 bg-amber-500 text-zinc-950 font-black text-[10px] sm:text-xs rounded">{amt} 支</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Dynamic summary mecha type */}
-                  <div className="p-2 bg-zinc-950 border border-zinc-800/50 rounded font-sans text-[10px] sm:text-xs">
-                    <span className="font-bold text-cyan-400">裝配評估結果：</span>
-                    <span className="text-zinc-300">
-                      {collectedLamps["C2-927"] > collectedLamps["C2-928"] 
-                        ? "雙臂搭載大容量 Foldable 泛光極光炮，極致扇形淨化能力！" 
-                        : "高速發射多道微型 Slim 直射脈衝，攻速非凡！"
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Box: Dynamic specs of assembled robot */}
-              <div className={`bg-zinc-900/60 border border-zinc-800 p-3 sm:p-5 rounded flex flex-col justify-between overflow-hidden ${assemblyTab === "specs" ? "flex" : "hidden md:flex"}`}>
-                <div className="overflow-hidden flex flex-col h-full justify-between">
-                  <div>
-                    <h3 className="text-[10px] sm:text-xs font-bold text-cyan-400 border-b border-zinc-800 pb-1.5">
-                      📊 機甲核心戰力參數 (MECHA SPECS)
-                    </h3>
-
-                    <div className="space-y-2 sm:space-y-4 mt-2 font-sans text-[10px] sm:text-xs">
-                      {/* Custom progress bars */}
-                      <div>
-                        <div className="flex justify-between text-zinc-400 text-[9px] sm:text-[11px] mb-0.5 sm:mb-1">
-                          <span>護盾能量上限 (HEALTH RESISTANCE)</span>
-                          <span className="text-white font-bold">{100 + totalCollectedCount * 15} HP</span>
-                        </div>
-                        <div className="w-full bg-zinc-950 h-1.5 sm:h-2 rounded overflow-hidden">
-                          <div className="bg-rose-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, 40 + totalCollectedCount * 8)}%` }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-zinc-400 text-[9px] sm:text-[11px] mb-0.5 sm:mb-1">
-                          <span>泛光衝擊傷害 (FLOOD IMPACT)</span>
-                          <span className="text-white font-bold">Lv.{collectedLamps["C2-927"]}</span>
-                        </div>
-                        <div className="w-full bg-zinc-950 h-1.5 sm:h-2 rounded overflow-hidden">
-                          <div className="bg-orange-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, collectedLamps["C2-927"] * 20)}%` }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-zinc-400 text-[9px] sm:text-[11px] mb-0.5 sm:mb-1">
-                          <span>多重尋向蛇管雷射 (GOOSENECK LASERS)</span>
-                          <span className="text-white font-bold">{collectedLamps["C2-929"]} 束雷射線</span>
-                        </div>
-                        <div className="w-full bg-zinc-950 h-1.5 sm:h-2 rounded overflow-hidden">
-                          <div className="bg-emerald-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, collectedLamps["C2-929"] * 25)}%` }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-zinc-400 text-[9px] sm:text-[11px] mb-0.5 sm:mb-1">
-                          <span>力場部署能力 (SLOWING FIELDS)</span>
-                          <span className="text-white font-bold">{collectedLamps["C2-932"] > 0 ? "已開通" : "未部署"}</span>
-                        </div>
-                        <div className="w-full bg-zinc-950 h-1.5 sm:h-2 rounded overflow-hidden">
-                          <div className="bg-amber-500 h-full transition-all duration-700" style={{ width: `${collectedLamps["C2-932"] > 0 ? 100 : 0}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => { triggerSound("click"); setShowBossTipModal(true); }}
-                    className="w-full py-2 xs:py-2.5 sm:py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-zinc-950 font-black text-xs sm:text-sm tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 mt-3 active:scale-95 transition-all shadow-lg shadow-cyan-500/10 rounded"
-                  >
-                    <Cpu className="w-3.5 h-3.5 text-zinc-950" />
-                    <span>部署機甲・迎戰黑暗首領</span>
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* 3. C2-932 INSTALLED LOADOUT */}
+      {stage === "ASSEMBLY" && (
+        <div className="flex-1 w-full overflow-hidden p-3 sm:p-6">
+          <div className="mx-auto grid h-full max-w-5xl grid-cols-1 overflow-hidden rounded-2xl border border-cyan-500/25 bg-zinc-950/95 md:grid-cols-[38%_1fr]">
+            <div className="flex items-center justify-center border-b border-zinc-800 bg-cyan-950/15 p-4 md:border-b-0 md:border-r">
+              <img src={ROBOT_CONFIG.c2_932.portrait} alt="C2-932" className="h-full max-h-[420px] w-full object-contain [image-rendering:pixelated]" />
+            </div>
+            <div className="flex min-h-0 flex-col p-4 sm:p-6">
+              <div><span className="text-xs font-black tracking-widest text-cyan-400">LAB LOADOUT</span><h2 className="text-3xl font-black text-white">C2-932 已安裝改裝</h2><p className="mt-1 text-xs text-zinc-400">Boss 戰只會套用出發前已在實驗室完成的改裝。</p></div>
+              <div className="mt-4 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto">
+                {ROBOT_UPGRADE_IDS.map((id) => (
+                  <div key={id} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-2">
+                    <div className="text-xs font-bold text-zinc-300">{ROBOT_UPGRADE_CONFIG[id].icon} {ROBOT_UPGRADE_CONFIG[id].name}</div>
+                    <div className="mt-1 text-sm font-black text-cyan-300">Lv.{robotUpgrades[id]}</div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={prepareRobotDeployment} className="mt-4 min-h-12 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-sm font-black text-zinc-950">確認 C2-932 出擊配置</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stage === "ROBOT_DEPLOYMENT" && robotSelection && (
+        <div className="flex-1 w-full min-h-0 overflow-hidden bg-zinc-950 p-3 sm:p-6">
+          <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-cyan-500/35 bg-zinc-950 md:flex-row">
+            <div className="flex h-[38vh] items-center justify-center border-b border-cyan-500/20 bg-cyan-950/20 p-4 md:h-full md:w-[43%] md:border-b-0 md:border-r">
+              <img src={ROBOT_CONFIG.c2_932.portrait} alt="C2-932" className="h-full w-full object-contain [image-rendering:pixelated]" />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-7">
+              <span className="text-xs font-black tracking-[0.25em] text-cyan-400">ROBOT DEPLOYMENT</span>
+              <h2 className="mt-1 text-4xl font-black text-white">C2-932</h2>
+              <p className="mt-3 text-sm leading-relaxed text-zinc-300">{ROBOT_CONFIG.c2_932.description}</p>
+              <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
+                <h3 className="text-xs font-black text-cyan-300">實驗室改裝狀態</h3>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {ROBOT_UPGRADE_IDS.filter((id) => robotUpgrades[id] > 0).map((id) => (
+                    <div key={id} className="rounded border border-zinc-700 bg-zinc-950 p-2 text-xs text-zinc-300">{ROBOT_UPGRADE_CONFIG[id].name} <b className="text-cyan-300">Lv.{robotUpgrades[id]}</b></div>
+                  ))}
+                </div>
+                {!robotSelection.fullyUnlocked && <p className="mt-3 text-xs text-amber-300">尚未安裝改裝模組，將使用 C2-932 標準配置出擊。</p>}
+              </div>
+              <button onClick={startBossWarning} className="mt-4 min-h-12 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-base font-black text-zinc-950">確定出擊</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 4. BOSS BATTLE STATE */}
       {stage === "BOSSBATTLE" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none">
@@ -4389,125 +4254,22 @@ export function MissionGame({
             </div>
           </div>
 
-          {/* Core Boss Arena Canvas & Support Squad HUD Layout */}
-          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-2 sm:p-4 relative overflow-hidden">
-            {(() => {
-              const collectedCompanionIDs = ["C2-927", "C2-928", "C2-929", "C2-932", "C2-934"].filter((id) => (collectedLamps[id] || 0) > 0);
-              return (
-                <div className="w-full max-w-[1150px] flex flex-col lg:flex-row items-stretch justify-center gap-3 sm:gap-4 h-full">
-                  
-                  {/* Left Side: Game Canvas */}
-                  <div className="flex-1 flex items-center justify-center relative">
-                    <canvas 
-                      ref={canvasRef} 
-                      width={isMobile ? 500 : 1000} 
-                      height={isMobile ? 750 : 550} 
-                      className={
-                        isMobile 
-                          ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded" 
-                          : "max-w-full max-h-[580px] md:max-h-[660px] border border-zinc-800 bg-zinc-950 aspect-[10/5.5] shadow-2xl rounded"
-                      }
-                    />
-                  </div>
-
-                  {/* Right Side: Deployed Support Squad HUD */}
-                  <div className="w-full lg:w-[260px] flex flex-col bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-2.5 sm:p-3 select-none justify-between flex-shrink-0">
-                    <div className="text-left mb-2 border-b border-zinc-850 pb-1.5 flex justify-between items-center">
-                      <div>
-                        <h4 className="text-[11px] sm:text-[12px] font-black text-white uppercase tracking-wider font-mono">已部署支援小隊</h4>
-                        <p className="text-[8px] sm:text-[9px] text-zinc-500 font-mono tracking-widest leading-none mt-0.5">DEPLOYED SUPPORT SQUAD</p>
-                      </div>
-                      <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-black px-1.5 py-0.5 rounded font-mono">
-                        {collectedCompanionIDs.length}機
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 overflow-y-auto max-h-[160px] lg:max-h-[380px] pr-1 scrollbar-thin scrollbar-thumb-zinc-800">
-                      {[
-                        {
-                          id: "C2-927",
-                          name: "C2-927 摺疊式泛光手電筒",
-                          skill: "120° 寬幅扇形極光淨化",
-                          textColor: "text-orange-400"
-                        },
-                        {
-                          id: "C2-928",
-                          name: "C2-928 輕巧型直射手電筒",
-                          skill: "高能直射脈衝高速連射",
-                          textColor: "text-cyan-400"
-                        },
-                        {
-                          id: "C2-929",
-                          name: "C2-929 蛇管工作燈",
-                          skill: "全方位自動追蹤雷射鏈",
-                          textColor: "text-emerald-400"
-                        },
-                        {
-                          id: "C2-932",
-                          name: "C2-932 夾式工作燈",
-                          skill: "強力慢速重壓淨化力場",
-                          textColor: "text-blue-400"
-                        },
-                        {
-                          id: "C2-934",
-                          name: "C2-934 重型精準手持強光束",
-                          skill: "穿透性全螢幕超重型光炮",
-                          textColor: "text-rose-400"
-                        }
-                      ].map((mech) => {
-                        const isDeployed = (collectedLamps[mech.id] || 0) > 0;
-                        return (
-                          <div 
-                            key={mech.id} 
-                            className={`p-1.5 sm:p-2 border rounded-lg transition-all ${
-                              isDeployed 
-                                ? "bg-zinc-950/80 border-zinc-800/80 hover:border-zinc-700/60" 
-                                : "bg-zinc-950/10 border-zinc-900/40 opacity-25"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className={`w-8 h-8 rounded bg-zinc-950 border flex items-center justify-center p-1 relative overflow-hidden flex-shrink-0 ${
-                                isDeployed ? "border-zinc-800" : "border-zinc-950"
-                              }`}>
-                                <img
-                                  src={`https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot-RB/G-${mech.id}.png`}
-                                  className={`w-6 h-6 object-contain ${isDeployed ? "" : "grayscale"}`}
-                                  referrerPolicy="no-referrer"
-                                  alt={mech.id}
-                                />
-                                {!isDeployed && <div className="absolute inset-0 bg-zinc-950/40 flex items-center justify-center text-[8px]">🔒</div>}
-                              </div>
-                              <div className="flex-1 text-left min-w-0">
-                                <div className="flex justify-between items-center leading-none">
-                                  <span className={`text-[8px] sm:text-[9px] font-black font-mono tracking-wide ${isDeployed ? mech.textColor : "text-zinc-600"}`}>
-                                    {mech.id}
-                                  </span>
-                                  <span className={`text-[7px] px-1 py-0.5 rounded font-black font-sans uppercase leading-none ${
-                                    isDeployed ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-950 text-zinc-700"
-                                  }`}>
-                                    {isDeployed ? "ONLINE" : "OFFLINE"}
-                                  </span>
-                                </div>
-                                <h5 className={`text-[9px] sm:text-[10px] font-extrabold truncate mt-0.5 ${isDeployed ? "text-white" : "text-zinc-600"}`}>
-                                  {isDeployed ? mech.name.split(" ")[1] : "未配備"}
-                                </h5>
-                                <p className="text-[7.5px] sm:text-[8px] text-zinc-500 truncate leading-none mt-0.5">{mech.skill}</p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="border-t border-zinc-850 pt-2 mt-2 text-[8px] text-zinc-500 text-left leading-relaxed">
-                      ⚠️ <b>系統提示：</b><br />
-                      最終決戰中已部署以上支援小隊。由於全模組外觀整合中，場中機器人造型目前皆暫以 <b>C2-932</b> 渲染。
-                    </div>
-                  </div>
-
-                </div>
-              );
-            })()}
+          {/* Expanded Boss Arena */}
+          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-1.5 sm:p-2 relative overflow-hidden">
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="w-full h-full flex items-center justify-center relative">
+                <canvas
+                  ref={canvasRef}
+                  width={isMobile ? 500 : 1400}
+                  height={isMobile ? 750 : 700}
+                  className={
+                    isMobile
+                      ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
+                      : "w-full h-auto max-w-[1400px] max-h-full border border-zinc-800 bg-zinc-950 aspect-[2/1] shadow-2xl rounded"
+                  }
+                />
+              </div>
+            </div>
           </div>
 
           {/* Bottom Game Controls Dock for Boss Battle */}
@@ -4912,7 +4674,7 @@ export function MissionGame({
       </div>
 
       {/* 🛠️ BOSS CONTROL OPERATIONS MODAL OVERLAY */}
-      {showBossTipModal && (
+      {false && showBossTipModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-55 flex items-center justify-center p-3 sm:p-5 select-none animate-fade-in">
           <div className="bg-zinc-950 border border-cyan-500/50 w-full max-w-xl p-5 sm:p-6 rounded-lg shadow-[0_0_40px_rgba(6,182,212,0.15)] space-y-4 max-h-[95vh] overflow-y-auto z-[100]">
             
@@ -5025,7 +4787,7 @@ export function MissionGame({
               <button
                 onClick={() => {
                   setShowBossTipModal(false);
-                  startBossBattle();
+                  startBossWarning();
                 }}
                 className="flex-1 py-2.5 text-xs font-bold text-zinc-950 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 border-none rounded transition active:scale-95 cursor-pointer shadow-lg shadow-cyan-500/20 text-center flex items-center justify-center gap-1"
               >

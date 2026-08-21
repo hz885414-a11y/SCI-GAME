@@ -48,7 +48,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     if (isMusicMuted || !userInteracted) {
       stopBackgroundMusic();
     } else {
-      startBackgroundMusic();
+      startBackgroundMusic("theme");
     }
   }, [userInteracted, isMusicMuted]);
 
@@ -68,14 +68,20 @@ export const StartScreen: React.FC<StartScreenProps> = ({
       if (isMusicMuted) {
         onMusicMuteToggle(false);
       }
+      startBackgroundMusic("theme");
     } else {
-      onMusicMuteToggle(!isMusicMuted);
+      const nextMuted = !isMusicMuted;
+      onMusicMuteToggle(nextMuted);
+      if (!nextMuted) {
+        startBackgroundMusic("theme");
+      }
     }
   };
 
   const handleStartClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering container click again
     playSound("click");
+    startBackgroundMusic("normal");
     onStart();
   };
 
@@ -127,18 +133,15 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <span>PROJECT: LIGHT-UNIT-7 // BOOT_LOADER</span>
         </div>
 
-        {/* Gorgeous Sci-fi Glowing Title */}
-        <div className="relative group">
-          <h1 
-            className={`text-2xl xs:text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-zinc-100 to-zinc-400 transition-all duration-300 whitespace-nowrap ${glitchTitle ? "skew-x-6 text-red-500" : ""}`}
-            style={{ fontFamily: "'Noto Sans TC', sans-serif", fontWeight: 900 }}
-          >
-            勇氣の燈燈小隊
-          </h1>
-          <h2 className="text-[10px] sm:text-xs md:text-sm lg:text-base font-bold tracking-[0.08em] text-amber-400 mt-2.5 filter drop-shadow-[0_0_8px_rgba(245,158,11,0.4)] whitespace-nowrap">
-            Light Squad: Another Day on Site
-          </h2>
-          <div className="absolute -inset-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 opacity-20 blur-xl group-hover:opacity-30 transition-all duration-500 pointer-events-none" />
+        {/* Main title */}
+        <div className="relative">
+          <img
+            src="https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/Main%20Title.png"
+            alt="勇氣の燈燈小隊"
+            className={`w-full max-w-[520px] sm:max-w-[620px] h-auto max-h-[28vh] sm:max-h-[36vh] mx-auto object-contain transition-all duration-300 ${glitchTitle ? "skew-x-3" : ""}`}
+            loading="eager"
+            draggable={false}
+          />
         </div>
 
         {/* Short atmospheric description */}

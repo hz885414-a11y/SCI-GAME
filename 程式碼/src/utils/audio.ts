@@ -332,6 +332,50 @@ let bgmAudio: HTMLAudioElement | null = null;
 let bgmVolume = 50; // 0 to 100, default 50
 let isBgmPlaying = false;
 let isBgmMuted = false;
+let currentMusicTrack: MusicTrack | null = null;
+let requestedMusicTrack: MusicTrack = "normal";
+let musicFadeTimer: ReturnType<typeof setInterval> | null = null;
+let musicFadeGeneration = 0;
+
+export const MUSIC_ASSETS = {
+  normal: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/With%20the%20Stars-V2.mp3?v=aab277fcd9bcef9bc2042d4aff079680f1c4f613",
+  theme: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/Theme%20Song.mp3?v=a8bda172a58a3d3af53ce3c877669350d88c60d8"
+} as const;
+
+export type MusicTrack = keyof typeof MUSIC_ASSETS;
+
+const MUSIC_FADE_DURATION_MS = 360;
+const MUSIC_FADE_STEPS = 12;
+
+function getMusicTargetVolume() {
+  return (bgmVolume / 100) * 0.4;
+}
+
+function cancelMusicFade() {
+  if (musicFadeTimer) {
+    clearInterval(musicFadeTimer);
+    musicFadeTimer = null;
+  }
+  musicFadeGeneration += 1;
+}
+
+function fadeMusicTo(targetVolume: number, onComplete?: () => void) {
+  if (!bgmAudio) return;
+  cancelMusicFade();
+  const generation = musicFadeGeneration;
+  const startVolume = bgmAudio.volume;
+  let step = 0;
+  musicFadeTimer = setInterval(() => {
+    if (!bgmAudio || generation !== musicFadeGeneration) return;
+    step += 1;
+    const progress = Math.min(1, step / MUSIC_FADE_STEPS);
+    bgmAudio.volume = startVolume + (targetVolume - startVolume) * progress;
+    if (progress >= 1) {
+      cancelMusicFade();
+      onComplete?.();
+    }
+  }, MUSIC_FADE_DURATION_MS / MUSIC_FADE_STEPS);
+}
 
 // Initial sync on module load
 try {
@@ -349,59 +393,76 @@ try {
 
 export function setMusicVolume(vol: number) {
   bgmVolume = vol;
-  if (bgmAudio) {
-    // Scale volume slightly so 100% on the slider is well-balanced (max 0.4 volume)
-    bgmAudio.volume = (vol / 100) * 0.4;
+  if (bgmAudio && !musicFadeTimer) {
+    bgmAudio.volume = getMusicTargetVolume();
   }
 }
 
 export function setMusicMuteState(muted: boolean) {
   isBgmMuted = muted;
   if (muted) {
-    if (bgmAudio) {
-      bgmAudio.pause();
-    }
-  } else {
-    if (isBgmPlaying) {
-      startBackgroundMusic();
-    }
+    cancelMusicFade();
+    bgmAudio?.pause();
+  } else if (isBgmPlaying) {
+    startBackgroundMusic(requestedMusicTrack);
   }
 }
 
-export function startBackgroundMusic() {
+export function startBackgroundMusic(track: MusicTrack = requestedMusicTrack) {
   isBgmPlaying = true;
+  requestedMusicTrack = track;
   if (isBgmMuted) return;
 
   if (!bgmAudio) {
     bgmAudio = new Audio();
     bgmAudio.loop = true;
-    bgmAudio.volume = (bgmVolume / 100) * 0.4;
-    
-    // First, attempt to play a local user-uploaded BGM file
-    bgmAudio.src = "/BGM.mp3";
-    
-    // Register fallback handler if local file fails or doesn't exist yet
+    bgmAudio.preload = "auto";
+    bgmAudio.volume = 0;
     bgmAudio.onerror = () => {
-      if (bgmAudio && bgmAudio.src.toLowerCase().includes("bgm.mp3")) {
-        console.log("Local BGM.mp3 not found or failed, falling back to Mixkit Space Ambient track...");
-        bgmAudio.src = "https://assets.mixkit.co/music/preview/mixkit-space-ambient-583.mp3";
-        bgmAudio.volume = (bgmVolume / 100) * 0.4;
-        bgmAudio.play().catch(err => {
-          console.warn("Fallback background music play blocked or failed:", err);
-        });
+      if (requestedMusicTrack !== "normal") {
+        console.warn("Theme music failed to load; returning to the normal music fallback.");
+        currentMusicTrack = null;
+        startBackgroundMusic("normal");
       }
     };
   }
 
-  bgmAudio.volume = (bgmVolume / 100) * 0.4;
-  bgmAudio.play().catch(err => {
-    console.warn("Background music play blocked or failed:", err);
-  });
+  if (currentMusicTrack === track && bgmAudio.src) {
+    if (bgmAudio.paused) {
+      bgmAudio.play().catch(err => {
+        console.warn("Background music play blocked or failed:", err);
+      });
+    }
+    fadeMusicTo(getMusicTargetVolume());
+    return;
+  }
+
+  const switchTrack = () => {
+    if (!bgmAudio || requestedMusicTrack !== track || isBgmMuted) return;
+    cancelMusicFade();
+    bgmAudio.pause();
+    bgmAudio.src = MUSIC_ASSETS[track];
+    bgmAudio.currentTime = 0;
+    bgmAudio.volume = 0;
+    currentMusicTrack = track;
+    bgmAudio.load();
+    bgmAudio.play()
+      .then(() => fadeMusicTo(getMusicTargetVolume()))
+      .catch(err => {
+        console.warn("Background music play blocked or failed:", err);
+      });
+  };
+
+  if (!bgmAudio.paused && bgmAudio.volume > 0.01) {
+    fadeMusicTo(0, switchTrack);
+  } else {
+    switchTrack();
+  }
 }
 
 export function stopBackgroundMusic() {
   isBgmPlaying = false;
   if (bgmAudio) {
-    bgmAudio.pause();
+    fadeMusicTo(0, () => bgmAudio?.pause());
   }
 }

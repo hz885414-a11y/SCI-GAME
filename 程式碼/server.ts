@@ -106,19 +106,6 @@ async function startServer() {
     }
   });
 
-  // Serve the uploaded BGM file from the project root directory
-  app.get(["/BGM.mp3", "/bgm.mp3"], (req, res) => {
-    const bgmPath = path.join(process.cwd(), "BGM.mp3");
-    res.sendFile(bgmPath, (err) => {
-      if (err) {
-        console.warn("[BGM Error] Could not serve BGM.mp3 from root:", err.message);
-        if (!res.headersSent) {
-          res.status(404).send("BGM file not found");
-        }
-      }
-    });
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
