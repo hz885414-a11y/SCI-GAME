@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sliders } from "lucide-react";
 
 interface SupplyDivisionProps {
@@ -24,6 +24,17 @@ export function SupplyDivision({
     cost: number;
     currentLvl: number;
   } | null>(null);
+  const [recentlyUpgraded, setRecentlyUpgraded] = useState<string | null>(null);
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recentlyUpgraded) return;
+    const timer = window.setTimeout(() => {
+      setRecentlyUpgraded(null);
+      setUpgradeNotice(null);
+    }, 1100);
+    return () => window.clearTimeout(timer);
+  }, [recentlyUpgraded]);
 
   const upgradeItems = [
     {
@@ -114,16 +125,16 @@ export function SupplyDivision({
       </div>
 
       {/* MECHA UPGRADES SHOP */}
-      <div className="w-full flex-1 min-h-0 overflow-y-auto pb-4 animate-fade-in flex flex-col space-y-4">
+      <div className="w-full flex-1 min-h-0 overflow-y-auto pb-4 animate-fade-in flex flex-col space-y-3">
         
         {/* Header / Intro Card */}
-        <div className="bg-zinc-900/40 border border-zinc-850 p-3.5 rounded relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
+        <div className="bg-zinc-900/40 border border-zinc-850 px-3.5 py-2.5 rounded relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
           <div className="space-y-1">
-            <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-              <Sliders className="w-4 h-4 text-amber-500" />
+            <h3 className="text-[18px] leading-tight font-bold text-white flex items-center gap-2">
+              <Sliders className="w-[18px] h-[18px] text-amber-500" />
               <span>特工機甲戰備物資強化</span>
             </h3>
-            <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
+            <p className="text-[13px] text-zinc-400 font-sans leading-snug">
               消耗收集的 <b>金幣 🪙</b> 升級特工核心硬體。升級項目將直接在「任務遊戲」中生效，幫助小隊突破更深層的黑暗戰區！
             </p>
           </div>
@@ -139,7 +150,7 @@ export function SupplyDivision({
         </div>
 
         {/* Upgrades Items Catalog */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {upgradeItems.map((upgrade) => {
             const currentLvl = purchasedUpgrades[upgrade.id] || 0;
             const cost = getUpgradeCost(upgrade.id, currentLvl);
@@ -148,29 +159,33 @@ export function SupplyDivision({
             return (
               <div 
                 key={upgrade.id}
-                className="bg-zinc-950 border border-zinc-850 hover:border-zinc-800 p-4 rounded flex flex-col justify-between space-y-3 transition-colors relative group animate-fade-in"
+                className={`bg-zinc-950 border px-3.5 py-3 rounded flex flex-col justify-between gap-2 transition-all duration-300 relative group animate-fade-in ${
+                  recentlyUpgraded === upgrade.id
+                    ? "scale-[1.025] border-emerald-300 bg-emerald-950/35 shadow-[0_0_28px_rgba(52,211,153,0.45)]"
+                    : "border-zinc-850 hover:border-zinc-800"
+                }`}
               >
                 {/* Badge */}
-                <div className="absolute top-2.5 right-2.5 text-[8px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-850 px-1.5 py-0.5 rounded uppercase">
+                <div className="absolute top-2.5 right-2.5 text-[9px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-850 px-1.5 py-0.5 rounded uppercase">
                   {upgrade.code}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl p-1.5 bg-zinc-900 border border-zinc-850 rounded leading-none select-none">{upgrade.icon}</span>
+                    <span className="text-xl p-1.5 bg-zinc-900 border border-zinc-850 rounded leading-none select-none">{upgrade.icon}</span>
                     <div>
-                      <h4 className="text-xs font-bold text-white leading-tight">{upgrade.name}</h4>
-                      <span className="text-[9px] text-zinc-500 font-mono font-bold">LEVEL {currentLvl} / 5</span>
+                      <h4 className="text-[15px] font-bold text-white leading-tight">{upgrade.name}</h4>
+                      <span className="text-[11px] text-zinc-500 font-mono font-bold">LEVEL {currentLvl} / 5</span>
                     </div>
                   </div>
 
-                  <p className="text-[10px] text-zinc-400 font-sans leading-relaxed min-h-[40px]">
+                  <p className="text-[12px] text-zinc-400 font-sans leading-snug min-h-[32px]">
                     {upgrade.desc}
                   </p>
 
                   {/* Attribute bar indicator */}
                   <div className="space-y-1">
-                    <div className="text-[9px] text-zinc-500 flex justify-between font-mono font-bold">
+                    <div className="text-[11px] text-zinc-500 flex justify-between gap-2 font-mono font-bold">
                       <span>設備加成效益:</span>
                       <span className="text-amber-500">{upgrade.effect}</span>
                     </div>
@@ -192,7 +207,7 @@ export function SupplyDivision({
                 <button
                   disabled={isMax}
                   onClick={() => handleBuyUpgradeClick(upgrade.id)}
-                  className={`w-full py-2.5 border font-extrabold text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer rounded ${
+                  className={`w-full py-2 border font-extrabold text-[12px] leading-tight tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer rounded ${
                     isMax 
                       ? "bg-zinc-900 border-zinc-850 text-zinc-600 cursor-not-allowed" 
                       : coins >= cost 
@@ -268,15 +283,27 @@ export function SupplyDivision({
                     localStorage.setItem("light_crew_upgrades", JSON.stringify(updated));
                     return updated;
                   });
-                  playSound("success");
+                  setRecentlyUpgraded(confirmItem.id);
+                  setUpgradeNotice(`${confirmItem.icon} ${confirmItem.name} 升級成功！ LEVEL ${confirmItem.currentLvl + 1}`);
+                  playSound("upgradeSuccess");
                   setConfirmItem(null);
                 }}
-                className="flex-1 py-2 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 border border-amber-400 hover:text-black rounded transition active:scale-95 cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 border border-amber-400 hover:text-black rounded transition active:scale-90 active:brightness-125 cursor-pointer"
               >
                 確定 (CONFIRM)
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {upgradeNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 top-24 z-[60] -translate-x-1/2 animate-fade-in border border-emerald-300 bg-zinc-950/95 px-5 py-3 text-sm font-black text-emerald-300 shadow-[0_0_28px_rgba(52,211,153,0.5)]"
+        >
+          ✓ {upgradeNotice}
         </div>
       )}
 

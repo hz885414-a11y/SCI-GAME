@@ -24,6 +24,13 @@ import {
   type MaterialInventory,
   type RobotUpgradeLevels
 } from "../data/modificationSystem";
+import {
+  applyCollectFeedback,
+  applyDeathFeedback,
+  applyHitFeedback,
+  getHitRenderOffset,
+  triggerCameraShake,
+} from "../utils/gameFeedback";
 interface MissionGameProps {
   onClose: () => void;
   onReturnToLab: (chapter: number) => void;
@@ -41,10 +48,43 @@ interface MissionGameProps {
 }
 
 type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER";
+type EnemyType = "mote" | "clumper" | "stalker";
+
+interface EnemyEntity {
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  radius: number;
+  color: string;
+  type: EnemyType;
+  points: number;
+  facingLeft: boolean;
+  hitFlashUntil?: number;
+  hitOffsetX?: number;
+  hitOffsetY?: number;
+}
+
+interface EnemyDeathEffect {
+  x: number;
+  y: number;
+  radius: number;
+  type: EnemyType;
+  facingLeft: boolean;
+  life: number;
+  maxLife: number;
+}
 
 const C2_932_PUNCHES_REQUIRED = 3;
 const C2_932_FIELD_DURATION_MS = 3000;
 const C2_932_FIELD_RADIUS = 145;
+
+const ENEMY_SPRITE_URLS: Record<EnemyType, string> = {
+  mote: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-Jellyfish-04.png",
+  clumper: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-Spiky%20ball.png",
+  stalker: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-ghost.png",
+};
 
 interface Agent {
   id: string;
@@ -191,6 +231,21 @@ const WEAPONS_INFO: Record<string, WeaponInfo> = {
   heavy_beam: { id: "heavy_beam", name: "重型光砲", desc: "C2-932 的高能聚焦光束。", lowEffect: "單體聚焦光柱", highEffect: "重型穿透光砲" }
 };
 
+const LIGHT_ATTACK_PROFILES = {
+  LOW: {
+    range: 140,
+    fanSize: Math.PI / 2.4,
+    lightRange: 300,
+    lightFanSize: Math.PI / 2.2,
+  },
+  HIGH: {
+    range: 280,
+    fanSize: Math.PI * 0.75,
+    lightRange: 460,
+    lightFanSize: Math.PI * 0.8,
+  },
+} as const;
+
 export function MissionGame({ 
   onClose, 
   onReturnToLab,
@@ -223,9 +278,11 @@ export function MissionGame({
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
 
   const handleConfirmTip = () => {
+    keysRef.current = {};
     setShowTipModal(false);
     setStartTitleActive(true);
     triggerSound("click");
+    window.requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
     setTimeout(() => {
       setStartTitleActive(false);
     }, 1500);
@@ -270,6 +327,7 @@ export function MissionGame({
   // Upgrades overlay choice
   const [showUpgradeChoice, setShowUpgradeChoice] = useState<boolean>(false);
   const [upgradeChoices, setUpgradeChoices] = useState<Array<{ id: string; type: "weapon" | "stat"; name: string; desc: string; icon: string }>>([]);
+  const [selectedUpgradeIndex, setSelectedUpgradeIndex] = useState(0);
 
   // Boss Battle HUD States
   const [bossHp, setBossHp] = useState<number>(100);
@@ -291,6 +349,7 @@ export function MissionGame({
     resumeBossChapter ? createC2932Deployment(robotUpgrades) : null
   );
   const c2932SkillRef = useRef({ punchCount: 0, fieldEndsAt: 0 });
+  const victoryPendingRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -299,6 +358,7 @@ export function MissionGame({
 
   // Refs for low latency canvas rendering and keyboard management
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const gameRootRef = useRef<HTMLDivElement | null>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -310,6 +370,7 @@ export function MissionGame({
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
   const [spriteLoaded, setSpriteLoaded] = useState<boolean>(false);
   const playerFacingLeftRef = useRef<boolean>(false);
+  const enemySpriteImagesRef = useRef<Partial<Record<EnemyType, HTMLImageElement>>>({});
 
   const bossRobotSpriteImgRef = useRef<HTMLImageElement | null>(null);
   const [bossRobotSpriteLoaded, setBossRobotSpriteLoaded] = useState<boolean>(false);
@@ -319,6 +380,32 @@ export function MissionGame({
 
   const companionRobotImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const [companionsLoaded, setCompanionsLoaded] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let disposed = false;
+    const loadedImages: HTMLImageElement[] = [];
+
+    (Object.entries(ENEMY_SPRITE_URLS) as Array<[EnemyType, string]>).forEach(([type, url]) => {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = url;
+      image.onload = () => {
+        if (!disposed) enemySpriteImagesRef.current[type] = image;
+      };
+      image.onerror = () => {
+        if (!disposed) delete enemySpriteImagesRef.current[type];
+      };
+      loadedImages.push(image);
+    });
+
+    return () => {
+      disposed = true;
+      loadedImages.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -528,11 +615,14 @@ export function MissionGame({
       laserBattery: 100,
       maxLaserBattery: 100,
       lastRobotDir: "down" as "down" | "up" | "right" | "left",
+      lastAimX: 1,
+      lastAimY: 0,
       hasMoved: false,
       actionType: "defend" as "defend" | "punch" | "laser" | "ult",
       actionEndTime: 0
     },
-    enemies: [] as Array<{ x: number; y: number; hp: number; maxHp: number; speed: number; radius: number; color: string; type: "mote" | "clumper" | "stalker"; points: number }>,
+    enemies: [] as EnemyEntity[],
+    enemyDeathEffects: [] as EnemyDeathEffect[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean }>,
@@ -554,6 +644,9 @@ export function MissionGame({
       dashVy?: number;
       stunTimer?: number;
       stunMeter?: number;
+      hitFlashUntil?: number;
+      hitOffsetX?: number;
+      hitOffsetY?: number;
     } | null,
     ticks: 0,
     spawnTimer: 0,
@@ -585,6 +678,61 @@ export function MissionGame({
   // Keyboard and mouse handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (showUpgradeChoice) {
+        if (["ArrowUp", "ArrowDown", "Space"].includes(e.code)) e.preventDefault();
+        return;
+      }
+
+      // Modal actions take priority over the combat hotkeys underneath them.
+      if (showTipModal && (e.code === "Enter" || e.code === "Space")) {
+        e.preventDefault();
+        if (!e.repeat) handleConfirmTip();
+        return;
+      }
+
+      const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
+      if (!isCombatStage && stage !== "BOSS_WARNING") {
+        const root = gameRootRef.current;
+        if (!root) return;
+
+        const controls = (Array.from(
+          root.querySelectorAll('button:not([disabled]), input[type="checkbox"]:not([disabled])'),
+        ) as HTMLElement[]).filter((element) => element.offsetParent !== null);
+
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.code)) {
+          e.preventDefault();
+          if (e.repeat || controls.length === 0) return;
+          const activeIndex = controls.findIndex((element) => element === document.activeElement);
+          const direction = e.code === "ArrowUp" || e.code === "ArrowLeft" ? -1 : 1;
+          const nextIndex = e.code === "Home"
+            ? 0
+            : e.code === "End"
+            ? controls.length - 1
+            : activeIndex < 0
+            ? direction > 0 ? 0 : controls.length - 1
+            : (activeIndex + direction + controls.length) % controls.length;
+          controls[nextIndex]?.focus({ preventScroll: true });
+          triggerSound("click");
+          return;
+        }
+
+        if (e.code === "Enter" || e.code === "Space") {
+          e.preventDefault();
+          if (e.repeat || controls.length === 0) return;
+          const activeControl = controls.find((element) => element === document.activeElement) || controls[0];
+          activeControl.focus({ preventScroll: true });
+          activeControl.click();
+          return;
+        }
+        return;
+      }
+
       keysRef.current[e.key.toLowerCase()] = true;
       keysRef.current[e.code] = true;
 
@@ -597,9 +745,15 @@ export function MissionGame({
       if (e.code === "Space" && stage === "PLAYING") {
         toggleBatteryMode();
       }
+
+      if (e.code === "KeyR" && !e.repeat) {
+        e.preventDefault();
+        startGame();
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (showUpgradeChoice) return;
       keysRef.current[e.key.toLowerCase()] = false;
       keysRef.current[e.code] = false;
     };
@@ -610,7 +764,18 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage]);
+  }, [stage, showUpgradeChoice, showTipModal, onClose]);
+
+  useEffect(() => {
+    if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
+    const timer = window.setTimeout(() => {
+      const firstControl = gameRootRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), input[type="checkbox"]:not([disabled])',
+      );
+      firstControl?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [stage, startStep, showTipModal, showUpgradeChoice]);
 
   // Generate random upgrades when leveling up
   const triggerLevelUpUpgrade = (currentWeapons: Record<string, number>) => {
@@ -645,6 +810,7 @@ export function MissionGame({
     // Pick 3 random distinct options
     const shuffled = options.sort(() => 0.5 - Math.random());
     setUpgradeChoices(shuffled.slice(0, 3));
+    setSelectedUpgradeIndex(0);
     setShowUpgradeChoice(true);
   };
 
@@ -664,6 +830,29 @@ export function MissionGame({
     }
     setShowUpgradeChoice(false);
   };
+
+  useEffect(() => {
+    if (!showUpgradeChoice || upgradeChoices.length === 0) return;
+    keysRef.current = {};
+
+    const handleUpgradeKeyboard = (event: KeyboardEvent) => {
+      if (event.code === "ArrowUp" || event.code === "ArrowDown") {
+        event.preventDefault();
+        if (event.repeat) return;
+        triggerSound("click");
+        const direction = event.code === "ArrowUp" ? -1 : 1;
+        setSelectedUpgradeIndex((current) => (current + direction + upgradeChoices.length) % upgradeChoices.length);
+      } else if (event.code === "Space") {
+        event.preventDefault();
+        if (event.repeat) return;
+        const selectedChoice = upgradeChoices[selectedUpgradeIndex];
+        if (selectedChoice) handleSelectUpgrade(selectedChoice);
+      }
+    };
+
+    window.addEventListener("keydown", handleUpgradeKeyboard);
+    return () => window.removeEventListener("keydown", handleUpgradeKeyboard);
+  }, [showUpgradeChoice, upgradeChoices, selectedUpgradeIndex]);
 
   // Setup / reset game for survivors stage
   const getPlayerMaxBattery = () => {
@@ -724,11 +913,14 @@ export function MissionGame({
         exp: 0,
         expNeeded: 100,
         lastRobotDir: "down" as "down" | "up" | "right" | "left",
+        lastAimX: 1,
+        lastAimY: 0,
         hasMoved: false,
         actionType: "defend" as "defend" | "punch" | "laser" | "ult",
         actionEndTime: 0
       },
       enemies: [],
+      enemyDeathEffects: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -874,11 +1066,14 @@ export function MissionGame({
         laserBattery: 100,
         maxLaserBattery: 100,
         lastRobotDir: "down" as "down" | "up" | "right" | "left",
+        lastAimX: 1,
+        lastAimY: 0,
         hasMoved: false,
         actionType: "defend" as "defend" | "punch" | "laser" | "ult",
         actionEndTime: 0
       }, // Mecha is bigger
       enemies: [],
+      enemyDeathEffects: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -906,9 +1101,11 @@ export function MissionGame({
       mapSize: { width: arenaWidth, height: arenaHeight }, // Bounded Arena size matches responsive canvas
       camera: { x: 0, y: 0 },
       lowBatteryCooldown: 0,
-      screenShake: 0,
+      screenShake: 18,
       companionSkills: {}
     };
+    victoryPendingRef.current = false;
+    triggerSound("bossImpact");
   };
 
   // Main game loop (delta physics and rendering)
@@ -1046,6 +1243,13 @@ export function MissionGame({
        if (dx !== 0 && dy !== 0) {
          dx *= 0.7071;
          dy *= 0.7071;
+       }
+
+       // Preserve the last intentional movement direction so directional
+       // attacks and the light cone do not snap back to the right when idle.
+       if (dx !== 0 || dy !== 0) {
+         player.lastAimX = dx;
+         player.lastAimY = dy;
        }
 
        const speedMultiplier = 1 + (purchasedUpgrades.speed_boost || 0) * 0.1 + (stage === "BOSSBATTLE" ? (robotUpgrades.movement_speed || 0) * 0.08 : 0);
@@ -1228,6 +1432,12 @@ export function MissionGame({
             const punchDamage = 110; // High single hit damage
             state.boss.hp -= punchDamage;
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
+            applyHitFeedback(state, state.boss, triggerSound, {
+              strength: 5,
+              angle: punchAngle,
+              color: "#fbbf24",
+              heavy: true,
+            });
             
             // Gain extra ultimate charge on successful hit!
             player.ultEnergy = Math.min(100, player.ultEnergy + 9);
@@ -1358,6 +1568,11 @@ export function MissionGame({
             if (state.boss) {
               const laserDmg = 9; // Good continuous damage
               state.boss.hp -= laserDmg;
+              applyHitFeedback(state, state.boss, triggerSound, {
+                strength: 0.7,
+                angle: Math.atan2(targetY - player.y, targetX - player.x),
+                color: "#e0f2fe",
+              });
 
               // Gain very slight ult energy on laser hit
               player.ultEnergy = Math.min(100, player.ultEnergy + 0.8);
@@ -1454,6 +1669,11 @@ export function MissionGame({
             const ultDamage = 450;
             state.boss.hp -= ultDamage;
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
+            applyHitFeedback(state, state.boss, triggerSound, {
+              strength: 8,
+              color: "#67e8f9",
+              heavy: true,
+            });
 
             if (state.boss.hp <= 0) {
               handleVictory();
@@ -1538,16 +1758,19 @@ export function MissionGame({
       // -- range_attack Sector Sweep --
       if (weaponLevels["range_attack"] > 0) {
         const rate = isHigh ? 25 : 45;
+        const lightAttackProfile = isHigh ? LIGHT_ATTACK_PROFILES.HIGH : LIGHT_ATTACK_PROFILES.LOW;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
             state.companionSkills["range_attack"] = 30;
           }
           let srcX = player.x;
           let srcY = player.y;
-          let angle = dx === 0 && dy === 0 ? 0 : Math.atan2(dy, dx);
+          const angle = dx === 0 && dy === 0
+            ? Math.atan2(player.lastAimY, player.lastAimX)
+            : Math.atan2(dy, dx);
 
-          const fanSize = isHigh ? Math.PI / 2 : Math.PI / 4;
-          const dist = isHigh ? 170 : 85;
+          const fanSize = lightAttackProfile.fanSize;
+          const dist = lightAttackProfile.range;
           const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
           const damage = (isHigh ? 45 : 18) * (1 + weaponLevels["range_attack"] * 0.15) * bonusDamageMult;
 
@@ -1562,6 +1785,11 @@ export function MissionGame({
               if (diff > Math.PI) diff = Math.PI * 2 - diff;
               if (diff <= fanSize / 2) {
                 enemy.hp -= damage;
+                applyHitFeedback(state, enemy, triggerSound, {
+                  strength: isHigh ? 2.2 : 1,
+                  angle: eAngle,
+                  color: "#ffffff",
+                });
                 // pushback
                 const push = isHigh ? 35 : 12;
                 moveWithinMissionMask(
@@ -1596,6 +1824,12 @@ export function MissionGame({
             if (bDist <= dist) {
               state.boss.hp -= damage * 0.5;
               setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
+              applyHitFeedback(state, state.boss, triggerSound, {
+                strength: isHigh ? 2.8 : 1.4,
+                angle: Math.atan2(bdy, bdx),
+                color: "#ffffff",
+                heavy: isHigh,
+              });
             }
           }
 
@@ -1607,7 +1841,7 @@ export function MissionGame({
               vx: Math.cos(a) * (isHigh ? 6 : 4),
               vy: Math.sin(a) * (isHigh ? 6 : 4),
               radius: isHigh ? 4 : 2,
-              color: "rgba(249, 115, 22, 0.4)",
+                color: "rgba(255, 255, 255, 0.58)",
               life: 0,
               maxLife: isHigh ? 24 : 15,
               alpha: 0.8
@@ -1703,6 +1937,11 @@ export function MissionGame({
               const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
               const dmg = (isHigh ? 12 : 5) * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
               t.hp -= dmg;
+              applyHitFeedback(state, t as any, triggerSound, {
+                strength: isHigh ? 1.4 : 0.7,
+                angle: Math.atan2(t.y - srcY, t.x - srcX),
+                color: "#a7f3d0",
+              });
               if (stage === "BOSSBATTLE") {
                 setBossHp(Math.max(0, Math.ceil(state.boss!.hp)));
               }
@@ -1785,6 +2024,12 @@ export function MissionGame({
             
             // Deal damage
             target.hp -= dmg;
+            applyHitFeedback(state, target as any, triggerSound, {
+              strength: isHigh ? 4 : 2,
+              angle,
+              color: "#fb7185",
+              heavy: isHigh,
+            });
             if (stage === "BOSSBATTLE") {
               setBossHp(Math.max(0, Math.ceil(state.boss!.hp)));
             }
@@ -1847,7 +2092,7 @@ export function MissionGame({
 
           if (spawn) {
             const rand = Math.random();
-            let type: "mote" | "clumper" | "stalker" = "mote";
+            let type: EnemyType = "mote";
             let hpVal = 15 + selectedChapter * 12;
             let spd = 0.6 + Math.random() * 0.3; // Slower walking
             let radius = 10;
@@ -1876,7 +2121,8 @@ export function MissionGame({
               radius: radius,
               color: col,
               type: type,
-              points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10
+              points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
+              facingLeft: spawn.x > player.x,
             });
           }
         }
@@ -1891,6 +2137,13 @@ export function MissionGame({
           const d = Math.hypot(enemy.x - zone.x, enemy.y - zone.y);
           if (d <= zone.radius + enemy.radius) {
             enemy.hp -= zone.damage;
+            if (state.ticks % 12 === 0) {
+              applyHitFeedback(state, enemy, triggerSound, {
+                strength: 0.5,
+                angle: Math.atan2(enemy.y - zone.y, enemy.x - zone.x),
+                color: "#fef3c7",
+              });
+            }
             // apply temporary speed debuff during this frame
             const pullStrength = zone.highMode ? 0.05 : 0.01;
             moveWithinMissionMask(
@@ -1908,6 +2161,12 @@ export function MissionGame({
           if (d <= zone.radius + state.boss.radius) {
             state.boss.hp -= zone.damage * 0.4;
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
+            if (state.ticks % 12 === 0) {
+              applyHitFeedback(state, state.boss, triggerSound, {
+                strength: 0.7,
+                color: "#fef3c7",
+              });
+            }
           }
         }
 
@@ -1922,6 +2181,7 @@ export function MissionGame({
         const d = Math.hypot(dxToPlayer, dyToPlayer);
 
         if (d > 0.1) {
+          if (Math.abs(dxToPlayer) > 0.1) enemy.facingLeft = dxToPlayer < 0;
           moveWithinMissionMask(
             enemy,
             (dxToPlayer / d) * enemy.speed,
@@ -1951,6 +2211,17 @@ export function MissionGame({
 
         // Check if enemy died
         if (enemy.hp <= 0) {
+          applyDeathFeedback(state, enemy, triggerSound);
+          state.enemyDeathEffects.push({
+            x: enemy.x,
+            y: enemy.y,
+            radius: enemy.radius,
+            type: enemy.type,
+            facingLeft: enemy.facingLeft,
+            life: 0,
+            maxLife: 24,
+          });
+
           // Spawn Exp crystals (gems) or battery
           setScore((s) => s + enemy.points);
           
@@ -2023,6 +2294,11 @@ export function MissionGame({
         }
 
         return true;
+      });
+
+      state.enemyDeathEffects = state.enemyDeathEffects.filter((effect) => {
+        effect.life += 1;
+        return effect.life < effect.maxLife;
       });
 
       // 6. UPDATE BULLETS / LIGHT SHOTS
@@ -2183,6 +2459,11 @@ export function MissionGame({
             if (!hit && Math.hypot(enemy.x - b.x, enemy.y - b.y) <= enemy.radius + b.radius) {
               enemy.hp -= b.damage;
               hit = true;
+              applyHitFeedback(state, enemy, triggerSound, {
+                strength: 1.2,
+                angle: Math.atan2(b.vy, b.vx),
+                color: b.color,
+              });
               // impact sparks
               for (let i = 0; i < 3; i++) {
                 state.particles.push({
@@ -2205,6 +2486,12 @@ export function MissionGame({
             state.boss.hp -= b.damage;
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             hit = true;
+            applyHitFeedback(state, state.boss, triggerSound, {
+              strength: Math.min(4, Math.max(1, b.damage / 20)),
+              angle: Math.atan2(b.vy, b.vx),
+              color: b.color,
+              heavy: b.damage >= 60,
+            });
             // sparks
             for (let i = 0; i < 4; i++) {
               state.particles.push({
@@ -2257,7 +2544,7 @@ export function MissionGame({
               state.lastBatteryPercent = nextBatPercent;
               setBatteryPercent(nextBatPercent);
             }
-            triggerSound("click");
+            applyCollectFeedback(state, col.x, col.y, "battery", triggerSound);
             // restore sparks
             for (let i = 0; i < 5; i++) {
               state.particles.push({
@@ -2288,14 +2575,21 @@ export function MissionGame({
             } else {
               setExp(p.exp);
             }
-            triggerSound("click");
+            applyCollectFeedback(state, col.x, col.y, "experience", triggerSound);
           } else if (col.type === "material") {
             const materialId = (col.materialType || "metal_material") as MaterialId;
             setCollectedMaterials((previous) => ({
               ...previous,
               [materialId]: previous[materialId] + col.amount
             }));
-            triggerSound("upgrade");
+            applyCollectFeedback(
+              state,
+              col.x,
+              col.y,
+              "material",
+              triggerSound,
+              { x: state.camera.x + canvas.width - 38, y: state.camera.y + 28 },
+            );
             for (let i = 0; i < 15; i++) {
               state.particles.push({
                 x: col.x,
@@ -2313,7 +2607,14 @@ export function MissionGame({
           } else if (col.type === "coin") {
             const coinAmount = col.amount || 1;
             setSessionCoins((prev) => prev + coinAmount);
-            triggerSound("click");
+            applyCollectFeedback(
+              state,
+              col.x,
+              col.y,
+              "coin",
+              triggerSound,
+              { x: state.camera.x + canvas.width - 38, y: state.camera.y + 28 },
+            );
             
             // Golden circular burst sparks
             for (let i = 0; i < 8; i++) {
@@ -2350,6 +2651,10 @@ export function MissionGame({
       });
 
       // 8. UPDATE PARTICLES
+      const hardParticleLimit = isMobileDevice ? 48 : 128;
+      if (state.particles.length > hardParticleLimit) {
+        state.particles = state.particles.slice(-hardParticleLimit);
+      }
       state.particles = state.particles.filter((p) => {
         p.x += p.vx;
         p.y += p.vy;
@@ -2710,7 +3015,11 @@ export function MissionGame({
 
       // A. Draw Background Terrain / Grid
       ctx.save();
-      ctx.translate(-state.camera.x, -state.camera.y);
+      const shakeStrength = Math.max(0, state.screenShake || 0);
+      const shakeX = shakeStrength > 0.15 ? (Math.random() - 0.5) * shakeStrength : 0;
+      const shakeY = shakeStrength > 0.15 ? (Math.random() - 0.5) * shakeStrength : 0;
+      state.screenShake = shakeStrength > 0.15 ? shakeStrength * 0.78 : 0;
+      ctx.translate(-state.camera.x + shakeX, -state.camera.y + shakeY);
 
       ctx.fillStyle = activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
@@ -2843,17 +3152,31 @@ export function MissionGame({
 
       // D. Draw Enemies (Shadow monsters)
       state.enemies.forEach((enemy) => {
-        ctx.fillStyle = enemy.color;
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-        ctx.fill();
+        const enemyImage = enemySpriteImagesRef.current[enemy.type];
+        const hitFeedback = getHitRenderOffset(enemy);
+        if (enemyImage?.complete && enemyImage.naturalWidth > 0) {
+          const spriteSize = enemy.type === "clumper" ? 64 : enemy.type === "stalker" ? 52 : 50;
+          const aspectRatio = enemyImage.naturalWidth / enemyImage.naturalHeight;
+          const drawWidth = aspectRatio >= 1 ? spriteSize : spriteSize * aspectRatio;
+          const drawHeight = aspectRatio >= 1 ? spriteSize / aspectRatio : spriteSize;
+          const hoverOffset = Math.sin(state.ticks * 0.08 + enemy.x * 0.01) * 2;
 
-        // Cute glowing red eyes
-        ctx.fillStyle = "#ef4444";
-        ctx.beginPath();
-        ctx.arc(enemy.x - enemy.radius * 0.4, enemy.y - enemy.radius * 0.1, 2, 0, Math.PI * 2);
-        ctx.arc(enemy.x + enemy.radius * 0.4, enemy.y - enemy.radius * 0.1, 2, 0, Math.PI * 2);
-        ctx.fill();
+          ctx.save();
+          ctx.translate(enemy.x + hitFeedback.x, enemy.y + hoverOffset + hitFeedback.y);
+          const shouldMirror = enemy.type === "stalker" ? !enemy.facingLeft : enemy.facingLeft;
+          if (shouldMirror) ctx.scale(-1, 1);
+          ctx.imageSmoothingEnabled = false;
+          ctx.shadowColor = "rgba(139, 92, 246, 0.45)";
+          ctx.shadowBlur = 8;
+          if (hitFeedback.active) ctx.filter = "brightness(0) invert(1)";
+          ctx.drawImage(enemyImage, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = hitFeedback.active ? "#ffffff" : enemy.color;
+          ctx.beginPath();
+          ctx.arc(enemy.x + hitFeedback.x, enemy.y + hitFeedback.y, enemy.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
         // Draw shadow health bar above larger clumpers
         if (enemy.type === "clumper") {
@@ -2864,12 +3187,46 @@ export function MissionGame({
         }
       });
 
+      // Keep defeated enemies visible for a brief shrink-and-fade dissolve.
+      state.enemyDeathEffects.forEach((effect) => {
+        const enemyImage = enemySpriteImagesRef.current[effect.type];
+        if (!enemyImage?.complete || enemyImage.naturalWidth <= 0) return;
+
+        const progress = effect.life / effect.maxLife;
+        const scale = Math.max(0.12, 1 - progress * 0.88);
+        const spriteSize = (effect.type === "clumper" ? 64 : effect.type === "stalker" ? 52 : 50) * scale;
+        const aspectRatio = enemyImage.naturalWidth / enemyImage.naturalHeight;
+        const drawWidth = aspectRatio >= 1 ? spriteSize : spriteSize * aspectRatio;
+        const drawHeight = aspectRatio >= 1 ? spriteSize / aspectRatio : spriteSize;
+
+        ctx.save();
+        ctx.globalAlpha = 1 - progress;
+        ctx.translate(effect.x, effect.y - progress * 10);
+        const shouldMirror = effect.type === "stalker" ? !effect.facingLeft : effect.facingLeft;
+        if (shouldMirror) ctx.scale(-1, 1);
+        ctx.imageSmoothingEnabled = false;
+        ctx.shadowColor = "#ffffff";
+        ctx.shadowBlur = 12 + progress * 16;
+        ctx.drawImage(enemyImage, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = (1 - progress) * 0.65;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, effect.radius + progress * 20, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
       // E. Draw Boss (if active)
       if (state.boss) {
         const boss = state.boss;
+        const bossHitFeedback = getHitRenderOffset(boss);
         
-        let bx = boss.x;
-        let by = boss.y;
+        let bx = boss.x + bossHitFeedback.x;
+        let by = boss.y + bossHitFeedback.y;
         
         // Shake boss and draw charging visuals when preparing a dash
         if (boss.dashTimer && boss.dashTimer > 30) {
@@ -2946,9 +3303,9 @@ export function MissionGame({
         ctx.shadowBlur = 30 + Math.sin(state.ticks * 0.08) * 12;
 
         const grad = ctx.createRadialGradient(bx, by, 8, bx, by, rad);
-        grad.addColorStop(0, "#4c1d95"); // deep royal violet
-        grad.addColorStop(0.5, "#1e1b4b"); // heavy indigo void
-        grad.addColorStop(1, "rgba(9, 9, 11, 0.98)");
+        grad.addColorStop(0, bossHitFeedback.active ? "#ffffff" : "#4c1d95"); // brief white impact flash
+        grad.addColorStop(0.5, bossHitFeedback.active ? "#f4f4f5" : "#1e1b4b");
+        grad.addColorStop(1, bossHitFeedback.active ? "#d4d4d8" : "rgba(9, 9, 11, 0.98)");
 
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -2957,7 +3314,7 @@ export function MissionGame({
         ctx.restore();
 
         // Outer neon aura ring
-        ctx.strokeStyle = activeChapter.themeColor;
+        ctx.strokeStyle = bossHitFeedback.active ? "#ffffff" : activeChapter.themeColor;
         ctx.lineWidth = 4.5;
         ctx.beginPath();
         ctx.arc(bx, by, rad, 0, Math.PI * 2);
@@ -3443,10 +3800,12 @@ export function MissionGame({
           mctx.fill();
 
           // Cut extra sector cone if range_attack sweep is active and in High Mode
-          const angle = dx === 0 && dy === 0 ? 0 : Math.atan2(dy, dx);
-          const fanSize = isHigh ? Math.PI / 1.6 : Math.PI / 3.5;
-          // Expanded sweep distances for brighter visuals
-          const sweepDist = isHigh ? 380 : 250;
+          const angle = dx === 0 && dy === 0
+            ? Math.atan2(player.lastAimY, player.lastAimX)
+            : Math.atan2(dy, dx);
+          const lightAttackProfile = isHigh ? LIGHT_ATTACK_PROFILES.HIGH : LIGHT_ATTACK_PROFILES.LOW;
+          const fanSize = lightAttackProfile.lightFanSize;
+          const sweepDist = lightAttackProfile.lightRange;
 
           const sectorGrad = mctx.createRadialGradient(px, py, 10, px, py, sweepDist);
           sectorGrad.addColorStop(0, "rgba(0,0,0,1)");
@@ -3462,6 +3821,28 @@ export function MissionGame({
 
           // Draw the completed mask onto our visual canvas
           ctx.drawImage(maskCanvas, 0, 0);
+
+          // Draw the true damage area as a white work-light fan. This makes the
+          // difference between LOW and HIGH visible without overstating range.
+          const attackRange = lightAttackProfile.range;
+          const attackFanSize = lightAttackProfile.fanSize;
+          const attackPulse = 0.72 + Math.sin(state.ticks * 0.16) * 0.16;
+          const attackGradient = ctx.createRadialGradient(px, py, 12, px, py, attackRange);
+          attackGradient.addColorStop(0, isHigh ? "rgba(255, 255, 255, 0.48)" : "rgba(255, 255, 255, 0.32)");
+          attackGradient.addColorStop(0.62, isHigh ? "rgba(255, 255, 255, 0.24)" : "rgba(255, 255, 255, 0.16)");
+          attackGradient.addColorStop(1, "rgba(255, 255, 255, 0.02)");
+
+          ctx.save();
+          ctx.globalAlpha = attackPulse;
+          ctx.fillStyle = attackGradient;
+          ctx.shadowColor = "#ffffff";
+          ctx.shadowBlur = isHigh ? 10 : 6;
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.arc(px, py, attackRange, angle - attackFanSize / 2, angle + attackFanSize / 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
         }
         ctx.restore();
       }
@@ -3487,8 +3868,21 @@ export function MissionGame({
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
-    triggerSound("victory");
-    setStage("VICTORY");
+    if (victoryPendingRef.current) return;
+    victoryPendingRef.current = true;
+    const feedbackState = engineRef.current as any;
+    if (feedbackState.boss) {
+      feedbackState.boss.hp = 0;
+      applyDeathFeedback(feedbackState, feedbackState.boss, triggerSound, true);
+    } else {
+      triggerCameraShake(feedbackState, 18);
+      triggerSound("bossDeath");
+    }
+
+    // Hold the final impact for a few frames before revealing the victory screen.
+    window.setTimeout(() => {
+      triggerSound("victory");
+      setStage("VICTORY");
 
     // Unlock next chapter if available
     const nextCh = selectedChapter + 1;
@@ -3522,10 +3916,11 @@ export function MissionGame({
       localStorage.setItem("light_crew_coins", String(updated));
       return updated;
     });
+    }, 140);
   };
 
   return (
-    <div className="fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
+    <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
       <BossWarningTransition
         active={stage === "BOSS_WARNING"}
         onComplete={startBossBattle}
@@ -3583,6 +3978,7 @@ export function MissionGame({
                     <Lightbulb className="w-3.5 h-3.5" /> 核心操作秘笈
                   </h3>
                   <ul className="list-disc pl-3.5 space-y-0.5 sm:space-y-1 text-[9.5px] sm:text-[10.5px]">
+                    <li><b>選單：</b>使用 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">方向鍵</kbd> 切換，<kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">Enter / Space</kbd> 確認。</li>
                     <li><b>移動：</b>使用 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">WASD</kbd> 鍵在全方向移動。</li>
                     <li><b>調光：</b>點擊或按下 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">Space 空白鍵</kbd> 切換 Low / High。</li>
                     <li><b>電力：</b>工作燈高亮度下極耗電，請收集 <b>綠色電池 🔋</b>。</li>
@@ -3913,6 +4309,7 @@ export function MissionGame({
             >
               <canvas 
                 ref={canvasRef} 
+                tabIndex={-1}
                 width={isMobile ? 500 : 1400}
                 height={isMobile ? 750 : 770}
                 className={
@@ -4043,20 +4440,38 @@ export function MissionGame({
                 <div className="space-y-1.5 sm:space-y-2.5">
                   {upgradeChoices.map((choice, i) => (
                     <button
-                      key={i}
+                      key={choice.id}
                       onClick={() => handleSelectUpgrade(choice)}
-                      className="w-full p-2 sm:p-3 bg-zinc-950/80 border border-zinc-800 hover:border-orange-500/80 text-left transition-all duration-200 cursor-pointer flex items-center gap-2 sm:gap-3.5 group rounded-none"
+                      onMouseEnter={() => setSelectedUpgradeIndex(i)}
+                      onFocus={() => setSelectedUpgradeIndex(i)}
+                      aria-current={selectedUpgradeIndex === i ? "true" : undefined}
+                      className={`w-full p-2 sm:p-3 border text-left transition-all duration-200 cursor-pointer flex items-center gap-2 sm:gap-3.5 group rounded-none ${
+                        selectedUpgradeIndex === i
+                          ? "bg-orange-500/10 border-orange-400 shadow-[inset_3px_0_0_#fb923c,0_0_14px_rgba(249,115,22,0.12)]"
+                          : "bg-zinc-950/80 border-zinc-800 hover:border-orange-500/80"
+                      }`}
                     >
-                      <div className="text-xl sm:text-2xl p-1.5 sm:p-2 bg-zinc-900 border border-zinc-800 rounded group-hover:bg-orange-500/10 group-hover:border-orange-500/30 transition-colors">
+                      <div className={`text-xl sm:text-2xl p-1.5 sm:p-2 bg-zinc-900 border rounded group-hover:bg-orange-500/10 group-hover:border-orange-500/30 transition-colors ${
+                        selectedUpgradeIndex === i ? "border-orange-500/60" : "border-zinc-800"
+                      }`}>
                         {choice.icon}
                       </div>
                       <div className="flex-1">
-                        <div className="text-[11px] sm:text-xs font-black text-white group-hover:text-orange-400 transition-colors">{choice.name}</div>
+                        <div className={`text-[11px] sm:text-xs font-black group-hover:text-orange-400 transition-colors ${
+                          selectedUpgradeIndex === i ? "text-orange-300" : "text-white"
+                        }`}>{choice.name}</div>
                         <div className="text-[9px] sm:text-[10px] text-zinc-400 mt-0.5 font-sans leading-tight">{choice.desc}</div>
                       </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-orange-400 transition-colors" />
+                      <ChevronRight className={`w-3.5 h-3.5 group-hover:text-orange-400 transition-colors ${
+                        selectedUpgradeIndex === i ? "text-orange-400" : "text-zinc-600"
+                      }`} />
                     </button>
                   ))}
+                </div>
+
+                <div className="flex items-center justify-center gap-3 border-t border-zinc-800 pt-2 text-[9px] sm:text-[10px] font-mono text-zinc-500">
+                  <span><b className="text-orange-400">↑ ↓</b> 切換選項</span>
+                  <span><b className="text-orange-400">SPACE</b> 確認升級</span>
                 </div>
               </div>
             </div>
@@ -4081,10 +4496,13 @@ export function MissionGame({
                   </p>
                 </div>
                 <button
+                  type="button"
+                  autoFocus
+                  aria-keyshortcuts="Enter Space"
                   onClick={handleConfirmTip}
                   className="px-6 py-2.5 sm:py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-black text-xs tracking-widest uppercase rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all cursor-pointer w-full"
                 >
-                  確定開始
+                  確定開始 <span className="ml-1 text-[9px] opacity-70">[ ENTER / SPACE ]</span>
                 </button>
               </div>
             </div>
@@ -4661,8 +5079,9 @@ export function MissionGame({
 
       {/* Global Bottom Back Bar */}
       <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 flex justify-between items-center text-[10px] text-zinc-500 font-sans z-10">
-        <div>
-          <span>勇敢の燈燈小隊 ── 攜手 SCI 工業照明科技 驅散一切未知的暗影</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="hidden md:inline">勇敢の燈燈小隊 ── 攜手 SCI 工業照明科技 驅散一切未知的暗影</span>
+          <span className="font-mono text-zinc-400">⌨ 方向鍵/WASD 移動・Enter/Space 確認・R 重試・Esc 離開</span>
         </div>
         <button
           onClick={onClose}

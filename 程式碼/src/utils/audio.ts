@@ -42,12 +42,46 @@ export function getMuteState(): boolean {
   return isMuted;
 }
 
-export function playSound(type: "click" | "typewriter" | "chime" | "success" | "bubble" | "fortune") {
+export function playSound(type: string) {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
 
     const now = ctx.currentTime;
+
+    const tone = (frequency: number, duration: number, volume: number, wave: OscillatorType = "square", endFrequency?: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = wave;
+      osc.frequency.setValueAtTime(frequency, now);
+      if (endFrequency) osc.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.start(now);
+      osc.stop(now + duration);
+    };
+
+    const noiseBurst = (duration: number, volume: number, cutoff: number) => {
+      const size = Math.max(1, Math.floor(ctx.sampleRate * duration));
+      const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+      const source = ctx.createBufferSource();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      source.buffer = buffer;
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(cutoff, now);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(now);
+      source.stop(now + duration);
+    };
 
     switch (type) {
       case "click": {
@@ -66,6 +100,100 @@ export function playSound(type: "click" | "typewriter" | "chime" | "success" | "
 
         osc.start(now);
         osc.stop(now + 0.08);
+        break;
+      }
+
+      case "hit":
+      case "hit1": {
+        tone(180, 0.055, 0.035, "square", 85);
+        noiseBurst(0.035, 0.02, 1300);
+        break;
+      }
+      case "hit2": {
+        tone(245, 0.06, 0.032, "triangle", 105);
+        noiseBurst(0.04, 0.018, 1800);
+        break;
+      }
+      case "hit3": {
+        tone(135, 0.075, 0.04, "sawtooth", 65);
+        noiseBurst(0.05, 0.022, 900);
+        break;
+      }
+      case "enemyDeath":
+      case "explosion": {
+        tone(150, 0.16, 0.045, "sawtooth", 45);
+        noiseBurst(0.14, 0.035, 1100);
+        break;
+      }
+      case "bossImpact": {
+        tone(105, 0.12, 0.055, "square", 42);
+        noiseBurst(0.09, 0.04, 700);
+        break;
+      }
+      case "bossDeath": {
+        tone(120, 0.32, 0.06, "sawtooth", 32);
+        noiseBurst(0.3, 0.055, 850);
+        break;
+      }
+      case "coinCollect": {
+        tone(880, 0.09, 0.035, "square", 1320);
+        break;
+      }
+      case "materialCollect": {
+        tone(420, 0.16, 0.04, "triangle", 980);
+        break;
+      }
+      case "batteryCollect": {
+        tone(330, 0.11, 0.03, "sine", 660);
+        break;
+      }
+      case "experienceCollect": {
+        tone(620, 0.07, 0.022, "triangle", 820);
+        break;
+      }
+      case "upgrade":
+      case "upgradeSuccess": {
+        [440, 660, 880].forEach((frequency, index) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = "square";
+          osc.frequency.setValueAtTime(frequency, now + index * 0.055);
+          gain.gain.setValueAtTime(0.03, now + index * 0.055);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.055 + 0.11);
+          osc.start(now + index * 0.055);
+          osc.stop(now + index * 0.055 + 0.11);
+        });
+        break;
+      }
+      case "shoot": {
+        tone(720, 0.045, 0.018, "square", 320);
+        break;
+      }
+      case "power": {
+        tone(180, 0.18, 0.035, "sine", 720);
+        break;
+      }
+      case "low_battery":
+      case "game_over": {
+        tone(210, 0.2, 0.035, "square", 80);
+        break;
+      }
+      case "victory": {
+        [523, 659, 784, 1047].forEach((frequency, index) => {
+          const startAt = now + index * 0.055;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(frequency, startAt);
+          gain.gain.setValueAtTime(0.035, startAt);
+          gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.18);
+          osc.start(startAt);
+          osc.stop(startAt + 0.18);
+        });
         break;
       }
 
@@ -338,8 +466,9 @@ let musicFadeTimer: ReturnType<typeof setInterval> | null = null;
 let musicFadeGeneration = 0;
 
 export const MUSIC_ASSETS = {
-  normal: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/With%20the%20Stars-V2.mp3?v=aab277fcd9bcef9bc2042d4aff079680f1c4f613",
-  theme: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/Theme%20Song.mp3?v=a8bda172a58a3d3af53ce3c877669350d88c60d8"
+  normal: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/STAR-8BIT-BGM.mp3",
+  theme: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/Theme%20Song.mp3?v=a8bda172a58a3d3af53ce3c877669350d88c60d8",
+  mission: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/4.MUSIC/DDDD-8bit%20BGM.mp3"
 } as const;
 
 export type MusicTrack = keyof typeof MUSIC_ASSETS;

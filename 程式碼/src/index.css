@@ -90,6 +90,76 @@
   animation: rightFootstep 1.2s ease-in-out infinite;
 }
 
+/* Technology R&D hangar ambience */
+@keyframes rdRobotIdle {
+  0%, 100% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-2px) scale(1.002); }
+  52% { transform: translateY(0) scale(1); }
+  58% { transform: translateY(-1px) scale(1.001); }
+}
+
+@keyframes rdSmokeRelease {
+  0%, 52% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.35);
+  }
+  57% { opacity: 0.5; }
+  72% {
+    opacity: 0.26;
+    transform: translate(-64%, -32px) scale(1.45);
+  }
+  82%, 100% {
+    opacity: 0;
+    transform: translate(-78%, -58px) scale(2.1);
+  }
+}
+
+@keyframes rdHangarScan {
+  0%, 60% { opacity: 0; transform: translateX(-160%); }
+  64% { opacity: 0.5; }
+  78% { opacity: 0.2; transform: translateX(750%); }
+  82%, 100% { opacity: 0; transform: translateX(750%); }
+}
+
+.rd-robot-idle {
+  animation: rdRobotIdle 5.8s ease-in-out infinite;
+  transform-origin: 50% 85%;
+}
+
+.rd-smoke-puff {
+  position: absolute;
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(226, 232, 240, 0.58) 0%, rgba(148, 163, 184, 0.3) 42%, transparent 72%);
+  filter: blur(2px);
+  opacity: 0;
+  animation: rdSmokeRelease 9.5s ease-out infinite;
+}
+
+.rd-smoke-puff-right {
+  animation-duration: 11s;
+  transform-origin: right bottom;
+}
+
+.rd-hangar-scan {
+  animation: rdHangarScan 12s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-robot-idle,
+  .rd-smoke-puff,
+  .rd-hangar-scan {
+    animation: none !important;
+  }
+
+  .rd-smoke-puff,
+  .rd-hangar-scan {
+    display: none;
+  }
+}
+
 /* 🎭 Scene Character Layout Styles */
 .scene-characters {
   position: relative;
@@ -121,6 +191,81 @@
   right: 5%;
 }
 
+/* Large black pointer cursor. It is DOM-rendered so its size stays consistent
+   across browsers instead of being clamped by the operating system cursor. */
+@media (pointer: fine) {
+  #game-container,
+  #game-container * {
+    cursor: none !important;
+  }
 
+  .app-pixel-cursor {
+    position: fixed;
+    z-index: 9999;
+    width: 52px;
+    height: 52px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-23%, -18%);
+    transform-origin: 23% 18%;
+    transition: opacity 80ms linear, scale 60ms steps(2, end);
+    background: url("https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/cursor.png") center / contain no-repeat;
+    filter: drop-shadow(2px 3px 2px rgba(0, 0, 0, 0.65));
+  }
 
+  .app-pixel-cursor::before,
+  .app-pixel-cursor::after {
+    display: none;
+  }
 
+  .app-pixel-cursor > span {
+    display: none;
+  }
+
+  .app-pixel-cursor.is-interactive {
+    scale: 1.12;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.9)) drop-shadow(2px 3px 2px rgba(0, 0, 0, 0.8));
+  }
+
+  .app-pixel-cursor.is-pressed {
+    scale: 0.82;
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
+  }
+
+  .app-pixel-click {
+    position: fixed;
+    z-index: 9998;
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
+    border: 4px solid #050505;
+    box-shadow: 0 0 0 2px #ffffff, 0 0 10px rgba(0, 0, 0, 0.85);
+    transform: translate(-50%, -50%) scale(0.4);
+    animation: appPixelClick 440ms steps(6, end) forwards;
+  }
+
+  .app-pixel-click.is-interactive {
+    border-color: #050505;
+    box-shadow: 0 0 0 3px #ffffff, 0 0 14px rgba(255, 255, 255, 0.75);
+  }
+}
+
+#game-container button:focus-visible,
+#game-container input:focus-visible,
+#game-container a:focus-visible {
+  outline: 3px solid #facc15 !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px #09090b, 0 0 18px rgba(250, 204, 21, 0.55) !important;
+}
+
+@keyframes appPixelClick {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.35) rotate(0deg);
+  }
+  65% { opacity: 0.85; }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.6) rotate(90deg);
+  }
+}

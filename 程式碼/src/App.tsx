@@ -18,6 +18,7 @@ import { OpsDivision } from "./components/OpsDivision";
 import { SupplyDivision } from "./components/SupplyDivision";
 import { MissionGame } from "./components/MissionGame";
 import { RobotLabPanel } from "./components/RobotLabPanel";
+import { PixelCursor } from "./components/PixelCursor";
 import { createDefaultRobotUpgrades, createEmptyMaterialInventory, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import {
@@ -35,8 +36,11 @@ import {
   Heart,
   Beaker,
   Shield,
-  Boxes
+  Boxes,
+  Wrench
 } from "lucide-react";
+
+type AppScene = "lab" | "tech" | "ops" | "supply";
 
 // Helper to load saved images synchronously during initial state creation
 const loadSavedImages = (id: string) => {
@@ -101,7 +105,7 @@ export default function App() {
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [pendingBossChapter, setPendingBossChapter] = useState<number | null>(null);
   const [missionActive, setMissionActive] = useState(false);
-  const desiredTrackRef = useRef<"theme" | "normal">("theme");
+  const desiredTrackRef = useRef<"theme" | "normal" | "mission">("theme");
 
   // Coins and Upgrades Systems
   const [coins, setCoins] = useState<number>(() => {
@@ -183,15 +187,15 @@ export default function App() {
 
   // App Phases state: start (landing), booting (cutscene loading), main (interactive dashboard)
   const [appPhase, setAppPhase] = useState<"start" | "booting" | "main">("start");
-  // Current active area: lab (勇氣の實驗室), ops (營業機動事業部), or supply (補給調配部)
-  const [currentScene, setCurrentScene] = useState<"lab" | "ops" | "supply">("ops");
+  // Current active area: lab, technology R&D, mobile operations, or supply
+  const [currentScene, setCurrentScene] = useState<AppScene>("ops");
 
   // Scene transit states
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [pendingScene, setPendingScene] = useState<"lab" | "ops" | "supply" | null>(null);
+  const [pendingScene, setPendingScene] = useState<AppScene | null>(null);
   const [transitionStep, setTransitionStep] = useState(0);
 
-  const handleSceneChange = (targetScene: "lab" | "ops" | "supply") => {
+  const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
     playSound("click");
     setPendingScene(targetScene);
@@ -344,7 +348,7 @@ export default function App() {
   }, [isMuted]);
 
   // Manage Background Music (BGM) loop based on isMusicMuted, user gesture, and app phase
-  const desiredTrack = appPhase === "start" || missionActive ? "theme" : "normal";
+  const desiredTrack = appPhase === "start" ? "theme" : missionActive ? "mission" : "normal";
   desiredTrackRef.current = desiredTrack;
   useEffect(() => {
     if (isMusicMuted) {
@@ -377,8 +381,8 @@ export default function App() {
   const handleMissionOpenChange = (open: boolean) => {
     setMissionActive(open);
     setIsGameOpen(open);
-    desiredTrackRef.current = open ? "theme" : "normal";
-    startBackgroundMusic(open ? "theme" : "normal");
+    desiredTrackRef.current = open ? "mission" : "normal";
+    startBackgroundMusic(open ? "mission" : "normal");
   };
 
 
@@ -711,6 +715,7 @@ export default function App() {
 
   return (
     <div id="game-container" className="h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col justify-between relative overflow-hidden font-sans border-2 sm:border-8 border-zinc-900">
+      <PixelCursor />
       
       {/* --- INDUSTRIAL LAB REALISTIC BACKGROUND --- */}
       <div className="absolute inset-0 z-0 pointer-events-none select-none">
@@ -724,6 +729,8 @@ export default function App() {
             backgroundImage:
               currentScene === "lab"
                 ? `url(${BACKGROUND_ASSETS.lab})`
+                : currentScene === "tech"
+                ? `url(${BACKGROUND_ASSETS.tech})`
                 : currentScene === "ops"
                 ? `url(${BACKGROUND_ASSETS.business})`
                 : `url(${BACKGROUND_ASSETS.purchase})`,
@@ -864,6 +871,8 @@ export default function App() {
           <span className="text-orange-400 font-bold uppercase truncate">
             {currentScene === "lab"
               ? "LOVE_LAB"
+              : currentScene === "tech"
+              ? "TECH_RND"
               : currentScene === "ops"
               ? "MOB_OPS"
               : "SUPPLY"
@@ -883,6 +892,18 @@ export default function App() {
           >
             <Beaker className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
             <span>勇氣の實驗室</span>
+          </button>
+          <button
+            onClick={() => handleSceneChange("tech")}
+            className={`px-3 py-1 sm:px-4 sm:py-1.5 border text-[11px] sm:text-sm font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center gap-1.5
+              ${currentScene === "tech"
+                ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
+                : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
+              }
+            `}
+          >
+            <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
+            <span>技術研發部</span>
           </button>
           <button
             onClick={() => handleSceneChange("ops")}
@@ -914,15 +935,6 @@ export default function App() {
 
       {currentScene === "lab" ? (
         <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-4 md:px-6 py-1 sm:py-3 flex flex-col justify-end relative z-20 overflow-hidden">
-        <RobotLabPanel materials={modificationMaterials} setMaterials={setModificationMaterials} upgrades={robotUpgrades} setUpgrades={setRobotUpgrades} playSound={playSound} />
-        {pendingBossChapter !== null && (
-          <button
-            onClick={() => handleMissionOpenChange(true)}
-            className="mx-auto mt-2 min-h-11 w-full max-w-md rounded-xl bg-gradient-to-r from-rose-500 to-orange-400 px-4 text-sm font-black text-zinc-950"
-          >
-            繼續挑戰 Boss（C2-932）
-          </button>
-        )}
         
         {/* Three Characters Container */}
         <div className="flex justify-center items-center sm:items-end sm:grid sm:grid-cols-3 gap-1.5 sm:gap-3 md:gap-6 w-full relative mb-2 sm:mb-4 flex-1 min-h-0">
@@ -1073,6 +1085,16 @@ export default function App() {
         </div>
 
       </main>
+      ) : currentScene === "tech" ? (
+        <main className="relative z-20 flex min-h-0 flex-1 w-full px-2 py-2 sm:px-5 sm:py-4">
+          <RobotLabPanel
+            materials={modificationMaterials}
+            setMaterials={setModificationMaterials}
+            upgrades={robotUpgrades}
+            setUpgrades={setRobotUpgrades}
+            playSound={playSound}
+          />
+        </main>
       ) : currentScene === "ops" ? (
         <OpsDivision
           isMuted={isMuted}
@@ -1081,6 +1103,7 @@ export default function App() {
           setIsGameOpen={handleMissionOpenChange}
           coins={coins}
           purchasedUpgrades={purchasedUpgrades}
+          pendingBossChapter={pendingBossChapter}
         />
       ) : (
         <SupplyDivision
@@ -1094,7 +1117,7 @@ export default function App() {
 
 
       {/* --- FOOTER USER INPUT TERMINAL (BOTTOM) --- */}
-      {currentScene !== "supply" && (
+      {(currentScene === "lab" || currentScene === "ops") && (
         <footer className="relative z-30 border-t border-zinc-900 bg-zinc-950/95 px-2 py-1.5 sm:px-6 sm:py-4 flex flex-col justify-center shrink-0">
           <div className="w-full max-w-4xl mx-auto">
             {currentScene === "ops" ? (
@@ -1221,7 +1244,7 @@ export default function App() {
           onClose={() => { setPendingBossChapter(null); handleMissionOpenChange(false); }}
           onReturnToLab={(chapter) => {
             setPendingBossChapter(chapter);
-            setCurrentScene("lab");
+            setCurrentScene("ops");
             handleMissionOpenChange(false);
           }}
           resumeBossChapter={pendingBossChapter}
@@ -1299,6 +1322,8 @@ export default function App() {
                 <span className="text-zinc-300 uppercase font-sans font-bold">
                   {currentScene === "lab"
                     ? "勇氣の實驗室"
+                    : currentScene === "tech"
+                    ? "技術研發部"
                     : currentScene === "ops"
                     ? "營業機動事業部"
                     : "補給調配部"
@@ -1310,6 +1335,8 @@ export default function App() {
                 <span className="text-orange-400 uppercase font-sans font-bold animate-pulse">
                   {pendingScene === "lab"
                     ? "勇氣の實驗室"
+                    : pendingScene === "tech"
+                    ? "技術研發部"
                     : pendingScene === "ops"
                     ? "營業機動事業部"
                     : "補給調配部"

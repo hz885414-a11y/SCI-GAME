@@ -25,6 +25,7 @@ interface OpsDivisionProps {
   setIsGameOpen: (open: boolean) => void;
   coins: number;
   purchasedUpgrades: Record<string, number>;
+  pendingBossChapter: number | null;
 }
 
 export function OpsDivision({
@@ -33,7 +34,8 @@ export function OpsDivision({
   isGameOpen,
   setIsGameOpen,
   coins,
-  purchasedUpgrades
+  purchasedUpgrades,
+  pendingBossChapter
 }: OpsDivisionProps) {
   // Exhibition destinations are intentionally embedded here so every button always opens its assigned site.
   const exhibitions = [
@@ -112,7 +114,11 @@ export function OpsDivision({
     playSound("click");
     const next = !isGameOpen;
     setIsGameOpen(next);
-    addLog(`${next ? "[START]" : "[CLOSE]"} 啟動出發任務戰術模擬主機`);
+    addLog(
+      next && pendingBossChapter !== null
+        ? `[RESUME] 第 ${pendingBossChapter} 章 Boss 警告程序啟動`
+        : `${next ? "[START]" : "[CLOSE]"} 啟動出發任務戰術模擬主機`
+    );
     if (next) {
       setIsOpenPortal(false);
       setIsOpenLogs(false);
@@ -375,12 +381,22 @@ export function OpsDivision({
               className={`w-full sm:w-auto px-4 py-2 sm:px-4 sm:py-1.5 border text-xs sm:text-[10px] font-sans font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
                 ${isGameOpen 
                   ? "bg-orange-500 text-black border-orange-500 shadow-[0_0_10px_rgba(245,158,11,0.25)]" 
+                  : pendingBossChapter !== null
+                  ? "bg-rose-950/80 border border-rose-500 text-rose-200 hover:bg-rose-900/80 shadow-[0_0_12px_rgba(244,63,94,0.2)]"
                   : "bg-zinc-900 border border-orange-500/50 text-orange-400 hover:text-zinc-200 hover:border-zinc-700"
                 }
               `}
             >
-              <Gamepad2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-orange-500 animate-pulse" />
-              <span className="text-orange-400 font-black">🎮 出發任務(遊戲)</span>
+              {pendingBossChapter !== null ? (
+                <AlertTriangle className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-rose-300 animate-pulse" />
+              ) : (
+                <Gamepad2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-orange-500 animate-pulse" />
+              )}
+              <span className={pendingBossChapter !== null ? "text-rose-200 font-black" : "text-orange-400 font-black"}>
+                {pendingBossChapter !== null
+                  ? `⚠️ 繼續第 ${pendingBossChapter} 章 Boss 任務（C2-932）`
+                  : "🎮 出發任務(遊戲)"}
+              </span>
               {isGameOpen && <span className="w-1.5 h-1.5 bg-black rounded-full animate-ping" />}
             </button>
           </div>
