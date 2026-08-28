@@ -24,13 +24,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: 程式碼/package-lock.json
+          node-version: 24
 
       - name: Install dependencies
         working-directory: 程式碼
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build static game
         working-directory: 程式碼
