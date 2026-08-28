@@ -5,6 +5,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages serves project sites from /<repository>/.
+    // Keep local development at / so localhost previews remain unchanged.
+    base: process.env.GITHUB_ACTIONS ? '/SCI-GAME/' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
