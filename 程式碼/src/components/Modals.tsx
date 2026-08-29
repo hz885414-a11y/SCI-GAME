@@ -526,7 +526,7 @@ export const InstructionsModal: React.FC<ModalProps> = ({ isOpen, onClose }) => 
               <div className="flex gap-3 bg-rose-950/10 border border-rose-500/20 rounded-none p-3.5">
                 <span className="text-3xl">💡</span>
                 <div className="space-y-1">
-                  <p className="font-bold text-rose-300 text-xs">林語晴 Claire Lin（小燈）- 溫柔治癒擔當</p>
+                  <p className="font-bold text-rose-300 text-xs">Claire Lin - 溫柔治癒擔當</p>
                   <p className="text-xs text-zinc-400">「沒關係，我陪你。」</p>
                   <p className="text-[11px] text-zinc-400 leading-normal">
                     雙丸子頭、紅白外套女生。專長調配 2700K 暖光。會先接住玩家的情緒，提供最療癒的安慰與和緩建議。
@@ -538,7 +538,7 @@ export const InstructionsModal: React.FC<ModalProps> = ({ isOpen, onClose }) => 
               <div className="flex gap-3 bg-sky-950/10 border border-sky-500/20 rounded-none p-3.5">
                 <span className="text-3xl">📊</span>
                 <div className="space-y-1">
-                  <p className="font-bold text-sky-300 text-xs">許晨曦 Ethan Hsu（阿直）- 理性數據分析</p>
+                  <p className="font-bold text-sky-300 text-xs">Ethan Hsu - 理性數據分析</p>
                   <p className="text-xs text-zinc-400">「先別急，我們看事實。」</p>
                   <p className="text-[11px] text-zinc-400 leading-normal">
                     短髮、深藍外套男生。精通光譜儀。說話直接、充滿直男理科數據，但本質上是為了找出系統故障點（Bug）。
@@ -550,7 +550,7 @@ export const InstructionsModal: React.FC<ModalProps> = ({ isOpen, onClose }) => 
               <div className="flex gap-3 bg-amber-950/10 border border-amber-500/20 rounded-none p-3.5">
                 <span className="text-3xl">⚡</span>
                 <div className="space-y-1">
-                  <p className="font-bold text-amber-300 text-xs">張煦然 Leo Chang（阿火）- 熱血行動派</p>
+                  <p className="font-bold text-amber-300 text-xs">Leo Chang - 熱血行動派</p>
                   <p className="text-xs text-zinc-400">「交給我！」</p>
                   <p className="text-[11px] text-zinc-400 leading-normal">
                     長馬尾、黑色連帽衫男生。手持高流明探照燈。常提出好笑、荒謬的搞怪作戰，但最後總會給出超級溫暖熱血的擁抱和打氣。

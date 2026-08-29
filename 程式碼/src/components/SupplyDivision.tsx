@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Sliders } from "lucide-react";
+import { recordAction } from "../systems/playerStats";
 
 interface SupplyDivisionProps {
   playSound: (soundName: string) => void;
@@ -284,6 +285,7 @@ export function SupplyDivision({
                     return updated;
                   });
                   setRecentlyUpgraded(confirmItem.id);
+                  recordAction("purchaseHumanUpgrade");
                   setUpgradeNotice(`${confirmItem.icon} ${confirmItem.name} 升級成功！ LEVEL ${confirmItem.currentLvl + 1}`);
                   playSound("upgradeSuccess");
                   setConfirmItem(null);

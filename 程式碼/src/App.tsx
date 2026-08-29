@@ -19,6 +19,12 @@ import { SupplyDivision } from "./components/SupplyDivision";
 import { MissionGame } from "./components/MissionGame";
 import { RobotLabPanel } from "./components/RobotLabPanel";
 import { PixelCursor } from "./components/PixelCursor";
+import { EventPopup } from "./components/events/EventPopup";
+import { EventDebugPanel } from "./components/events/EventDebugPanel";
+import { KnowledgeBookModal } from "./components/events/KnowledgeBookModal";
+import { useEventSystem } from "./systems/useEventSystem";
+import { recordAction } from "./systems/playerStats";
+import { getAllCardDefinitions } from "./data/cardDatabase";
 import { createDefaultRobotUpgrades, createEmptyMaterialInventory, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import {
@@ -62,6 +68,7 @@ const loadSavedImages = (id: string) => {
 };
 
 export default function App() {
+  const eventSystem = useEventSystem();
   // Input and General State
   const [inputText, setInputText] = useState("");
   const [gameMode, setGameMode] = useState<"idle" | "counseling">("idle");
@@ -102,8 +109,11 @@ export default function App() {
   const [isFortuneOpen, setIsFortuneOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isKnowledgeBookOpen, setIsKnowledgeBookOpen] = useState(false);
   const [isGameOpen, setIsGameOpen] = useState(false);
   const [pendingBossChapter, setPendingBossChapter] = useState<number | null>(null);
+  const [missionEntrySource, setMissionEntrySource] = useState<"adventure" | "exhibition">("adventure");
+  const [openMissionCenterToken, setOpenMissionCenterToken] = useState(0);
   const [missionActive, setMissionActive] = useState(false);
   const desiredTrackRef = useRef<"theme" | "normal" | "mission">("theme");
 
@@ -197,6 +207,7 @@ export default function App() {
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
+    if (targetScene === "supply") recordAction("openShop");
     playSound("click");
     setPendingScene(targetScene);
     setIsTransitioning(true);
@@ -846,11 +857,12 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { playSound("click"); setIsInstructionsOpen(true); }}
-            className="p-1 sm:p-2 border border-zinc-700 hover:border-zinc-500 bg-black/40 backdrop-blur text-zinc-300 transition-all duration-200 rounded-none cursor-pointer flex items-center justify-center"
-            title="遊戲說明"
+            onClick={() => { playSound("click"); setIsKnowledgeBookOpen(true); }}
+            className="relative p-1 sm:p-2 border border-zinc-700 hover:border-zinc-500 bg-black/40 backdrop-blur text-zinc-300 transition-all duration-200 rounded-none cursor-pointer flex items-center justify-center"
+            title={`產業知識卡圖鑑（${eventSystem.ownedCards.length}/${getAllCardDefinitions().length}）`}
           >
-            <BookOpen className="w-3 h-3 sm:w-4 sm:h-4 text-zinc-400" />
+            <BookOpen className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" />
+            {eventSystem.ownedCards.length > 0 && <span className="absolute -right-1 -top-1 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-cyan-500 px-0.5 text-[7px] font-black text-black">{eventSystem.ownedCards.length}</span>}
           </button>
 
           <button
@@ -1104,6 +1116,12 @@ export default function App() {
           coins={coins}
           purchasedUpgrades={purchasedUpgrades}
           pendingBossChapter={pendingBossChapter}
+          openMissionCenterToken={openMissionCenterToken}
+          onStartBossMission={(chapter) => {
+            setMissionEntrySource("exhibition");
+            setPendingBossChapter(chapter);
+            handleMissionOpenChange(true);
+          }}
         />
       ) : (
         <SupplyDivision
@@ -1221,6 +1239,13 @@ export default function App() {
         onClose={() => setIsInstructionsOpen(false)}
       />
 
+      <KnowledgeBookModal
+        isOpen={isKnowledgeBookOpen}
+        onClose={() => setIsKnowledgeBookOpen(false)}
+        ownedCards={eventSystem.ownedCards}
+        playSound={playSound}
+      />
+
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -1241,12 +1266,25 @@ export default function App() {
 
       {isGameOpen && (
         <MissionGame
-          onClose={() => { setPendingBossChapter(null); handleMissionOpenChange(false); }}
+          onClose={() => {
+            setPendingBossChapter(null);
+            setMissionEntrySource("adventure");
+            handleMissionOpenChange(false);
+          }}
           onReturnToLab={(chapter) => {
             setPendingBossChapter(chapter);
+            setMissionEntrySource("adventure");
             setCurrentScene("ops");
             handleMissionOpenChange(false);
           }}
+          onReturnToExhibition={() => {
+            setPendingBossChapter(null);
+            setMissionEntrySource("adventure");
+            setCurrentScene("ops");
+            setOpenMissionCenterToken((token) => token + 1);
+            handleMissionOpenChange(false);
+          }}
+          entrySource={missionEntrySource}
           resumeBossChapter={pendingBossChapter}
           affectionPoints={affectionPoints}
           setAffectionPoints={setAffectionPoints}
@@ -1264,6 +1302,12 @@ export default function App() {
           setUnlockedChapters={setUnlockedChapters}
         />
       )}
+
+      {appPhase === "main" && !isGameOpen && !isTransitioning && eventSystem.pendingEvent && (
+        <EventPopup event={eventSystem.pendingEvent} playSound={playSound} />
+      )}
+
+      <EventDebugPanel />
 
       {/* --- REALISTIC PHYSICAL WALKING SCENE TRANSITION OVERLAY --- */}
       {isTransitioning && (

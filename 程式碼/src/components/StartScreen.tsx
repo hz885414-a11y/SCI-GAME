@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { playSound, startBackgroundMusic, stopBackgroundMusic } from "../utils/audio";
+import { CORE_ASSET_MANIFEST } from "../data/coreAssetManifest";
+import { UI_IMAGE_ASSETS } from "../data/gameAssetUrls";
+import { preloadAssetManifest } from "../utils/preloadImages";
 import { 
   Zap, 
   Settings, 
@@ -136,7 +139,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         {/* Main title */}
         <div className="relative">
           <img
-            src="https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/Main%20Title.png"
+            src={UI_IMAGE_ASSETS.mainTitle}
             alt="勇氣の燈燈小隊"
             className={`w-full max-w-[520px] sm:max-w-[620px] h-auto max-h-[28vh] sm:max-h-[36vh] mx-auto object-contain transition-all duration-300 ${glitchTitle ? "skew-x-3" : ""}`}
             loading="eager"
@@ -225,15 +228,17 @@ interface BootingScreenProps {
 export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
+  const [currentAsset, setCurrentAsset] = useState("建立素材清單");
+  const [failedAssets, setFailedAssets] = useState(0);
 
   const diagnosticLogs = [
     ">> INITIALIZING NEURAL LINK PROTOCOL...",
     ">> CHECKING HARMONIC RESONANCE RATIO... RATIO: 1.05 [OK]",
     ">> ESTABLISHING LAB ANTENNA SPECTRAL TUNER... DONE",
     ">> SPINNING UP CORE SYNTHESIZER DRIVER [WEB AUDIO API]...",
-    ">> LOADING AGENT #001: 林語晴 CLAIRE [温柔療癒 MATRIX]... ONLINE",
-    ">> LOADING AGENT #002: 許晨曦 ETHAN [理性直男 MATRIX]... ONLINE",
-    ">> LOADING AGENT #003: 張煦然 LEO [酷酷熱血 MATRIX]... ONLINE",
+    ">> LOADING AGENT #001: CLAIRE [温柔療癒 MATRIX]... ONLINE",
+    ">> LOADING AGENT #002: ETHAN [理性直男 MATRIX]... ONLINE",
+    ">> LOADING AGENT #003: LEO [酷酷熱血 MATRIX]... ONLINE",
     ">> DEPLOYING HOLOGRAPHIC WAVEFORM GRID...",
     ">> VERIFYING STANDEE PROJECTOR COORDINATES...",
     ">> COMPILING DIALOGUE MATRIX DATABASE...",
@@ -242,6 +247,7 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
   ];
 
   useEffect(() => {
+    let cancelled = false;
     let logIndex = 0;
     
     // Staggered log typewriter generator
@@ -255,26 +261,28 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
       }
     }, 320);
 
-    // Smooth percentage progress animator (takes about 4.2 seconds)
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          setTimeout(() => {
-            playSound("success");
-            onComplete();
-          }, 400);
-          return 100;
-        }
-        // Random incremental hops
-        const increment = Math.floor(Math.random() * 8) + 4;
-        return Math.min(100, prev + increment);
-      });
-    }, 150);
+    const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 1800));
+    const assetLoad = preloadAssetManifest(CORE_ASSET_MANIFEST, (status) => {
+      if (cancelled) return;
+      setProgress(status.percent);
+      setCurrentAsset(status.currentLabel);
+      setFailedAssets(status.failed);
+    });
+
+    Promise.all([minimumBootTime, assetLoad]).then(([, result]) => {
+      if (cancelled) return;
+      setProgress(100);
+      setCurrentAsset(result.failed > 0 ? "部分遠端素材將於背景重試" : "核心素材載入完成");
+      window.setTimeout(() => {
+        if (cancelled) return;
+        playSound("success");
+        onComplete();
+      }, 350);
+    });
 
     return () => {
+      cancelled = true;
       clearInterval(logInterval);
-      clearInterval(progressInterval);
     };
   }, []);
 
@@ -312,7 +320,9 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-zinc-300 block uppercase tracking-wider">⚡ COGNITIVE COUPLING SYNCHRONIZATION</span>
-            <span className="text-[10px] text-zinc-500 block">DOUBT RESISTANCE SHIELD ACTIVE // FUSE DRIVER OK</span>
+            <span className="text-[10px] text-zinc-500 block truncate max-w-[72vw]">
+              LOADING: {currentAsset} {failedAssets > 0 ? `// ${failedAssets} FALLBACK` : "// CACHE READY"}
+            </span>
           </div>
           <span className="font-mono text-amber-400 font-bold text-base bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20">
             {progress}%
@@ -336,14 +346,9 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
           </div>
         </div>
 
-        {/* Force Skip Option for ultra conveniences */}
-        <div className="flex justify-end">
-          <button
-            onClick={() => { playSound("success"); onComplete(); }}
-            className="text-[10px] font-mono text-zinc-600 hover:text-amber-500 hover:underline transition cursor-pointer"
-          >
-            跳過載入過場 (SKIP_SIGNAL ▷)
-          </button>
+        <div className="flex justify-between text-[9px] text-zinc-600">
+          <span>影像與碰撞遮罩會在進入基地前完成快取</span>
+          <span>{CORE_ASSET_MANIFEST.length} ASSETS</span>
         </div>
       </div>
     </div>

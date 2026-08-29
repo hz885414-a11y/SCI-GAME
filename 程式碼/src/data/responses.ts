@@ -19,8 +19,8 @@ export interface Character {
 export const CHARACTERS: Character[] = [
   {
     id: "claire",
-    name: "林語晴",
-    jpName: "小燈",
+    name: "Claire",
+    jpName: "Claire",
     englishName: "Claire Lin",
     avatarColor: "bg-rose-500",
     themeColor: "text-rose-400 hover:text-rose-300",
@@ -36,8 +36,8 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "ethan",
-    name: "許晨曦",
-    jpName: "阿直",
+    name: "Ethan",
+    jpName: "Ethan",
     englishName: "Ethan Hsu",
     avatarColor: "bg-sky-600",
     themeColor: "text-sky-400 hover:text-sky-300",
@@ -53,8 +53,8 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: "leo",
-    name: "張煦然",
-    jpName: "煦然",
+    name: "Leo",
+    jpName: "Leo",
     englishName: "Leo Chang",
     avatarColor: "bg-amber-500",
     themeColor: "text-amber-400 hover:text-amber-300",
@@ -64,7 +64,7 @@ export const CHARACTERS: Character[] = [
     catchphrase: "「交給我！」",
     role: "熱血行動派 ⚡",
     description: "長髮綁成小馬尾、黑色寬鬆連帽外套、黑色寬褲。手上拿著重型工業用工作燈。講話大聲，雖然常提出荒謬的建議，但出發點都是為了朋友好。",
-    bio: "實驗室的設備維護與現場測試員。體力驚人，性格開朗，最喜歡把燈具亮度調到最大。雖然常惹晨曦生氣，但卻是隊伍中不可或缺的活力來源！",
+    bio: "實驗室的設備維護與現場測試員。體力驚人，性格開朗，最喜歡把燈具亮度調到最大。雖然常惹 Ethan 生氣，但卻是隊伍中不可或缺的活力來源！",
     hobbies: "極限運動、把日常用品改裝成發光體、露營",
     specialty: "破壞僵局、製造笑料、雙手握持重型探照燈維持現場熱度"
   }
@@ -130,14 +130,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：曖昧真的像清晨的微光一樣美麗呢，好好享受這種小驚喜吧！" },
-        { speakerId: "ethan", text: "晨曦：在未確定阻抗前，保持安全距離是維護整個電路穩定的最佳做法。" },
-        { speakerId: "leo", text: "煦然：別管那麼多，先約他出去玩啦！戴上安全帽，油門踩到底！" }
+        { speakerId: "claire", text: "Claire：曖昧真的像清晨的微光一樣美麗呢，好好享受這種小驚喜吧！" },
+        { speakerId: "ethan", text: "Ethan：在未確定阻抗前，保持安全距離是維護整個電路穩定的最佳做法。" },
+        { speakerId: "leo", text: "Leo：別管那麼多，先約他出去玩啦！戴上安全帽，油門踩到底！" }
       ],
       [
-        { speakerId: "leo", text: "煦然：所以阿直你以前曖昧的時候也這麼冷冰冰嗎？" },
-        { speakerId: "ethan", text: "晨曦：我那是秉持最嚴格的數據通訊協議，不傳輸干擾噪聲。" },
-        { speakerId: "claire", text: "語晴：呵呵，晨曦真的很認真呢。玩家，祝你曖昧順利開花結果喔！" }
+        { speakerId: "leo", text: "Leo：所以 Ethan，你以前曖昧的時候也這麼冷冰冰嗎？" },
+        { speakerId: "ethan", text: "Ethan：我那是秉持最嚴格的數據通訊協議，不傳輸干擾噪聲。" },
+        { speakerId: "claire", text: "Claire：呵呵，Ethan 真的很認真呢。玩家，祝你曖昧順利開花結果喔！" }
       ]
     ]
   },
@@ -165,14 +165,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "ethan", text: "晨曦：張煦然，你剛剛那個掉拉麵的猜測雖然荒謬，但在機率學上並非不可能。" },
-        { speakerId: "leo", text: "煦然：對吧！我可是站在玩家立場在搞笑呢！" },
-        { speakerId: "claire", text: "語晴：不管怎麼樣，先放鬆心情，今天好好吃一頓熱呼呼的飯最重要了！" }
+        { speakerId: "ethan", text: "Ethan：Leo，你剛剛那個掉拉麵的猜測雖然荒謬，但在機率學上並非不可能。" },
+        { speakerId: "leo", text: "Leo：對吧！我可是站在玩家立場在搞笑呢！" },
+        { speakerId: "claire", text: "Claire：不管怎麼樣，先放鬆心情，今天好好吃一頓熱呼呼的飯最重要了！" }
       ],
       [
-        { speakerId: "leo", text: "煦然：不回訊息的人真欠修理！" },
-        { speakerId: "ethan", text: "晨曦：用沈默作為武器是不成熟的溝通協議，我們不應該隨之起舞。" },
-        { speakerId: "claire", text: "語晴：沒錯，我們還是要溫和地對待自己，不要一直焦慮地看手機喔。" }
+        { speakerId: "leo", text: "Leo：不回訊息的人真欠修理！" },
+        { speakerId: "ethan", text: "Ethan：用沈默作為武器是不成熟的溝通協議，我們不應該隨之起舞。" },
+        { speakerId: "claire", text: "Claire：沒錯，我們還是要溫和地對待自己，不要一直焦慮地看手機喔。" }
       ]
     ]
   },
@@ -200,14 +200,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：告白真的好需要勇氣呢...不論如何，能大方表達心意的你超級勇敢！" },
-        { speakerId: "ethan", text: "晨曦：我同意。向系統發出握手信號是唯一能確認連線的方法。" },
-        { speakerId: "leo", text: "煦然：對嘛！大聲喊出來，就算被拒絕也是一條好漢！" }
+        { speakerId: "claire", text: "Claire：告白真的好需要勇氣呢...不論如何，能大方表達心意的你超級勇敢！" },
+        { speakerId: "ethan", text: "Ethan：我同意。向系統發出握手信號是唯一能確認連線的方法。" },
+        { speakerId: "leo", text: "Leo：對嘛！大聲喊出來，就算被拒絕也是一條好漢！" }
       ],
       [
-        { speakerId: "ethan", text: "晨曦：過度激進的信號傳輸往往會誘發系統安全防禦機制。" },
-        { speakerId: "claire", text: "語晴：晨曦是說不要給對方太大壓力對吧？呵呵，煦然要學著點喔。" },
-        { speakerId: "leo", text: "煦然：好啦好啦，我這不是在幫玩家熱血打氣嘛！" }
+        { speakerId: "ethan", text: "Ethan：過度激進的信號傳輸往往會誘發系統安全防禦機制。" },
+        { speakerId: "claire", text: "Claire：Ethan 是說不要給對方太大壓力對吧？呵呵，Leo 要學著點喔。" },
+        { speakerId: "leo", text: "Leo：好啦好啦，我這不是在幫玩家熱血打氣嘛！" }
       ]
     ]
   },
@@ -235,14 +235,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：分手就像是眼前的燈突然暗了，需要時間讓眼睛適應黑暗..." },
-        { speakerId: "ethan", text: "晨曦：過載保護下的自動斷電雖然痛苦，但能有效防止整個系統被徹底燒毀。" },
-        { speakerId: "leo", text: "煦然：沒錯！我們陪你一起適應黑暗，等一下換個超帥的新燈泡！" }
+        { speakerId: "claire", text: "Claire：分手就像是眼前的燈突然暗了，需要時間讓眼睛適應黑暗..." },
+        { speakerId: "ethan", text: "Ethan：過載保護下的自動斷電雖然痛苦，但能有效防止整個系統被徹底燒毀。" },
+        { speakerId: "leo", text: "Leo：沒錯！我們陪你一起適應黑暗，等一下換個超帥的新燈泡！" }
       ],
       [
-        { speakerId: "leo", text: "煦然：真是生氣！那個人根本沒有審美眼光！" },
-        { speakerId: "claire", text: "語晴：煦然別生氣，重點是讓玩家能好好休息，等傷口慢慢結痂。" },
-        { speakerId: "ethan", text: "晨曦：同意，大腦的神經可塑性需要時間重構。請給自己充分的降溫期。" }
+        { speakerId: "leo", text: "Leo：真是生氣！那個人根本沒有審美眼光！" },
+        { speakerId: "claire", text: "Claire：Leo 別生氣，重點是讓玩家能好好休息，等傷口慢慢結痂。" },
+        { speakerId: "ethan", text: "Ethan：同意，大腦的神經可塑性需要時間重構。請給自己充分的降溫期。" }
       ]
     ]
   },
@@ -270,14 +270,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：想重修舊好代表你心裡依然保留著對他的溫暖。慢慢確認彼此的改變吧。" },
-        { speakerId: "ethan", text: "晨曦：如果沒有修復導致短路的Bug，再次連接只會引發同一個錯誤。" },
-        { speakerId: "leo", text: "煦然：別管Bug了，要不要試試看？大不了再被電一次，這才是熱血人生！" }
+        { speakerId: "claire", text: "Claire：想重修舊好代表你心裡依然保留著對他的溫暖。慢慢確認彼此的改變吧。" },
+        { speakerId: "ethan", text: "Ethan：如果沒有修復導致短路的Bug，再次連接只會引發同一個錯誤。" },
+        { speakerId: "leo", text: "Leo：別管Bug了，要不要試試看？大不了再被電一次，這才是熱血人生！" }
       ],
       [
-        { speakerId: "ethan", text: "晨曦：張煦然這種不顧電阻匹配的盲目連接方式，是嚴重的工程隱患。" },
-        { speakerId: "leo", text: "煦然：愛情又不是接電路板，阿直你太呆板了！" },
-        { speakerId: "claire", text: "語晴：嘻嘻，兩個人各退一步，慢慢找出新軌道就好啦。" }
+        { speakerId: "ethan", text: "Ethan：Leo 這種不顧電阻匹配的盲目連接方式，是嚴重的工程隱患。" },
+        { speakerId: "leo", text: "Leo：愛情又不是接電路板，Ethan，你太呆板了！" },
+        { speakerId: "claire", text: "Claire：嘻嘻，兩個人各退一步，慢慢找出新軌道就好啦。" }
       ]
     ]
   },
@@ -305,14 +305,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：冷戰的空氣好悶、好難受喔。我們先主動遞出一杯熱茶暖暖氣氛吧？" },
-        { speakerId: "ethan", text: "晨曦：拒絕信號傳輸會導致閉環系統失去回饋，是最低效的異常處理方式。" },
-        { speakerId: "leo", text: "煦然：大喊一聲肚子餓，直接拉去吃麻辣鍋！火鍋一熱，冰山全融化！" }
+        { speakerId: "claire", text: "Claire：冷戰的空氣好悶、好難受喔。我們先主動遞出一杯熱茶暖暖氣氛吧？" },
+        { speakerId: "ethan", text: "Ethan：拒絕信號傳輸會導致閉環系統失去回饋，是最低效的異常處理方式。" },
+        { speakerId: "leo", text: "Leo：大喊一聲肚子餓，直接拉去吃麻辣鍋！火鍋一熱，冰山全融化！" }
       ],
       [
-        { speakerId: "ethan", text: "晨曦：主動發送低強度脈衝信號，能避免系統在 72 小時後進入徹底休眠。" },
-        { speakerId: "claire", text: "語晴：是的，先低頭的人不是輸了，而是更珍惜這段關係喔。" },
-        { speakerId: "leo", text: "煦然：沒錯！主動出擊，一擊破冰！" }
+        { speakerId: "ethan", text: "Ethan：主動發送低強度脈衝信號，能避免系統在 72 小時後進入徹底休眠。" },
+        { speakerId: "claire", text: "Claire：是的，先低頭的人不是輸了，而是更珍惜這段關係喔。" },
+        { speakerId: "leo", text: "Leo：沒錯！主動出擊，一擊破冰！" }
       ]
     ]
   },
@@ -340,14 +340,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：吃醋是因為你很在乎他，害怕失去他。這份心情很珍貴，別覺得自己小心眼喔。" },
-        { speakerId: "ethan", text: "晨曦：嫉妒心就像漏電保護開關。適度的防範是正常的，但過度敏感會導致頻繁跳電。" },
-        { speakerId: "leo", text: "煦然：直接宣示主權啊！走過去霸氣摟住他，讓無關的人通通識相閃開！" }
+        { speakerId: "claire", text: "Claire：吃醋是因為你很在乎他，害怕失去他。這份心情很珍貴，別覺得自己小心眼喔。" },
+        { speakerId: "ethan", text: "Ethan：嫉妒心就像漏電保護開關。適度的防範是正常的，但過度敏感會導致頻繁跳電。" },
+        { speakerId: "leo", text: "Leo：直接宣示主權啊！走過去霸氣摟住他，讓無關的人通通識相閃開！" }
       ],
       [
-        { speakerId: "ethan", text: "晨曦：過度吃醋通常源於對自我電阻估值過低。相信自己的輸出功率即可。" },
-        { speakerId: "claire", text: "語晴：多給自己一點信心，你可是他生命中獨一無二的光源喔。" },
-        { speakerId: "leo", text: "煦然：沒錯！我們家的寶貝在我們實驗室是最閃耀的！" }
+        { speakerId: "ethan", text: "Ethan：過度吃醋通常源於對自我電阻估值過低。相信自己的輸出功率即可。" },
+        { speakerId: "claire", text: "Claire：多給自己一點信心，你可是他生命中獨一無二的光源喔。" },
+        { speakerId: "leo", text: "Leo：沒錯！我們家的寶貝在我們實驗室是最閃耀的！" }
       ]
     ]
   },
@@ -375,14 +375,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：別怕，我們不需要完美才值得被愛。你今天已經做得非常好了。" },
-        { speakerId: "ethan", text: "晨曦：最穩健的安全感源自於你具有獨立的自發電系統，不完全綁定外部輸入。" },
-        { speakerId: "leo", text: "煦然：不安全？那一定是生活太閒了！跟我去搬重型機台，累到秒睡就沒事了！" }
+        { speakerId: "claire", text: "Claire：別怕，我們不需要完美才值得被愛。你今天已經做得非常好了。" },
+        { speakerId: "ethan", text: "Ethan：最穩健的安全感源自於你具有獨立的自發電系統，不完全綁定外部輸入。" },
+        { speakerId: "leo", text: "Leo：不安全？那一定是生活太閒了！跟我去搬重型機台，累到秒睡就沒事了！" }
       ],
       [
-        { speakerId: "claire", text: "語晴：一邊互相依賴，一邊各自獨立閃耀，就像雙星軌道一樣美麗呢。" },
-        { speakerId: "ethan", text: "晨曦：精準的力學比喻，我很贊同這個觀點。" },
-        { speakerId: "leo", text: "煦然：哇，小燈這話太有學問了，我都想記錄下來！" }
+        { speakerId: "claire", text: "Claire：一邊互相依賴，一邊各自獨立閃耀，就像雙星軌道一樣美麗呢。" },
+        { speakerId: "ethan", text: "Ethan：精準的力學比喻，我很贊同這個觀點。" },
+        { speakerId: "leo", text: "Leo：哇，Claire 這話太有學問了，我都想記錄下來！" }
       ]
     ]
   },
@@ -410,14 +410,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：他忙著打拼時，送他一盞舒緩眼晴的檯燈，寫個加油卡片，他一定會超感動的！" },
-        { speakerId: "ethan", text: "晨曦：忙碌時請利用共享日曆同步彼此的空閒頻寬，高質量的專屬相處大於無效對話。" },
-        { speakerId: "leo", text: "煦然：哼，等他有空，看我不拿一萬瓦探照燈逼他帶你去遊樂園補償！" }
+        { speakerId: "claire", text: "Claire：他忙著打拼時，送他一盞舒緩眼晴的檯燈，寫個加油卡片，他一定會超感動的！" },
+        { speakerId: "ethan", text: "Ethan：忙碌時請利用共享日曆同步彼此的空閒頻寬，高質量的專屬相處大於無效對話。" },
+        { speakerId: "leo", text: "Leo：哼，等他有空，看我不拿一萬瓦探照燈逼他帶你去遊樂園補償！" }
       ],
       [
-        { speakerId: "claire", text: "語晴：玩家寂寞的時候，隨時可以來我們實驗室吃我烤的小餅乾喔！" },
-        { speakerId: "ethan", text: "晨曦：理解伴侶的工作，本質上是為你們未來感情積攢備用電池。" },
-        { speakerId: "leo", text: "煦然：對！有大哥陪你，你絕對不會孤單寂寞冷的！" }
+        { speakerId: "claire", text: "Claire：玩家寂寞的時候，隨時可以來我們實驗室吃我烤的小餅乾喔！" },
+        { speakerId: "ethan", text: "Ethan：理解伴侶的工作，本質上是為你們未來感情積攢備用電池。" },
+        { speakerId: "leo", text: "Leo：對！有大哥陪你，你絕對不會孤單寂寞冷的！" }
       ]
     ]
   },
@@ -445,14 +445,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：不確定對方的想法時，保持最舒服的距離就好。有些燈具只是需要我們找到開關而已。" },
-        { speakerId: "ethan", text: "晨曦：利用控制變量實驗，測試其回覆延遲和邀約接收度是解密信號的最佳手段。" },
-        { speakerId: "leo", text: "煦然：想那麼多幹嘛！直接拉去玩雲霄飛車，人在極度興奮時最藏不住心事！" }
+        { speakerId: "claire", text: "Claire：不確定對方的想法時，保持最舒服的距離就好。有些燈具只是需要我們找到開關而已。" },
+        { speakerId: "ethan", text: "Ethan：利用控制變量實驗，測試其回覆延遲和邀約接收度是解密信號的最佳手段。" },
+        { speakerId: "leo", text: "Leo：想那麼多幹嘛！直接拉去玩雲霄飛車，人在極度興奮時最藏不住心事！" }
       ],
       [
-        { speakerId: "ethan", text: "晨曦：在顳葉高度興奮下引發的吊橋效應，本質上是一種生理信號誤判。" },
-        { speakerId: "leo", text: "煦然：哎呀阿直，你就是不浪漫！至少這招真的能戳中答案嘛！" },
-        { speakerId: "claire", text: "語晴：呵呵，不過真誠溫柔地對待彼此才是最動人的喔。" }
+        { speakerId: "ethan", text: "Ethan：在顳葉高度興奮下引發的吊橋效應，本質上是一種生理信號誤判。" },
+        { speakerId: "leo", text: "Leo：哎呀 Ethan，你就是不浪漫！至少這招真的能戳中答案嘛！" },
+        { speakerId: "claire", text: "Claire：呵呵，不過真誠溫柔地對待彼此才是最動人的喔。" }
       ]
     ]
   },
@@ -480,14 +480,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：先把自己的生活過亮一點，愛情來的時候才不會慌張喔。" },
-        { speakerId: "ethan", text: "晨曦：單身狀態是系統最省電、最適合進行底層架構重構的黃金開發期。" },
-        { speakerId: "leo", text: "煦然：大步往前走，走路有風，這才是最帥氣的自由行動模式！" }
+        { speakerId: "claire", text: "Claire：先把自己的生活過亮一點，愛情來的時候才不會慌張喔。" },
+        { speakerId: "ethan", text: "Ethan：單身狀態是系統最省電、最適合進行底層架構重構的黃金開發期。" },
+        { speakerId: "leo", text: "Leo：大步往前走，走路有風，這才是最帥氣的自由行動模式！" }
       ],
       [
-        { speakerId: "leo", text: "煦然：阿直，你單身這麼久也是在進行底層重構嗎？" },
-        { speakerId: "ethan", text: "晨曦：我是在對架構進行極限承載壓力測試，與你這種盲目連線不同。" },
-        { speakerId: "claire", text: "語晴：呵呵，兩位都很特別呢。玩家，好好享受現在的生活節奏喔！" }
+        { speakerId: "leo", text: "Leo：Ethan，你單身這麼久也是在進行底層重構嗎？" },
+        { speakerId: "ethan", text: "Ethan：我是在對架構進行極限承載壓力測試，與你這種盲目連線不同。" },
+        { speakerId: "claire", text: "Claire：呵呵，兩位都很特別呢。玩家，好好享受現在的生活節奏喔！" }
       ]
     ]
   },
@@ -515,14 +515,14 @@ export const RESPONSE_DATABASE: Record<
     ],
     banter: [
       [
-        { speakerId: "claire", text: "語晴：不管發生什麼，我都願意做你最忠實的傾聽者。我們一起慢慢釐清它。" },
-        { speakerId: "ethan", text: "晨曦：遇到未知異常，可暫時切斷不穩定鏈接，初始化到出廠設置，進行系統自檢。" },
-        { speakerId: "leo", text: "煦然：管它什麼奇葩煩惱，通通一腳踢開！今晚先跟我去擼串喝冰可樂！" }
+        { speakerId: "claire", text: "Claire：不管發生什麼，我都願意做你最忠實的傾聽者。我們一起慢慢釐清它。" },
+        { speakerId: "ethan", text: "Ethan：遇到未知異常，可暫時切斷不穩定鏈接，初始化到出廠設置，進行系統自檢。" },
+        { speakerId: "leo", text: "Leo：管它什麼奇葩煩惱，通通一腳踢開！今晚先跟我去擼串喝冰可樂！" }
       ],
       [
-        { speakerId: "leo", text: "煦然：對嘛！填飽肚子後，什麼煩惱根本就不值一提了！" },
-        { speakerId: "ethan", text: "晨曦：雖然不合邏輯，但吃飽確實能提升多巴胺，緩解焦慮症狀。" },
-        { speakerId: "claire", text: "語晴：嘻嘻，謝謝兩位，我們燈燈小隊隨時為玩家敞開大門喔！" }
+        { speakerId: "leo", text: "Leo：對嘛！填飽肚子後，什麼煩惱根本就不值一提了！" },
+        { speakerId: "ethan", text: "Ethan：雖然不合邏輯，但吃飽確實能提升多巴胺，緩解焦慮症狀。" },
+        { speakerId: "claire", text: "Claire：嘻嘻，謝謝兩位，我們燈燈小隊隨時為玩家敞開大門喔！" }
       ]
     ]
   }

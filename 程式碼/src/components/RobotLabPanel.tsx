@@ -13,6 +13,7 @@ import {
 } from "../data/modificationSystem";
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
+import { recordAction } from "../systems/playerStats";
 
 interface RobotLabPanelProps {
   materials: MaterialInventory;
@@ -61,6 +62,8 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
       return next;
     });
     setUpgrades((previous) => ({ ...previous, [id]: currentLevel + 1 }));
+    recordAction("repairRobot");
+    recordAction("upgradeRobotModule");
     playSound("success");
   };
 

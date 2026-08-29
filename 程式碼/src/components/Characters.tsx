@@ -31,13 +31,13 @@ export const DEFAULT_CHARACTER_EMOTIONS: Record<string, Record<EmotionType, stri
     excited: claireHappyImg,
   },
   ethan: {
-    happy: ethanImg, // 預設許晨曦
+    happy: ethanImg, // 預設 Ethan
     serious: ethanImg, // 認真
     sad: ethanImg, // 難過
     excited: ethanImg, // 興奮
   },
   leo: {
-    happy: leoImg, // 預設張煦然
+    happy: leoImg, // 預設 Leo
     serious: leoImg, // 認真
     sad: leoImg, // 難過
     excited: leoImg, // 興奮

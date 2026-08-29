@@ -8,7 +8,6 @@ import {
   Globe,
   Layers,
   Sparkles,
-  MapPin,
   AlertTriangle,
   Lightbulb,
   Flame,
@@ -18,6 +17,7 @@ import {
   FolderOpen,
   Gamepad2
 } from "lucide-react";
+import { EXHIBITION_MISSIONS, type ExhibitionMission } from "../data/exhibitionMissions";
 interface OpsDivisionProps {
   isMuted: boolean;
   playSound: (sound: string) => void;
@@ -26,6 +26,8 @@ interface OpsDivisionProps {
   coins: number;
   purchasedUpgrades: Record<string, number>;
   pendingBossChapter: number | null;
+  onStartBossMission: (chapter: number) => void;
+  openMissionCenterToken: number;
 }
 
 export function OpsDivision({
@@ -35,21 +37,20 @@ export function OpsDivision({
   setIsGameOpen,
   coins,
   purchasedUpgrades,
-  pendingBossChapter
+  pendingBossChapter,
+  onStartBossMission,
+  openMissionCenterToken,
 }: OpsDivisionProps) {
-  // Exhibition destinations are intentionally embedded here so every button always opens its assigned site.
-  const exhibitions = [
-    { id: "ampa", name: "AMPA", url: "https://www.sci.com.tw/2026-ampa-online-exhibition/", location: "台北 (Taipei)", code: "TW-AMPA" },
-    { id: "frankfurt", name: "Automechanika Frankfurt", url: "https://www.sci.com.tw/automechanika-frankfurt-2026-1/", location: "法蘭克福 (Frankfurt)", code: "DE-AMF" },
-    { id: "tite", name: "TITE × IHT", url: "https://www.sci.com.tw/titexiht2026/", location: "台中 (Taichung)", code: "TW-TITE" },
-    { id: "aapex", name: "AAPEX", url: "https://www.sci.com.tw/aapex-2026/", location: "拉斯維加斯 (Las Vegas)", code: "US-AAPEX" },
-    { id: "metstrade", name: "Metstrade", url: "https://www.sci.com.tw/metstrade-2026/", location: "阿姆斯特丹 (Amsterdam)", code: "NL-METS" },
-    { id: "bauma", name: "bauma CHINA", url: "https://www.sci.com.tw/bauma-china-2026/", location: "上海 (Shanghai)", code: "CN-BAUMA" }
-  ];
-
   // Taskbar windows open/close states - all closed by default
   const [isOpenPortal, setIsOpenPortal] = useState<boolean>(false);
   const [isOpenLogs, setIsOpenLogs] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (openMissionCenterToken <= 0) return;
+    setIsOpenPortal(true);
+    setIsOpenLogs(false);
+    setIsGameOpen(false);
+  }, [openMissionCenterToken]);
 
   // Laboratory Dashboard states
   const [isDashboardCollapsed, setIsDashboardCollapsed] = useState<boolean>(false);
@@ -96,6 +97,16 @@ export function OpsDivision({
     playSound("click");
     addLog(`[REDIRECT] 導向至 ${name} 中... 網址: ${url}`);
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleStartBossMission = (exhibition: ExhibitionMission) => {
+    playSound("click");
+    addLog(
+      `[BOSS_DEPLOY] ${exhibition.name} // 第 ${exhibition.bossMission.chapter} 章 // ${exhibition.bossMission.bossName}`
+    );
+    setIsOpenPortal(false);
+    setIsOpenLogs(false);
+    onStartBossMission(exhibition.bossMission.chapter);
   };
 
   // Toggle helpers
@@ -283,39 +294,54 @@ export function OpsDivision({
               <div className="space-y-3 mt-1">
                 <div className="text-[10px] sm:text-xs font-mono text-zinc-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-zinc-900 pb-2">
                   <Compass className="w-4 h-4 text-orange-500 shrink-0" />
-                  <span>SELECT DEPLOYMENT TARGET // 選擇展覽進入虛擬展區</span>
+                  <span>SELECT DEPLOYMENT TARGET // 選擇線上展覽或 BOSS 作戰</span>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin">
-                  {exhibitions.map((exhib) => {
+                  {EXHIBITION_MISSIONS.map((exhib) => {
                     return (
-                      <button
+                      <article
                         key={exhib.id}
-                        onClick={() => handleOpenExhibition(exhib.url, exhib.name)}
-                        className="group flex min-h-[92px] flex-col justify-between p-3 sm:p-4 bg-zinc-900/40 hover:bg-orange-500/10 border border-zinc-900 hover:border-orange-500/40 transition-all duration-200 text-left rounded-none cursor-pointer relative overflow-hidden"
+                        className="group flex flex-col justify-between p-3 sm:p-4 bg-zinc-900/50 hover:bg-zinc-900/80 border border-zinc-900 hover:border-orange-500/40 transition-all duration-200 text-left rounded-none relative overflow-hidden"
                       >
                         {/* Hover bar indicator */}
                         <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-transparent group-hover:bg-orange-500 transition-all" />
-                        
-                        <div className="w-full flex items-center justify-between text-[9px] sm:text-[10px] font-mono mb-2">
-                          <span className="text-orange-500/70 font-bold tracking-wider group-hover:text-orange-400">
-                            {exhib.code}
-                          </span>
-                          <span className="text-zinc-600 group-hover:text-zinc-500 flex items-center gap-0.5">
-                            <MapPin className="w-3 h-3 text-zinc-500 shrink-0" />
-                            {exhib.location}
-                          </span>
-                        </div>
-                        
-                        <div className="font-bold text-xs sm:text-sm text-zinc-300 group-hover:text-white leading-tight mb-3">
-                          {exhib.name}
+
+                        <div
+                          className="relative w-full overflow-hidden border border-zinc-800/80 bg-black/40"
+                          style={{ aspectRatio: "792 / 313" }}
+                        >
+                          <img
+                            src={exhib.imageUrl}
+                            alt={`${exhib.name} 展覽任務`}
+                            className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.015]"
+                            loading="eager"
+                            draggable={false}
+                          />
                         </div>
 
-                        <div className="w-full flex justify-end items-center text-[9px] sm:text-[10px] font-mono text-zinc-600 group-hover:text-orange-400 gap-1.5 mt-auto">
-                          <span>CONNECT SECTOR</span>
-                          <ExternalLink className="w-3 h-3" />
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenExhibition(exhib.url, exhib.name)}
+                            className="flex min-h-10 items-center justify-center gap-1.5 border border-zinc-700 bg-zinc-950 px-2 text-[10px] font-bold text-zinc-300 transition-all hover:border-orange-500 hover:text-orange-300 active:scale-95 cursor-pointer"
+                            aria-label={`開啟 ${exhib.name} 線上展覽`}
+                          >
+                            <Globe className="h-3.5 w-3.5" />
+                            <span>線上展覽</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartBossMission(exhib)}
+                            className="flex min-h-10 items-center justify-center gap-1.5 border border-rose-500/70 bg-rose-950/60 px-2 text-[10px] font-black text-rose-200 transition-all hover:bg-rose-900 hover:border-rose-400 active:scale-95 cursor-pointer"
+                            aria-label={`啟動 ${exhib.name} Boss 作戰`}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            <span>BOSS 作戰</span>
+                          </button>
                         </div>
-                      </button>
+                      </article>
                     );
                   })}
                 </div>

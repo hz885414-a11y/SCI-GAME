@@ -11,6 +11,19 @@ export const MISSION_MAP_CONFIG = {
   spawnAttempts: 240,
 } as const;
 
+export const BOSS_ARENA_CONFIG = {
+  backgroundUrl:
+    "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/3.%20background/Climactic%20battle%20scene-01.png",
+  maskUrl:
+    "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/3.%20background/Climactic%20battle%20scene-01-mask.png",
+  playerSpawn: { xRatio: 0.5, yRatio: 0.82 },
+  bossSpawn: { xRatio: 0.5, yRatio: 0.2 },
+  walkableColor: { r: 255, g: 255, b: 255 },
+  colorTolerance: 8,
+  collisionSamples: 12,
+  spawnSearchStep: 18,
+} as const;
+
 export interface MissionMaskData {
   width: number;
   height: number;

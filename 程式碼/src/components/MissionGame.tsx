@@ -7,9 +7,14 @@ import {
 import { SpriteAnimator } from "./SpriteAnimator";
 import { BossWarningTransition } from "./BossWarningTransition";
 import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites";
+import { getBossVisualSet, type BossVisualState } from "../data/bossVisualConfig";
+import { getBossBehaviorProfile } from "../data/bossBehaviorConfig";
+import { recordAction, recordEnemyDefeated } from "../systems/playerStats";
+import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, type MissionEnemyType } from "../data/gameAssetUrls";
 
 import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
 import {
+  BOSS_ARENA_CONFIG,
   MISSION_MAP_CONFIG,
   getCoverPlacement,
   type MissionMaskData,
@@ -34,6 +39,8 @@ import {
 interface MissionGameProps {
   onClose: () => void;
   onReturnToLab: (chapter: number) => void;
+  onReturnToExhibition: () => void;
+  entrySource?: "adventure" | "exhibition";
   resumeBossChapter?: number | null;
   affectionPoints: Record<string, number>;
   setAffectionPoints: React.Dispatch<React.SetStateAction<Record<string, number>>>;
@@ -48,7 +55,7 @@ interface MissionGameProps {
 }
 
 type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER";
-type EnemyType = "mote" | "clumper" | "stalker";
+type EnemyType = MissionEnemyType;
 
 interface EnemyEntity {
   x: number;
@@ -80,12 +87,6 @@ const C2_932_PUNCHES_REQUIRED = 3;
 const C2_932_FIELD_DURATION_MS = 3000;
 const C2_932_FIELD_RADIUS = 145;
 
-const ENEMY_SPRITE_URLS: Record<EnemyType, string> = {
-  mote: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-Jellyfish-04.png",
-  clumper: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-Spiky%20ball.png",
-  stalker: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/2.Enemy%20confirmed/Enemy-ghost.png",
-};
-
 interface Agent {
   id: string;
   name: string;
@@ -101,7 +102,7 @@ interface Agent {
 const AGENTS: Agent[] = [
   {
     id: "claire",
-    name: "林語晴 (Claire)",
+    name: "Claire",
     role: "機動分析官 (ANALYSIS)",
     avatar: "👩‍💻",
     desc: "燈光分析專家。移動速度 +20%，電池充能效率 +30%！",
@@ -112,7 +113,7 @@ const AGENTS: Agent[] = [
   },
   {
     id: "ethan",
-    name: "許晨曦 (Ethan)",
+    name: "Ethan",
     role: "前線突擊手 (STRIKER)",
     avatar: "⚡",
     desc: "敏捷突擊手。High Mode 耗電率降低 25%，光束傷害 +15%！",
@@ -123,7 +124,7 @@ const AGENTS: Agent[] = [
   },
   {
     id: "leo",
-    name: "張煦然 (Leo)",
+    name: "Leo",
     role: "重裝工程師 (ENGINEER)",
     avatar: "🛠️",
     desc: "工程大師。初始生命值為 4（其餘為 3），High Mode 護盾減傷 20%！",
@@ -249,6 +250,8 @@ const LIGHT_ATTACK_PROFILES = {
 export function MissionGame({ 
   onClose, 
   onReturnToLab,
+  onReturnToExhibition,
+  entrySource = "adventure",
   resumeBossChapter = null,
   affectionPoints, 
   setAffectionPoints, 
@@ -365,6 +368,9 @@ export function MissionGame({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const missionBackgroundImgRef = useRef<HTMLImageElement | null>(null);
   const missionMaskDataRef = useRef<MissionMaskData | null>(null);
+  const bossArenaBackgroundImgRef = useRef<HTMLImageElement | null>(null);
+  const bossArenaMaskDataRef = useRef<MissionMaskData | null>(null);
+  const bossVisualImagesRef = useRef<Partial<Record<BossVisualState, HTMLImageElement>>>({});
   const [missionMapReady, setMissionMapReady] = useState(false);
 
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
@@ -409,6 +415,34 @@ export function MissionGame({
 
   useEffect(() => {
     let disposed = false;
+    const loadedImages: HTMLImageElement[] = [];
+    bossVisualImagesRef.current = {};
+
+    const visualSet = getBossVisualSet(selectedChapter);
+    (Object.entries(visualSet) as Array<[BossVisualState, string]>).forEach(([state, url]) => {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = url;
+      image.onload = () => {
+        if (!disposed) bossVisualImagesRef.current[state] = image;
+      };
+      image.onerror = () => {
+        if (!disposed) delete bossVisualImagesRef.current[state];
+      };
+      loadedImages.push(image);
+    });
+
+    return () => {
+      disposed = true;
+      loadedImages.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
+    };
+  }, [selectedChapter]);
+
+  useEffect(() => {
+    let disposed = false;
 
     const backgroundImage = new Image();
     backgroundImage.crossOrigin = "anonymous";
@@ -418,6 +452,16 @@ export function MissionGame({
     };
     backgroundImage.onerror = () => {
       if (!disposed) missionBackgroundImgRef.current = null;
+    };
+
+    const bossArenaBackgroundImage = new Image();
+    bossArenaBackgroundImage.crossOrigin = "anonymous";
+    bossArenaBackgroundImage.src = BOSS_ARENA_CONFIG.backgroundUrl;
+    bossArenaBackgroundImage.onload = () => {
+      if (!disposed) bossArenaBackgroundImgRef.current = bossArenaBackgroundImage;
+    };
+    bossArenaBackgroundImage.onerror = () => {
+      if (!disposed) bossArenaBackgroundImgRef.current = null;
     };
 
     const maskImage = new Image();
@@ -476,6 +520,48 @@ export function MissionGame({
       }
     };
 
+    const bossArenaMaskImage = new Image();
+    bossArenaMaskImage.crossOrigin = "anonymous";
+    bossArenaMaskImage.src = BOSS_ARENA_CONFIG.maskUrl;
+    bossArenaMaskImage.onload = () => {
+      if (disposed) return;
+
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = bossArenaMaskImage.naturalWidth;
+      maskCanvas.height = bossArenaMaskImage.naturalHeight;
+      const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+      if (!maskContext) return;
+
+      maskContext.imageSmoothingEnabled = false;
+      maskContext.drawImage(bossArenaMaskImage, 0, 0);
+
+      try {
+        const pixels = maskContext.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+        const walkable = new Uint8Array(maskCanvas.width * maskCanvas.height);
+        const { walkableColor, colorTolerance } = BOSS_ARENA_CONFIG;
+
+        for (let pixelIndex = 0, mapIndex = 0; pixelIndex < pixels.length; pixelIndex += 4, mapIndex++) {
+          const matchesWalkableColor =
+            Math.abs(pixels[pixelIndex] - walkableColor.r) <= colorTolerance &&
+            Math.abs(pixels[pixelIndex + 1] - walkableColor.g) <= colorTolerance &&
+            Math.abs(pixels[pixelIndex + 2] - walkableColor.b) <= colorTolerance;
+          walkable[mapIndex] = matchesWalkableColor ? 1 : 0;
+        }
+
+        bossArenaMaskDataRef.current = {
+          width: maskCanvas.width,
+          height: maskCanvas.height,
+          walkable,
+        };
+      } catch (error) {
+        console.error("Failed to read boss arena collision mask", error);
+        bossArenaMaskDataRef.current = null;
+      }
+    };
+    bossArenaMaskImage.onerror = () => {
+      if (!disposed) bossArenaMaskDataRef.current = null;
+    };
+
     return () => {
       disposed = true;
     };
@@ -531,6 +617,73 @@ export function MissionGame({
     if (isMissionPositionWalkable(entity.x, nextY, radius)) entity.y = nextY;
   };
 
+  const isBossArenaPositionWalkable = (
+    x: number,
+    y: number,
+    radius: number,
+    mapSize: { width: number; height: number },
+  ) => {
+    const mask = bossArenaMaskDataRef.current;
+    if (!mask) return true;
+
+    const placement = getCoverPlacement(mask.width, mask.height, mapSize.width, mapSize.height);
+    const samplePoint = (sampleX: number, sampleY: number) => {
+      const pixelX = Math.floor(((sampleX - placement.x) / placement.width) * mask.width);
+      const pixelY = Math.floor(((sampleY - placement.y) / placement.height) * mask.height);
+      if (pixelX < 0 || pixelX >= mask.width || pixelY < 0 || pixelY >= mask.height) return false;
+      return mask.walkable[pixelY * mask.width + pixelX] === 1;
+    };
+
+    if (!samplePoint(x, y)) return false;
+    for (let index = 0; index < BOSS_ARENA_CONFIG.collisionSamples; index++) {
+      const angle = (index / BOSS_ARENA_CONFIG.collisionSamples) * Math.PI * 2;
+      if (!samplePoint(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius)) return false;
+    }
+    return true;
+  };
+
+  const findNearestBossArenaSpawn = (
+    desired: { x: number; y: number },
+    radius: number,
+    mapSize: { width: number; height: number },
+  ) => {
+    if (isBossArenaPositionWalkable(desired.x, desired.y, radius, mapSize)) return desired;
+
+    const maxDistance = Math.hypot(mapSize.width, mapSize.height);
+    for (let distance = BOSS_ARENA_CONFIG.spawnSearchStep; distance <= maxDistance; distance += BOSS_ARENA_CONFIG.spawnSearchStep) {
+      const samples = Math.max(12, Math.ceil((Math.PI * 2 * distance) / BOSS_ARENA_CONFIG.spawnSearchStep));
+      for (let index = 0; index < samples; index++) {
+        const angle = (index / samples) * Math.PI * 2;
+        const x = desired.x + Math.cos(angle) * distance;
+        const y = desired.y + Math.sin(angle) * distance;
+        if (isBossArenaPositionWalkable(x, y, radius, mapSize)) return { x, y };
+      }
+    }
+    return desired;
+  };
+
+  const moveWithinBossArenaMask = (
+    entity: { x: number; y: number },
+    deltaX: number,
+    deltaY: number,
+    radius: number,
+    mapSize: { width: number; height: number },
+  ) => {
+    let movedX = false;
+    let movedY = false;
+    const nextX = entity.x + deltaX;
+    if (isBossArenaPositionWalkable(nextX, entity.y, radius, mapSize)) {
+      entity.x = nextX;
+      movedX = true;
+    }
+    const nextY = entity.y + deltaY;
+    if (isBossArenaPositionWalkable(entity.x, nextY, radius, mapSize)) {
+      entity.y = nextY;
+      movedY = true;
+    }
+    return { movedX, movedY };
+  };
+
   useEffect(() => {
     const img = new Image();
     img.src = ROBOT_CONFIG.c2_932.portrait;
@@ -542,7 +695,7 @@ export function MissionGame({
 
   useEffect(() => {
     const img = new Image();
-    img.src = "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/8BIT-robot/8BIT-C2-932-WALK-01.png";
+    img.src = ROBOT_BATTLE_SPRITES.walk;
     img.onload = () => {
       bossRobotSpriteImgRef.current = img;
       setBossRobotSpriteLoaded(true);
@@ -553,7 +706,7 @@ export function MissionGame({
     };
 
     const imgAct = new Image();
-    imgAct.src = "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/8BIT-robot/8BIT-C2-932-ACT.png";
+    imgAct.src = ROBOT_BATTLE_SPRITES.action;
     imgAct.onload = () => {
       bossRobotActImgRef.current = imgAct;
       setBossRobotActLoaded(true);
@@ -625,7 +778,7 @@ export function MissionGame({
     enemyDeathEffects: [] as EnemyDeathEffect[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string }>,
-    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean }>,
+    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock"; rotation?: number; angularVelocity?: number }>,
     lightZones: [] as Array<{ x: number; y: number; radius: number; damage: number; duration: number; maxDuration: number; highMode: boolean }>,
     boss: null as { 
       x: number; 
@@ -639,11 +792,13 @@ export function MissionGame({
       name: string; 
       targetY?: number; 
       currentPattern?: number; 
+      visualTimer?: number;
       dashTimer?: number; 
       dashVx?: number; 
       dashVy?: number;
       stunTimer?: number;
       stunMeter?: number;
+      defenseTimer?: number;
       hitFlashUntil?: number;
       hitOffsetX?: number;
       hitOffsetY?: number;
@@ -670,6 +825,8 @@ export function MissionGame({
   const toggleBatteryMode = () => {
     setBatteryMode((prev) => {
       const next = prev === "LOW" ? "HIGH" : "LOW";
+      recordAction("useWorkLight");
+      if (next === "HIGH") recordAction("highBeamActivated");
       triggerSound(next === "HIGH" ? "power" : "click");
       return next;
     });
@@ -816,6 +973,7 @@ export function MissionGame({
 
   const handleSelectUpgrade = (choice: { id: string; type: "weapon" | "stat"; name: string }) => {
     triggerSound("click");
+    recordAction("levelUp");
     if (choice.id === "stat_hp") {
       setMaxHp((maximum) => {
         const nextMaximum = maximum + 1;
@@ -861,6 +1019,7 @@ export function MissionGame({
   };
 
   const handleGameOver = () => {
+    recordAction("gameOver");
     setStage("GAMEOVER");
     triggerSound("game_over");
     setCoins((prev) => {
@@ -872,6 +1031,7 @@ export function MissionGame({
 
   const startGame = () => {
     if (!missionMapReady) return;
+    recordAction("startMission");
     triggerSound("click");
     setSessionCoins(0);
     const bonusHp = purchasedUpgrades.shield_boost || 0;
@@ -1018,6 +1178,9 @@ export function MissionGame({
   // Set up Boss Battle
   const startBossBattle = () => {
     triggerSound("click");
+    recordAction("startBossBattle");
+    if (entrySource === "exhibition") recordAction("exhibitionBossBattle");
+    if (selectedChapter === 3) recordAction("marineBattle");
     setStage("BOSSBATTLE");
 
     // Recalculate player HP based on lamps collected plus purchased shields!
@@ -1034,6 +1197,7 @@ export function MissionGame({
     setMaxHp(calculatedMechaHp);
 
     const ch = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
+    const bossBehavior = getBossBehaviorProfile(selectedChapter);
     setBossActiveName(ch.bossName);
     // Substantially higher Boss HP for an epic combat challenge!
     const calculatedBossHp = 2800 + selectedChapter * 1200;
@@ -1043,12 +1207,29 @@ export function MissionGame({
     const isMobileDevice = window.innerWidth < 640;
     const arenaWidth = isMobileDevice ? 500 : 1400;
     const arenaHeight = isMobileDevice ? 750 : 700;
+    const arenaMapSize = { width: arenaWidth, height: arenaHeight };
+    const playerSpawn = findNearestBossArenaSpawn(
+      {
+        x: arenaWidth * BOSS_ARENA_CONFIG.playerSpawn.xRatio,
+        y: arenaHeight * BOSS_ARENA_CONFIG.playerSpawn.yRatio,
+      },
+      22,
+      arenaMapSize,
+    );
+    const bossSpawn = findNearestBossArenaSpawn(
+      {
+        x: arenaWidth * BOSS_ARENA_CONFIG.bossSpawn.xRatio,
+        y: arenaHeight * BOSS_ARENA_CONFIG.bossSpawn.yRatio,
+      },
+      bossBehavior.radius,
+      arenaMapSize,
+    );
 
     // Reset Engine references for boss fight in bounded arena
     engineRef.current = {
       player: { 
-        x: arenaWidth / 2, 
-        y: arenaHeight - 120, 
+        x: playerSpawn.x,
+        y: playerSpawn.y,
         radius: 22, 
         vx: 0, 
         vy: 0, 
@@ -1079,26 +1260,28 @@ export function MissionGame({
       bullets: [],
       lightZones: [],
       boss: {
-        x: arenaWidth / 2,
-        y: 130,
-        vx: 1.1, // Slower horizontal speed
+        x: bossSpawn.x,
+        y: bossSpawn.y,
+        vx: bossBehavior.moveSpeed,
         vy: 0,
         hp: calculatedBossHp,
         maxHp: calculatedBossHp,
-        radius: 65, // Visually massive and imposing!
+        radius: bossBehavior.radius,
         attackCooldown: 0,
         name: ch.bossName,
         targetY: 130,
         currentPattern: 0,
+        visualTimer: 0,
         dashTimer: 0,
         dashVx: 0,
         dashVy: 0,
         stunTimer: 0,
-        stunMeter: 0
+        stunMeter: 0,
+        defenseTimer: 0
       },
       ticks: 0,
       spawnTimer: 0,
-      mapSize: { width: arenaWidth, height: arenaHeight }, // Bounded Arena size matches responsive canvas
+      mapSize: arenaMapSize, // Bounded Arena size matches responsive canvas
       camera: { x: 0, y: 0 },
       lowBatteryCooldown: 0,
       screenShake: 18,
@@ -1120,6 +1303,7 @@ export function MissionGame({
 
     let animId: number;
     const activeChapter = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
+    const bossBehavior = getBossBehaviorProfile(selectedChapter);
 
     const isMobileDevice = window.innerWidth < 640;
     const spawnParticle = (st: any, p: any) => {
@@ -1256,6 +1440,13 @@ export function MissionGame({
        const currentSpeed = (stage === "BOSSBATTLE" ? 2.5 : selectedAgent.speed) * speedMultiplier;
        if (stage === "PLAYING") {
          moveWithinMissionMask(player, dx * currentSpeed, dy * currentSpeed, player.radius);
+       } else if (stage === "BOSSBATTLE") {
+         if (!isBossArenaPositionWalkable(player.x, player.y, player.radius, state.mapSize)) {
+           const correctedSpawn = findNearestBossArenaSpawn(player, player.radius, state.mapSize);
+           player.x = correctedSpawn.x;
+           player.y = correctedSpawn.y;
+         }
+         moveWithinBossArenaMask(player, dx * currentSpeed, dy * currentSpeed, player.radius, state.mapSize);
        } else {
          player.x += dx * currentSpeed;
          player.y += dy * currentSpeed;
@@ -1358,6 +1549,8 @@ export function MissionGame({
 
         // 1. Defend Shield (X)
         const shieldActive = !!(keysRef.current["x"] || keysRef.current["keyx"]);
+        if (shieldActive && !(player as any).wasShieldHeld) recordAction("useMechaShield");
+        (player as any).wasShieldHeld = shieldActive;
         player.isShieldActive = shieldActive;
         if (shieldActive) {
           setMechaAction("defend", 120);
@@ -1387,38 +1580,9 @@ export function MissionGame({
 
         // 2. Punch (Z)
         if ((keysRef.current["z"] || keysRef.current["keyz"]) && player.punchCooldown === 0) {
+          recordAction("useMechaPunch");
           player.punchCooldown = 22; // 0.36s cooldown
           setMechaAction("punch", 90);
-          triggerSound("hit");
-
-          const selectedRobot = robotSelectionRef.current;
-          if (selectedRobot?.robotId === "c2_932" && (robotUpgrades.energy_shield || 0) > 0 && selectedRobot.fullyUnlocked) {
-            const nextPunchCount = c2932SkillRef.current.punchCount + 1;
-            if (nextPunchCount >= C2_932_PUNCHES_REQUIRED) {
-              c2932SkillRef.current.punchCount = 0;
-              c2932SkillRef.current.fieldEndsAt = Date.now() + C2_932_FIELD_DURATION_MS;
-              setC2932PunchCount(0);
-              setC2932FieldRemainingMs(C2_932_FIELD_DURATION_MS);
-              for (let i = 0; i < 28; i++) {
-                const angle = (i / 28) * Math.PI * 2;
-                state.particles.push({
-                  x: player.x + Math.cos(angle) * C2_932_FIELD_RADIUS,
-                  y: player.y + Math.sin(angle) * C2_932_FIELD_RADIUS,
-                  vx: Math.cos(angle) * 1.5,
-                  vy: Math.sin(angle) * 1.5,
-                  radius: 3,
-                  color: "#22d3ee",
-                  life: 0,
-                  maxLife: 28,
-                  alpha: 1,
-                  text: i === 0 ? "\u9632\u79a6\u529b\u5834\u555f\u52d5" : undefined
-                });
-              }
-            } else {
-              c2932SkillRef.current.punchCount = nextPunchCount;
-              setC2932PunchCount(nextPunchCount);
-            }
-          }
 
           // Aim at Boss or facing direction
           const targetX = state.boss ? state.boss.x : player.x;
@@ -1430,14 +1594,57 @@ export function MissionGame({
           
           if (state.boss && distanceToBoss <= punchRange + state.boss.radius) {
             const punchDamage = 110; // High single hit damage
-            state.boss.hp -= punchDamage;
+            state.boss.hp -= punchDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
               strength: 5,
               angle: punchAngle,
-              color: "#fbbf24",
+              color: bossBehavior.usesRockProjectiles ? "#d6a35d" : "#fbbf24",
               heavy: true,
             });
+
+            // The punch wave and C2-932 combo feedback only exist after a confirmed melee hit.
+            // This keeps the visual language consistent with the actual effective range.
+            state.bullets.push({
+              x: player.x + Math.cos(punchAngle) * 25,
+              y: player.y + Math.sin(punchAngle) * 25,
+              vx: Math.cos(punchAngle) * 9,
+              vy: Math.sin(punchAngle) * 9,
+              damage: 0,
+              radius: 32,
+              color: "rgba(251, 146, 60, 0.35)",
+              maxLife: 6,
+              life: 0
+            });
+
+            const selectedRobot = robotSelectionRef.current;
+            if (selectedRobot?.robotId === "c2_932" && (robotUpgrades.energy_shield || 0) > 0 && selectedRobot.fullyUnlocked) {
+              const nextPunchCount = c2932SkillRef.current.punchCount + 1;
+              if (nextPunchCount >= C2_932_PUNCHES_REQUIRED) {
+                c2932SkillRef.current.punchCount = 0;
+                c2932SkillRef.current.fieldEndsAt = Date.now() + C2_932_FIELD_DURATION_MS;
+                setC2932PunchCount(0);
+                setC2932FieldRemainingMs(C2_932_FIELD_DURATION_MS);
+                for (let i = 0; i < 28; i++) {
+                  const angle = (i / 28) * Math.PI * 2;
+                  state.particles.push({
+                    x: player.x + Math.cos(angle) * C2_932_FIELD_RADIUS,
+                    y: player.y + Math.sin(angle) * C2_932_FIELD_RADIUS,
+                    vx: Math.cos(angle) * 1.5,
+                    vy: Math.sin(angle) * 1.5,
+                    radius: 3,
+                    color: "#22d3ee",
+                    life: 0,
+                    maxLife: 28,
+                    alpha: 1,
+                    text: i === 0 ? "\u9632\u79a6\u529b\u5834\u555f\u52d5" : undefined
+                  });
+                }
+              } else {
+                c2932SkillRef.current.punchCount = nextPunchCount;
+                setC2932PunchCount(nextPunchCount);
+              }
+            }
             
             // Gain extra ultimate charge on successful hit!
             player.ultEnergy = Math.min(100, player.ultEnergy + 9);
@@ -1509,44 +1716,14 @@ export function MissionGame({
             if (state.boss.hp <= 0) {
               handleVictory();
             }
-          } else {
-            // Miss swipe visual in empty air
-            const swipeX = player.x + Math.cos(punchAngle) * 40;
-            const swipeY = player.y + Math.sin(punchAngle) * 40;
-            for (let i = 0; i < 6; i++) {
-              const a = punchAngle + (Math.random() - 0.5) * 0.8;
-              const spd = 3 + Math.random() * 3;
-              state.particles.push({
-                x: swipeX,
-                y: swipeY,
-                vx: Math.cos(a) * spd,
-                vy: Math.sin(a) * spd,
-                radius: 2,
-                color: "rgba(251, 146, 60, 0.6)",
-                life: 0,
-                maxLife: 12,
-                alpha: 0.8
-              });
-            }
           }
-
-          // Spawn a melee wave bubble projectile
-          state.bullets.push({
-            x: player.x + Math.cos(punchAngle) * 25,
-            y: player.y + Math.sin(punchAngle) * 25,
-            vx: Math.cos(punchAngle) * 9,
-            vy: Math.sin(punchAngle) * 9,
-            damage: 0, // Handled instantly above
-            radius: 32,
-            color: "rgba(251, 146, 60, 0.35)",
-            maxLife: 6,
-            life: 0
-          });
         }
 
         // 3. Fire Laser Beam (C) with Battery Consumption
         if (player.laserBattery === undefined) player.laserBattery = 100;
         const isHoldingLaserKey = keysRef.current["c"] || keysRef.current["keyc"];
+        if (isHoldingLaserKey && !(player as any).wasLaserHeld) recordAction("useMechaLaser");
+        (player as any).wasLaserHeld = !!isHoldingLaserKey;
 
         if (isHoldingLaserKey && player.laserBattery >= 10 && player.shieldBrokenTimer === 0) {
           if (player.laserCooldown === 0) {
@@ -1567,7 +1744,8 @@ export function MissionGame({
             
             if (state.boss) {
               const laserDmg = 9; // Good continuous damage
-              state.boss.hp -= laserDmg;
+              state.boss.hp -= laserDmg * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
               applyHitFeedback(state, state.boss, triggerSound, {
                 strength: 0.7,
                 angle: Math.atan2(targetY - player.y, targetX - player.x),
@@ -1649,6 +1827,7 @@ export function MissionGame({
 
         // 4. Ultimate Special Skill (V)
         if ((keysRef.current["v"] || keysRef.current["keyv"]) && player.ultEnergy >= 99.5) {
+          recordAction("useMechaUltimate");
           player.ultEnergy = 0;
           setMechaUltEnergy(0);
           setMechaAction("ult", 140);
@@ -1667,7 +1846,7 @@ export function MissionGame({
           // Deal colossal damage to Boss
           if (state.boss) {
             const ultDamage = 450;
-            state.boss.hp -= ultDamage;
+            state.boss.hp -= ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
               strength: 8,
@@ -1822,7 +2001,7 @@ export function MissionGame({
             const bdy = state.boss.y - srcY;
             const bDist = Math.hypot(bdx, bdy);
             if (bDist <= dist) {
-              state.boss.hp -= damage * 0.5;
+              state.boss.hp -= damage * 0.5 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
               setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
               applyHitFeedback(state, state.boss, triggerSound, {
                 strength: isHigh ? 2.8 : 1.4,
@@ -2159,7 +2338,7 @@ export function MissionGame({
         if (state.boss) {
           const d = Math.hypot(state.boss.x - zone.x, state.boss.y - zone.y);
           if (d <= zone.radius + state.boss.radius) {
-            state.boss.hp -= zone.damage * 0.4;
+            state.boss.hp -= zone.damage * 0.4 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             if (state.ticks % 12 === 0) {
               applyHitFeedback(state, state.boss, triggerSound, {
@@ -2192,6 +2371,7 @@ export function MissionGame({
 
         // Deal contact damage to player
         if (d <= player.radius + enemy.radius && player.invincibleTime === 0) {
+          recordAction("takeDamage");
           player.hp = Math.max(0, (player.hp ?? 3) - 1);
           setHp(player.hp);
           if (player.hp <= 0) {
@@ -2211,6 +2391,7 @@ export function MissionGame({
 
         // Check if enemy died
         if (enemy.hp <= 0) {
+          recordEnemyDefeated(enemy.type);
           applyDeathFeedback(state, enemy, triggerSound);
           state.enemyDeathEffects.push({
             x: enemy.x,
@@ -2341,6 +2522,10 @@ export function MissionGame({
           }
         }
 
+        if (b.visual === "rock") {
+          b.rotation = (b.rotation || 0) + (b.angularVelocity || 0.12);
+        }
+
         b.x += b.vx;
         b.y += b.vy;
 
@@ -2379,6 +2564,7 @@ export function MissionGame({
           const dToP = Math.hypot(player.x - b.x, player.y - b.y);
           if (dToP <= player.radius + b.radius && player.invincibleTime === 0) {
             const actualDamage = player.isShieldActive ? Math.ceil(b.damage * 0.2) : b.damage;
+            recordAction("takeDamage");
             player.hp = Math.max(0, (player.hp ?? 3) - actualDamage);
             setHp(player.hp);
             if (player.hp <= 0) {
@@ -2483,7 +2669,7 @@ export function MissionGame({
 
           // Collision with Boss
           if (state.boss && !hit && Math.hypot(state.boss.x - b.x, state.boss.y - b.y) <= state.boss.radius + b.radius) {
-            state.boss.hp -= b.damage;
+            state.boss.hp -= b.damage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             hit = true;
             applyHitFeedback(state, state.boss, triggerSound, {
@@ -2536,6 +2722,7 @@ export function MissionGame({
         if (dist <= player.radius + col.radius + 5) {
           // Collected!
           if (col.type === "battery") {
+            recordAction("collectBattery");
             const maxBatLimit = getPlayerMaxBattery();
             const chargeEfficiency = selectedAgent.id === "claire" ? 1.3 : 1.0;
             player.batteryVal = Math.min(maxBatLimit, player.batteryVal + col.amount * chargeEfficiency);
@@ -2578,6 +2765,7 @@ export function MissionGame({
             applyCollectFeedback(state, col.x, col.y, "experience", triggerSound);
           } else if (col.type === "material") {
             const materialId = (col.materialType || "metal_material") as MaterialId;
+            recordAction("collectMaterial", col.amount);
             setCollectedMaterials((previous) => ({
               ...previous,
               [materialId]: previous[materialId] + col.amount
@@ -2606,6 +2794,7 @@ export function MissionGame({
             }
           } else if (col.type === "coin") {
             const coinAmount = col.amount || 1;
+            recordAction("collectCoin", coinAmount);
             setSessionCoins((prev) => prev + coinAmount);
             applyCollectFeedback(
               state,
@@ -2667,7 +2856,17 @@ export function MissionGame({
       if (stage === "BOSSBATTLE" && state.boss) {
         const boss = state.boss;
 
+        if (!isBossArenaPositionWalkable(boss.x, boss.y, boss.radius, state.mapSize)) {
+          const correctedSpawn = findNearestBossArenaSpawn(boss, boss.radius, state.mapSize);
+          boss.x = correctedSpawn.x;
+          boss.y = correctedSpawn.y;
+        }
+
         if (boss.stunTimer === undefined) boss.stunTimer = 0;
+        if (boss.visualTimer === undefined) boss.visualTimer = 0;
+        if (boss.visualTimer > 0) boss.visualTimer--;
+        if (boss.defenseTimer === undefined) boss.defenseTimer = 0;
+        if (boss.defenseTimer > 0) boss.defenseTimer--;
         
         const isStunnedNow = boss.stunTimer > 0;
         if (state.lastBossStunActive !== isStunnedNow) {
@@ -2699,15 +2898,15 @@ export function MissionGame({
         if (boss.dashTimer && boss.dashTimer > 0) {
           boss.dashTimer--;
           
-          if (boss.dashTimer > 30) {
+          if (boss.dashTimer > bossBehavior.dashExecutionThreshold) {
             // Dash preparation (charging up, shaking)
             // Gently orient dash velocity towards player
             const dxToP = player.x - boss.x;
             const dyToP = player.y - boss.y;
             const d = Math.hypot(dxToP, dyToP);
             if (d > 0.1) {
-              boss.dashVx = (dxToP / d) * 4.0; // Slower, more manageable dash
-              boss.dashVy = (dyToP / d) * 4.0;
+              boss.dashVx = (dxToP / d) * bossBehavior.dashSpeed;
+              boss.dashVy = (dyToP / d) * bossBehavior.dashSpeed;
             }
 
             // Spawn bright charging particles towards boss center
@@ -2720,7 +2919,7 @@ export function MissionGame({
                 vx: -Math.cos(theta) * 3,
                 vy: -Math.sin(theta) * 3,
                 radius: 2,
-                color: "#f43f5e",
+                color: bossBehavior.usesRockProjectiles ? "#d6a35d" : "#f43f5e",
                 life: 0,
                 maxLife: 20,
                 alpha: 1
@@ -2728,8 +2927,15 @@ export function MissionGame({
             }
           } else {
             // Executing Dash
-            boss.x += boss.dashVx || 0;
-            boss.y += boss.dashVy || 0;
+            const dashMovement = moveWithinBossArenaMask(
+              boss,
+              boss.dashVx || 0,
+              boss.dashVy || 0,
+              boss.radius,
+              state.mapSize,
+            );
+            if (!dashMovement.movedX) boss.dashVx = -(boss.dashVx || 0);
+            if (!dashMovement.movedY) boss.dashVy = -(boss.dashVy || 0);
 
             // Spawn dark trailing sparks
             spawnParticle(state, {
@@ -2738,7 +2944,7 @@ export function MissionGame({
               vx: (Math.random() - 0.5) * 1.5,
               vy: (Math.random() - 0.5) * 1.5,
               radius: 3,
-              color: "#a855f7",
+              color: bossBehavior.usesRockProjectiles ? "#78716c" : "#a855f7",
               life: 0,
               maxLife: 15,
               alpha: 0.8
@@ -2753,24 +2959,41 @@ export function MissionGame({
             }
           }
         } else {
-          // Normal hovering/chasing movement
-          boss.x += boss.vx;
-          boss.y += boss.vy;
-
-          // Horizontal bounds check
-          if (boss.x <= boss.radius || boss.x >= state.mapSize.width - boss.radius) {
-            boss.vx *= -1;
-            boss.x = Math.max(boss.radius, Math.min(state.mapSize.width - boss.radius, boss.x));
-          }
-
-          // Gentle vertical drifting to stay in the upper half
-          if (boss.targetY === undefined) boss.targetY = 130;
-          const dy = boss.targetY - boss.y;
-          if (Math.abs(dy) > 2) {
-            boss.y += Math.sign(dy) * 0.45; // Slower drift
+          if (bossBehavior.prefersMelee) {
+            // BAUMA closes the gap like a heavy mining machine instead of hovering at range.
+            const dxToPlayer = player.x - boss.x;
+            const dyToPlayer = player.y - boss.y;
+            const distanceToPlayer = Math.max(1, Math.hypot(dxToPlayer, dyToPlayer));
+            const shouldAdvance = distanceToPlayer > bossBehavior.meleeStopDistance;
+            const movementScale = shouldAdvance ? bossBehavior.moveSpeed : bossBehavior.moveSpeed * 0.22;
+            const bossMovement = moveWithinBossArenaMask(
+              boss,
+              (dxToPlayer / distanceToPlayer) * movementScale,
+              (dyToPlayer / distanceToPlayer) * movementScale,
+              boss.radius,
+              state.mapSize,
+            );
+            if (!bossMovement.movedX || !bossMovement.movedY) boss.vx *= -1;
           } else {
-            // Set random new target Y height in the upper 40% of the screen
-            boss.targetY = 80 + Math.random() * (state.mapSize.height * 0.35);
+            // Default bosses hover and drift through the upper half of the arena.
+            if (boss.targetY === undefined) boss.targetY = 130;
+            const dy = boss.targetY - boss.y;
+            let driftY = boss.vy;
+            if (Math.abs(dy) > 2) {
+              driftY += Math.sign(dy) * 0.45;
+            } else {
+              boss.targetY = 80 + Math.random() * (state.mapSize.height * 0.35);
+            }
+
+            const bossMovement = moveWithinBossArenaMask(
+              boss,
+              boss.vx,
+              driftY,
+              boss.radius,
+              state.mapSize,
+            );
+            if (!bossMovement.movedX) boss.vx *= -1;
+            if (!bossMovement.movedY) boss.targetY = 80 + Math.random() * (state.mapSize.height * 0.35);
           }
         }
 
@@ -2780,14 +3003,49 @@ export function MissionGame({
 
         // Active Attack timer
         boss.attackCooldown++;
-        // Attack more frequently (every 110 frames ~1.8s)
-        if (boss.attackCooldown >= 110) {
+        if (boss.attackCooldown >= bossBehavior.attackInterval) {
           boss.attackCooldown = 0;
           
           // Randomly select 1 of 4 powerful attack patterns
-          const pattern = Math.floor(Math.random() * 4);
+          const pattern = bossBehavior.attackPatternWeights[
+            Math.floor(Math.random() * bossBehavior.attackPatternWeights.length)
+          ];
+          boss.currentPattern = pattern;
+          boss.visualTimer = 48;
           
-          if (pattern === 0) {
+          if (pattern === 0 && bossBehavior.defenseDuration > 0) {
+            // BAUMA deploys mining armor: highly visible and strongly damage resistant.
+            triggerSound("power");
+            boss.defenseTimer = bossBehavior.defenseDuration;
+            boss.visualTimer = bossBehavior.defenseDuration;
+            state.screenShake = 7;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 10,
+              vx: 0,
+              vy: -1,
+              radius: 1,
+              color: "#fbbf24",
+              life: 0,
+              maxLife: 55,
+              alpha: 1,
+              text: "⛏️ MINING ARMOR // DAMAGE -65% ⛏️"
+            });
+            for (let i = 0; i < 22; i++) {
+              const angle = (i / 22) * Math.PI * 2;
+              state.particles.push({
+                x: boss.x + Math.cos(angle) * (boss.radius + 8),
+                y: boss.y + Math.sin(angle) * (boss.radius + 8),
+                vx: Math.cos(angle) * 0.8,
+                vy: Math.sin(angle) * 0.8,
+                radius: 3 + Math.random() * 2,
+                color: i % 2 === 0 ? "#f59e0b" : "#a8a29e",
+                life: 0,
+                maxLife: 28,
+                alpha: 1
+              });
+            }
+          } else if (pattern === 0) {
             // Pattern 0: Radial Dark Shadow Blast (12 projectiles outwards)
             triggerSound("hit");
             state.screenShake = 8;
@@ -2847,11 +3105,11 @@ export function MissionGame({
               vx: 0,
               vy: -1,
               radius: 1,
-              color: "#fbbf24",
+              color: bossBehavior.usesRockProjectiles ? "#d6a35d" : "#fbbf24",
               life: 0,
               maxLife: 40,
               alpha: 1,
-              text: "⚡ TRIPLE TARGETED NOVA! ⚡"
+              text: bossBehavior.usesRockProjectiles ? "🪨 TRIPLE BOULDER THROW! 🪨" : "⚡ TRIPLE TARGETED NOVA! ⚡"
             });
 
             const dx = player.x - boss.x;
@@ -2866,10 +3124,13 @@ export function MissionGame({
                   y: boss.y,
                   vx: Math.cos(angle) * 3.0, // Slower bullet
                   vy: Math.sin(angle) * 3.0, // Slower bullet
-                  damage: 18,
-                  radius: 7,
-                  color: "#eab308", // Yellow shadow laser balls
-                  isEnemy: true
+                  damage: bossBehavior.usesRockProjectiles ? 22 : 18,
+                  radius: bossBehavior.usesRockProjectiles ? 13 : 7,
+                  color: bossBehavior.usesRockProjectiles ? "#78716c" : "#eab308",
+                  isEnemy: true,
+                  visual: bossBehavior.usesRockProjectiles ? "rock" : undefined,
+                  rotation: Math.random() * Math.PI * 2,
+                  angularVelocity: (Math.random() - 0.5) * 0.22
                 });
               }
             }
@@ -2877,7 +3138,7 @@ export function MissionGame({
             // Pattern 2: Heavy Charging Dash Attack
             triggerSound("power");
             state.screenShake = 12; // Shake immediately to announce the doom dash!
-            boss.dashTimer = 70; // 70 frames total: 35 frames prep, 35 frames movement
+            boss.dashTimer = bossBehavior.dashTimer;
 
             // Spawn action text particle
             state.particles.push({
@@ -2890,7 +3151,9 @@ export function MissionGame({
               life: 0,
               maxLife: 45,
               alpha: 1,
-              text: "🚨 MECHA-CRUSH DASH CHARGE!!! 🚨"
+              text: bossBehavior.usesRockProjectiles
+                ? "🚨 LONG-RANGE EXCAVATOR CHARGE!!! 🚨"
+                : "🚨 MECHA-CRUSH DASH CHARGE!!! 🚨"
             });
           } else if (pattern === 3) {
             // Pattern 3: Homing Pink Shadow Fireflies (4 slow tracking seekers)
@@ -2904,11 +3167,11 @@ export function MissionGame({
               vx: 0,
               vy: -1,
               radius: 1,
-              color: "#ec4899",
+              color: bossBehavior.usesRockProjectiles ? "#a8a29e" : "#ec4899",
               life: 0,
               maxLife: 40,
               alpha: 1,
-              text: "👾 HOMING BIO-FLUX BULLETS! 👾"
+              text: bossBehavior.usesRockProjectiles ? "🪨 MAGNETIC ORE BARRAGE! 🪨" : "👾 HOMING BIO-FLUX BULLETS! 👾"
             });
 
             for (let i = 0; i < 4; i++) {
@@ -2918,11 +3181,14 @@ export function MissionGame({
                 y: boss.y + Math.sin(angle) * 35,
                 vx: Math.cos(angle) * 0.9, // Slower initial homing velocity
                 vy: Math.sin(angle) * 0.9, // Slower initial homing velocity
-                damage: 12,
-                radius: 9,
-                color: "#ec4899", // Homing pink energy sphere
+                damage: bossBehavior.usesRockProjectiles ? 17 : 12,
+                radius: bossBehavior.usesRockProjectiles ? 12 : 9,
+                color: bossBehavior.usesRockProjectiles ? "#57534e" : "#ec4899",
                 isEnemy: true,
-                isHoming: true
+                isHoming: true,
+                visual: bossBehavior.usesRockProjectiles ? "rock" : undefined,
+                rotation: Math.random() * Math.PI * 2,
+                angularVelocity: (Math.random() - 0.5) * 0.18
               });
             }
           }
@@ -2933,6 +3199,7 @@ export function MissionGame({
         const distToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
         if (distToPlayer <= player.radius + boss.radius && player.invincibleTime === 0) {
           const actualDamage = player.isShieldActive ? Math.ceil(22 * 0.2) : 22;
+          recordAction("takeDamage");
           player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
           setHp(player.hp);
           if (player.hp <= 0) {
@@ -3024,8 +3291,10 @@ export function MissionGame({
       ctx.fillStyle = activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
 
-      if (stage === "PLAYING") {
-        const backgroundImage = missionBackgroundImgRef.current;
+      if (stage === "PLAYING" || stage === "BOSSBATTLE") {
+        const backgroundImage = stage === "BOSSBATTLE"
+          ? bossArenaBackgroundImgRef.current
+          : missionBackgroundImgRef.current;
         if (backgroundImage?.complete && backgroundImage.naturalWidth > 0) {
           const placement = getCoverPlacement(
             backgroundImage.naturalWidth,
@@ -3047,21 +3316,23 @@ export function MissionGame({
         }
       }
 
-      // Grid lines
-      ctx.strokeStyle = activeChapter.gridColor;
-      ctx.lineWidth = 1;
-      const gridSize = 40;
-      for (let x = 0; x < state.mapSize.width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, state.mapSize.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < state.mapSize.height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(state.mapSize.width, y);
-        ctx.stroke();
+      // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
+      if (stage === "PLAYING") {
+        ctx.strokeStyle = activeChapter.gridColor;
+        ctx.lineWidth = 1;
+        const gridSize = 40;
+        for (let x = 0; x < state.mapSize.width; x += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, state.mapSize.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y < state.mapSize.height; y += gridSize) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(state.mapSize.width, y);
+          ctx.stroke();
+        }
       }
 
       // Draw active Ground Light Zones (C2-932 deployed areas)
@@ -3142,6 +3413,32 @@ export function MissionGame({
           ctx.moveTo(b.x, b.y);
           ctx.lineTo(b.laserEndX!, b.laserEndY!);
           ctx.stroke();
+        } else if (b.visual === "rock") {
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(b.rotation || 0);
+          ctx.fillStyle = b.color;
+          ctx.strokeStyle = "#d6a35d";
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "rgba(245, 158, 11, 0.45)";
+          ctx.shadowBlur = 7;
+          ctx.beginPath();
+          for (let i = 0; i < 7; i++) {
+            const angle = (i / 7) * Math.PI * 2;
+            const jaggedRadius = b.radius * (i % 2 === 0 ? 1 : 0.72);
+            const px = Math.cos(angle) * jaggedRadius;
+            const py = Math.sin(angle) * jaggedRadius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "rgba(255,255,255,0.24)";
+          ctx.beginPath();
+          ctx.arc(-b.radius * 0.25, -b.radius * 0.2, Math.max(2, b.radius * 0.18), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         } else {
           ctx.fillStyle = b.color;
           ctx.beginPath();
@@ -3229,7 +3526,7 @@ export function MissionGame({
         let by = boss.y + bossHitFeedback.y;
         
         // Shake boss and draw charging visuals when preparing a dash
-        if (boss.dashTimer && boss.dashTimer > 30) {
+        if (boss.dashTimer && boss.dashTimer > bossBehavior.dashExecutionThreshold) {
           bx += (Math.random() - 0.5) * 6;
           by += (Math.random() - 0.5) * 6;
 
@@ -3297,21 +3594,67 @@ export function MissionGame({
         }
         ctx.restore();
 
-        // Radial gradient for the massive boss body with high-contrast shadow glow!
-        ctx.save();
-        ctx.shadowColor = activeChapter.themeColor;
-        ctx.shadowBlur = 30 + Math.sin(state.ticks * 0.08) * 12;
+        if ((boss.defenseTimer || 0) > 0) {
+          // Heavy amber mining shield with rotating segmented armor plates.
+          ctx.save();
+          ctx.translate(bx, by);
+          ctx.rotate(-state.ticks * 0.018);
+          ctx.strokeStyle = "rgba(245, 158, 11, 0.92)";
+          ctx.lineWidth = 7;
+          ctx.setLineDash([18, 8]);
+          ctx.beginPath();
+          ctx.arc(0, 0, rad + 16, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.strokeStyle = "rgba(214, 163, 93, 0.42)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, rad + 27 + Math.sin(state.ticks * 0.2) * 3, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
 
-        const grad = ctx.createRadialGradient(bx, by, 8, bx, by, rad);
-        grad.addColorStop(0, bossHitFeedback.active ? "#ffffff" : "#4c1d95"); // brief white impact flash
-        grad.addColorStop(0.5, bossHitFeedback.active ? "#f4f4f5" : "#1e1b4b");
-        grad.addColorStop(1, bossHitFeedback.active ? "#d4d4d8" : "rgba(9, 9, 11, 0.98)");
+        let bossVisualState: BossVisualState = "idle";
+        if ((boss.defenseTimer || 0) > 0) {
+          bossVisualState = "area";
+        } else if ((boss.visualTimer || 0) > 0) {
+          if (boss.currentPattern === 0) bossVisualState = "area";
+          else if (boss.currentPattern === 1 || boss.currentPattern === 3) bossVisualState = "tracking";
+          else if (boss.currentPattern === 2) bossVisualState = "special";
+        }
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(bx, by, rad, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        const bossVisualImage = bossVisualImagesRef.current[bossVisualState]
+          || bossVisualImagesRef.current.idle;
+
+        if (bossVisualImage?.complete && bossVisualImage.naturalWidth > 0) {
+          const spriteDrawSize = rad * 4.2;
+          const hoverOffset = Math.sin(state.ticks * 0.075) * 3;
+          ctx.save();
+          ctx.imageSmoothingEnabled = false;
+          ctx.shadowColor = bossHitFeedback.active ? "#ffffff" : activeChapter.themeColor;
+          ctx.shadowBlur = bossHitFeedback.active ? 26 : 18 + Math.sin(state.ticks * 0.08) * 6;
+          ctx.filter = bossHitFeedback.active ? "brightness(0) invert(1)" : "none";
+          ctx.drawImage(
+            bossVisualImage,
+            bx - spriteDrawSize / 2,
+            by - spriteDrawSize / 2 + hoverOffset,
+            spriteDrawSize,
+            spriteDrawSize,
+          );
+          ctx.restore();
+        } else {
+          // Keep a lightweight fallback visible while a remote sprite is still loading.
+          ctx.save();
+          const grad = ctx.createRadialGradient(bx, by, 8, bx, by, rad);
+          grad.addColorStop(0, bossHitFeedback.active ? "#ffffff" : "#4c1d95");
+          grad.addColorStop(0.5, bossHitFeedback.active ? "#f4f4f5" : "#1e1b4b");
+          grad.addColorStop(1, bossHitFeedback.active ? "#d4d4d8" : "rgba(9, 9, 11, 0.98)");
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(bx, by, rad, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
 
         // Outer neon aura ring
         ctx.strokeStyle = bossHitFeedback.active ? "#ffffff" : activeChapter.themeColor;
@@ -3333,13 +3676,6 @@ export function MissionGame({
           ctx.restore();
         }
 
-        // Menacing red core slits (eyes) scaled up for larger radius!
-        ctx.fillStyle = boss.dashTimer && boss.dashTimer > 30 ? "#f43f5e" : "#ef4444";
-        ctx.beginPath();
-        ctx.ellipse(bx - 19, by, 12, 4.5, Math.PI / 6, 0, Math.PI * 2);
-        ctx.ellipse(bx + 19, by, 12, 4.5, -Math.PI / 6, 0, Math.PI * 2);
-        ctx.fill();
-
         // Core name text banner & Combat Status Indicators
         ctx.fillStyle = "#ffffff";
         ctx.font = "bold 11px monospace";
@@ -3349,16 +3685,19 @@ export function MissionGame({
         // Display Active Action Alert
         let statusText = "⚔️ SYSTEM ONLINE / COMBAT OPTIMIZATION ⚔️";
         let statusColor = "text-zinc-400";
-        if (boss.dashTimer && boss.dashTimer > 30) {
+        if (boss.dashTimer && boss.dashTimer > bossBehavior.dashExecutionThreshold) {
           statusText = "⚠️ WARNING: ENGINE CHARGING [OVERDRIVE DANGER] ⚠️";
           statusColor = "text-rose-500 animate-pulse";
+        } else if ((boss.defenseTimer || 0) > 0) {
+          statusText = "⛏️ MINING ARMOR ACTIVE // DAMAGE REDUCTION 65% ⛏️";
+          statusColor = "text-amber-400";
         } else if (boss.stunTimer && boss.stunTimer > 0) {
           statusText = "💫 CRITICAL FAILURE: SYSTEM SHUTDOWN 💫";
           statusColor = "text-yellow-400";
         }
         
         ctx.save();
-        ctx.fillStyle = statusText.includes("WARNING") ? "#ef4444" : statusText.includes("CRITICAL") ? "#fbbf24" : "#a1a1aa";
+        ctx.fillStyle = statusText.includes("WARNING") ? "#ef4444" : statusText.includes("MINING ARMOR") ? "#f59e0b" : statusText.includes("CRITICAL") ? "#fbbf24" : "#a1a1aa";
         ctx.font = "bold 8px monospace";
         ctx.fillText(statusText, bx, by - boss.radius - 8);
         ctx.restore();
@@ -3870,6 +4209,8 @@ export function MissionGame({
   const handleVictory = () => {
     if (victoryPendingRef.current) return;
     victoryPendingRef.current = true;
+    recordAction("bossDefeated");
+    recordAction("stagesCleared");
     const feedbackState = engineRef.current as any;
     if (feedbackState.boss) {
       feedbackState.boss.hp = 0;
@@ -4662,7 +5003,7 @@ export function MissionGame({
                 <span>搖桿</span>
               </button>
               <button
-                onClick={startGame}
+                onClick={startBossBattle}
                 className="px-2 py-1 bg-rose-950 hover:bg-rose-900 border border-rose-500 text-rose-400 text-[10px] font-bold uppercase rounded cursor-pointer flex items-center gap-1"
                 title="重新開始挑戰"
               >
@@ -4982,30 +5323,39 @@ export function MissionGame({
 
             <div className="flex items-center gap-2 sm:gap-3 w-full">
               <button
-                onClick={() => { setStage("START"); setStartStep(1); }}
+                onClick={() => {
+                  if (entrySource === "exhibition") {
+                    onReturnToExhibition();
+                    return;
+                  }
+                  setStage("START");
+                  setStartStep(1);
+                }}
                 className="flex-1 py-2 sm:py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[10px] sm:text-xs font-bold tracking-widest uppercase cursor-pointer rounded"
               >
-                返回大廳 (RETURN)
+                {entrySource === "exhibition" ? "返回展覽任務中心" : "返回大廳 (RETURN)"}
               </button>
               <button
-                onClick={startGame}
+                onClick={entrySource === "exhibition" ? startBossBattle : startGame}
                 className="flex-1 py-2 sm:py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-[10px] sm:text-xs tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/20 rounded"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>重新挑戰</span>
               </button>
-              <button
-                onClick={() => {
-                  const nextCh = Math.min(6, selectedChapter + 1);
-                  setSelectedChapter(nextCh);
-                  setStage("START");
-                  setStartStep(1);
-                }}
-                className="flex-1 py-2 sm:py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-black text-[10px] sm:text-xs tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 rounded"
-              >
-                <span>下一個章節</span>
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-950" />
-              </button>
+              {entrySource !== "exhibition" && (
+                <button
+                  onClick={() => {
+                    const nextCh = Math.min(6, selectedChapter + 1);
+                    setSelectedChapter(nextCh);
+                    setStage("START");
+                    setStartStep(1);
+                  }}
+                  className="flex-1 py-2 sm:py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-black text-[10px] sm:text-xs tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 rounded"
+                >
+                  <span>下一個章節</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-950" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -5060,13 +5410,20 @@ export function MissionGame({
 
             <div className="flex items-center gap-2 sm:gap-3 w-full">
               <button
-                onClick={() => { setStage("START"); setStartStep(1); }}
+                onClick={() => {
+                  if (entrySource === "exhibition") {
+                    onReturnToExhibition();
+                    return;
+                  }
+                  setStage("START");
+                  setStartStep(1);
+                }}
                 className="flex-1 py-2 sm:py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[10px] sm:text-xs font-bold tracking-widest uppercase cursor-pointer rounded"
               >
-                返回基地 (BASE)
+                {entrySource === "exhibition" ? "返回展覽任務中心" : "返回基地 (BASE)"}
               </button>
               <button
-                onClick={startGame}
+                onClick={entrySource === "exhibition" ? startBossBattle : startGame}
                 className="flex-1 py-2 sm:py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-[10px] sm:text-xs tracking-widest uppercase cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/20 rounded"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
