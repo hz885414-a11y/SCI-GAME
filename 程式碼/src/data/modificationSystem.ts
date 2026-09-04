@@ -36,15 +36,15 @@ export type RobotUpgradeConfig = {
 };
 
 export const ROBOT_UPGRADE_CONFIG: Record<RobotUpgradeId, RobotUpgradeConfig> = {
-  attack_power: { id: "attack_power", name: "攻擊能力", icon: "✦", description: "強化 C2-932 的主輸出核心。", effect: "每級提升所有攻擊傷害 12%", baseCost: { metal_material: 2, weapon_module: 1 } },
+  attack_power: { id: "attack_power", name: "攻擊能力", icon: "✦", description: "強化 C2-932 的主輸出核心。", effect: "每級提升 Boss 戰攻擊傷害 12%", baseCost: { metal_material: 2, weapon_module: 1 } },
   defense_power: { id: "defense_power", name: "防禦能力", icon: "◆", description: "強化 C2-932 的裝甲與耐久結構。", effect: "每級增加 Boss 戰生命 25", baseCost: { metal_material: 2, defense_module: 1 } },
   movement_speed: { id: "movement_speed", name: "移動速度", icon: "➤", description: "調整推進器與關節反應速度。", effect: "每級提升 Boss 戰移動速度 8%", baseCost: { mobility_module: 2, energy_core: 1 } },
-  laser_weapon: { id: "laser_weapon", name: "雷射武器", icon: "━", description: "安裝高能脈衝雷射模組。", effect: "解鎖並升級高速雷射", baseCost: { weapon_module: 2, energy_core: 1, electronic_parts: 1 } },
-  tracking_weapon: { id: "tracking_weapon", name: "追蹤武器", icon: "◎", description: "安裝自動鎖定與追蹤控制器。", effect: "解鎖並升級追蹤光束", baseCost: { electronic_parts: 2, weapon_module: 1 } },
-  range_attack: { id: "range_attack", name: "範圍攻擊", icon: "◒", description: "擴充 C2-932 的廣域照明輸出。", effect: "解鎖並升級扇形範圍攻擊", baseCost: { lighting_module: 2, energy_core: 1 } },
-  energy_shield: { id: "energy_shield", name: "能量護盾", icon: "◉", description: "安裝可反覆充能的防禦力場。", effect: "出拳 3 次後展開砲彈防禦力場", baseCost: { defense_module: 2, energy_core: 2 } },
-  special_lighting: { id: "special_lighting", name: "特殊照明能力", icon: "☀", description: "部署持續淨化敵人的照明區域。", effect: "解鎖並升級地面照明力場", baseCost: { lighting_module: 2, electronic_parts: 1 } },
-  passive_skill: { id: "passive_skill", name: "被動技能", icon: "◇", description: "使用稀有晶片強化 C2-932 的戰鬥演算。", effect: "每級提升整體傷害 5%", baseCost: { rare_tech_chip: 1, electronic_parts: 2 } }
+  laser_weapon: { id: "laser_weapon", name: "雷射武器", icon: "━", description: "安裝高能脈衝雷射模組。", effect: "在 Boss 戰解鎖並升級高速雷射", baseCost: { weapon_module: 2, energy_core: 1, electronic_parts: 1 } },
+  tracking_weapon: { id: "tracking_weapon", name: "追蹤武器", icon: "◎", description: "安裝自動鎖定與追蹤控制器。", effect: "在 Boss 戰解鎖並升級追蹤光束", baseCost: { electronic_parts: 2, weapon_module: 1 } },
+  range_attack: { id: "range_attack", name: "範圍攻擊", icon: "◒", description: "擴充 C2-932 的廣域照明輸出。", effect: "在 Boss 戰解鎖並升級扇形範圍攻擊", baseCost: { lighting_module: 2, energy_core: 1 } },
+  energy_shield: { id: "energy_shield", name: "能量護盾", icon: "◉", description: "安裝可反覆充能的防禦力場。", effect: "Boss 戰出拳 3 次後展開砲彈防禦力場", baseCost: { defense_module: 2, energy_core: 2 } },
+  special_lighting: { id: "special_lighting", name: "特殊照明能力", icon: "☀", description: "部署持續淨化敵人的照明區域。", effect: "在 Boss 戰解鎖並升級地面照明力場", baseCost: { lighting_module: 2, electronic_parts: 1 } },
+  passive_skill: { id: "passive_skill", name: "被動技能", icon: "◇", description: "使用稀有晶片強化 C2-932 的戰鬥演算。", effect: "每級提升 Boss 戰整體傷害 5%", baseCost: { rare_tech_chip: 1, electronic_parts: 2 } }
 };
 
 export const createEmptyMaterialInventory = (): MaterialInventory =>

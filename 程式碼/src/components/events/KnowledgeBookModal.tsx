@@ -33,6 +33,7 @@ function CardSlot({ card, owned, onOpen }: { card: KnowledgeCardDefinition; owne
           <p className="font-mono text-[8px] font-bold uppercase tracking-[0.16em] text-amber-800/70">{owned ? card.category : "LOCKED ENTRY"}</p>
           <h3 className="mt-1 line-clamp-2 text-sm font-black leading-snug sm:text-base">{owned ? card.title : "尚未發現的知識"}</h3>
           <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed opacity-70 sm:text-xs">{owned ? card.description : "完成遊戲事件後，這一頁將會顯示新的產業知識。"}</p>
+          {owned && card.bossEffect && <p className="mt-1 line-clamp-1 text-[9px] font-bold text-rose-800">⚔ {card.bossEffect.label}</p>}
         </div>
       </div>
       {owned && <ZoomIn className="absolute bottom-2 right-2 h-3.5 w-3.5 text-amber-800 opacity-45 transition group-hover:scale-125 group-hover:opacity-100" />}
@@ -124,6 +125,7 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
             <h3 className="mt-1 text-2xl font-black tracking-wider">{selectedCard.title}</h3>
             <p className="mt-4 border-y border-amber-900/25 py-4 text-sm font-bold leading-relaxed">{selectedCard.description}</p>
             <p className="mt-4 text-sm leading-relaxed text-stone-700">{selectedCard.industryNote}</p>
+            {selectedCard.bossEffect && <p className="mt-4 border border-rose-900/35 bg-rose-950/10 p-3 text-sm font-black leading-relaxed text-rose-900">⚔ 知識應用：{selectedCard.bossEffect.label}</p>}
           </article>
         </div>
       )}

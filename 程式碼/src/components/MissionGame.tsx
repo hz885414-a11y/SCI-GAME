@@ -8,8 +8,8 @@ import { SpriteAnimator } from "./SpriteAnimator";
 import { BossWarningTransition } from "./BossWarningTransition";
 import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites";
 import { getBossVisualSet, type BossVisualState } from "../data/bossVisualConfig";
-import { getBossBehaviorProfile } from "../data/bossBehaviorConfig";
-import { recordAction, recordEnemyDefeated } from "../systems/playerStats";
+import { getEffectiveBossBehaviorProfile, getBossKnowledgeModifiers } from "../systems/bossKnowledgeEffects";
+import { recordAction, recordEnemyDefeated, recordExhibitionBossOutcome } from "../systems/playerStats";
 import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, type MissionEnemyType } from "../data/gameAssetUrls";
 
 import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
@@ -68,6 +68,8 @@ interface EnemyEntity {
   type: EnemyType;
   points: number;
   facingLeft: boolean;
+  isBossMinion?: boolean;
+  bossMinionKind?: "bolt" | "nut" | "wrench";
   hitFlashUntil?: number;
   hitOffsetX?: number;
   hitOffsetY?: number;
@@ -81,6 +83,13 @@ interface EnemyDeathEffect {
   facingLeft: boolean;
   life: number;
   maxLife: number;
+}
+
+interface BombingZone {
+  x: number;
+  y: number;
+  radius: number;
+  timer: number;
 }
 
 const C2_932_PUNCHES_REQUIRED = 3;
@@ -279,6 +288,7 @@ export function MissionGame({
   const [showTipModal, setShowTipModal] = useState<boolean>(false);
   const [showBossTipModal, setShowBossTipModal] = useState<boolean>(false);
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
+  const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "start" | null>(null);
 
   const handleConfirmTip = () => {
     keysRef.current = {};
@@ -315,15 +325,25 @@ export function MissionGame({
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
 
-  // C2-932 combat modules are installed in the laboratory. Mission pickups only fill this run's material inventory.
-  const getInstalledWeaponLevels = () => ({
+  // Adventure technology always starts from the squad's basic work light.
+  // It must never inherit permanent C2-932 laboratory modules.
+  const getAdventureWeaponLevels = () => ({
+    range_attack: 1,
+    laser_weapon: 0,
+    tracking_weapon: 0,
+    special_lighting: 0,
+    heavy_beam: 0
+  });
+  const getRobotWeaponLevels = () => ({
     range_attack: Math.max(1, robotUpgrades.range_attack || 0),
     laser_weapon: robotUpgrades.laser_weapon || 0,
     tracking_weapon: robotUpgrades.tracking_weapon || 0,
     special_lighting: robotUpgrades.special_lighting || 0,
     heavy_beam: robotUpgrades.attack_power || 0
   });
-  const [weaponLevels, setWeaponLevels] = useState<Record<string, number>>(getInstalledWeaponLevels);
+  const [weaponLevels, setWeaponLevels] = useState<Record<string, number>>(() =>
+    resumeBossChapter ? getRobotWeaponLevels() : getAdventureWeaponLevels()
+  );
   const [collectedMaterials, setCollectedMaterials] = useState<MaterialInventory>(createEmptyMaterialInventory);
   const materialsBankedRef = useRef(false);
 
@@ -353,6 +373,7 @@ export function MissionGame({
   );
   const c2932SkillRef = useRef({ punchCount: 0, fieldEndsAt: 0 });
   const victoryPendingRef = useRef(false);
+  const bossOutcomeRecordedRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -778,8 +799,9 @@ export function MissionGame({
     enemyDeathEffects: [] as EnemyDeathEffect[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string }>,
-    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock"; rotation?: number; angularVelocity?: number }>,
+    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
     lightZones: [] as Array<{ x: number; y: number; radius: number; damage: number; duration: number; maxDuration: number; highMode: boolean }>,
+    bombingZones: [] as BombingZone[],
     boss: null as { 
       x: number; 
       y: number; 
@@ -799,6 +821,31 @@ export function MissionGame({
       stunTimer?: number;
       stunMeter?: number;
       defenseTimer?: number;
+      diveTimer?: number;
+      diveTargetX?: number;
+      diveTargetY?: number;
+      submerged?: boolean;
+      tentacleTimer?: number;
+      tentacleTargetX?: number;
+      tentacleTargetY?: number;
+      chainDashRemaining?: number;
+      roarTimer?: number;
+      roarX?: number;
+      roarY?: number;
+      summonTimer?: number;
+      airRaidTimer?: number;
+      airRaidStartX?: number;
+      airRaidEndX?: number;
+      airRaidY?: number;
+      airRaidReturnTimer?: number;
+      airRaidReturnY?: number;
+      laserAttackTimer?: number;
+      laserTargetX?: number;
+      laserTargetY?: number;
+      strafeTimer?: number;
+      facingX?: number;
+      introOriginX?: number;
+      introOriginY?: number;
       hitFlashUntil?: number;
       hitOffsetX?: number;
       hitOffsetY?: number;
@@ -811,6 +858,20 @@ export function MissionGame({
     screenShake: 0,
     companionSkills: {} as Record<string, number>
   });
+
+  useEffect(() => {
+    if (bossIntroPhase === "entrance") {
+      const timer = window.setTimeout(() => setBossIntroPhase("start"), 950);
+      return () => window.clearTimeout(timer);
+    }
+    if (bossIntroPhase === "start") {
+      const timer = window.setTimeout(() => {
+        setBossIntroPhase(null);
+        window.requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
+      }, 1150);
+      return () => window.clearTimeout(timer);
+    }
+  }, [bossIntroPhase]);
 
   // Sound triggering helper wrapper
   const triggerSound = (s: string) => {
@@ -960,7 +1021,7 @@ export function MissionGame({
       id: "stat_speed",
       type: "stat",
       name: "奈米推進組件 (速度 +15%)",
-      desc: "提升小隊與機甲移動速度，更加靈活躲避怪物夾擊。",
+      desc: "提升本次冒險的小隊移動速度，更加靈活躲避怪物夾擊。",
       icon: "🏃"
     });
 
@@ -1013,13 +1074,17 @@ export function MissionGame({
   }, [showUpgradeChoice, upgradeChoices, selectedUpgradeIndex]);
 
   // Setup / reset game for survivors stage
-  const getPlayerMaxBattery = () => {
+  const getPlayerMaxBattery = (agent = selectedAgent) => {
     const bonus = (purchasedUpgrades.start_battery || 0) * 20;
-    return selectedAgent.maxBattery + bonus;
+    return agent.maxBattery + bonus;
   };
 
   const handleGameOver = () => {
     recordAction("gameOver");
+    if (stage === "BOSSBATTLE" && !bossOutcomeRecordedRef.current) {
+      bossOutcomeRecordedRef.current = true;
+      recordExhibitionBossOutcome(selectedChapter, "failure");
+    }
     setStage("GAMEOVER");
     triggerSound("game_over");
     setCoins((prev) => {
@@ -1031,11 +1096,15 @@ export function MissionGame({
 
   const startGame = () => {
     if (!missionMapReady) return;
+    // Restore the selected character's authored base stats before every run so
+    // level-up choices remain temporary to the adventure in which they occur.
+    const baseAgent = AGENTS.find((agent) => agent.id === selectedAgent.id) || AGENTS[0];
+    setSelectedAgent(baseAgent);
     recordAction("startMission");
     triggerSound("click");
     setSessionCoins(0);
     const bonusHp = purchasedUpgrades.shield_boost || 0;
-    const initialHp = (selectedAgent.id === "leo" ? 4 : 3) + bonusHp;
+    const initialHp = (baseAgent.id === "leo" ? 4 : 3) + bonusHp;
     setHp(initialHp);
     setMaxHp(initialHp);
     setLevel(1);
@@ -1045,13 +1114,13 @@ export function MissionGame({
     setBatteryMode("LOW");
     setTimeLeft(isDemoMode ? 30 : 90);
     setScore(0);
-    setWeaponLevels(getInstalledWeaponLevels());
+    setWeaponLevels(getAdventureWeaponLevels());
     setCollectedMaterials(createEmptyMaterialInventory());
     materialsBankedRef.current = false;
     setRobotSelection(null);
     robotSelectionRef.current = null;
 
-    const initMaxBattery = getPlayerMaxBattery();
+    const initMaxBattery = getPlayerMaxBattery(baseAgent);
     const configuredSpawn = MISSION_MAP_CONFIG.playerSpawn;
     const initialPlayerPosition = isMissionPositionWalkable(configuredSpawn.x, configuredSpawn.y, 14)
       ? configuredSpawn
@@ -1085,6 +1154,7 @@ export function MissionGame({
       particles: [],
       bullets: [],
       lightZones: [],
+      bombingZones: [],
       boss: null,
       ticks: 0,
       spawnTimer: 0,
@@ -1182,8 +1252,11 @@ export function MissionGame({
     if (entrySource === "exhibition") recordAction("exhibitionBossBattle");
     if (selectedChapter === 3) recordAction("marineBattle");
     setStage("BOSSBATTLE");
+    setBossIntroPhase("entrance");
+    setWeaponLevels(getRobotWeaponLevels());
 
-    // Recalculate player HP based on lamps collected plus purchased shields!
+    // Boss combat uses laboratory robot upgrades only. Human supply upgrades
+    // belong exclusively to the squad's adventure mode.
 
     c2932SkillRef.current = { punchCount: 0, fieldEndsAt: 0 };
     setC2932PunchCount(0);
@@ -1191,16 +1264,16 @@ export function MissionGame({
 
     const activeRobotSelection = robotSelectionRef.current;
     if (!activeRobotSelection) return;
-    const bonusShieldHp = (purchasedUpgrades.shield_boost || 0) * 20;
-    const calculatedMechaHp = 100 + (robotUpgrades.defense_power || 0) * 25 + bonusShieldHp;
+    const calculatedMechaHp = 100 + (robotUpgrades.defense_power || 0) * 25;
     setHp(calculatedMechaHp);
     setMaxHp(calculatedMechaHp);
 
     const ch = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
-    const bossBehavior = getBossBehaviorProfile(selectedChapter);
+    const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
+    const bossKnowledgeModifiers = getBossKnowledgeModifiers(selectedChapter);
     setBossActiveName(ch.bossName);
     // Substantially higher Boss HP for an epic combat challenge!
-    const calculatedBossHp = 2800 + selectedChapter * 1200;
+    const calculatedBossHp = Math.round((2800 + selectedChapter * 1200) * bossKnowledgeModifiers.bossHpMultiplier);
     setBossHp(calculatedBossHp);
     setBossMaxHp(calculatedBossHp);
 
@@ -1259,6 +1332,7 @@ export function MissionGame({
       particles: [],
       bullets: [],
       lightZones: [],
+      bombingZones: [],
       boss: {
         x: bossSpawn.x,
         y: bossSpawn.y,
@@ -1277,7 +1351,20 @@ export function MissionGame({
         dashVy: 0,
         stunTimer: 0,
         stunMeter: 0,
-        defenseTimer: 0
+        defenseTimer: 0,
+        diveTimer: 0,
+        submerged: false,
+        tentacleTimer: 0,
+        chainDashRemaining: 0,
+        roarTimer: 0,
+        summonTimer: 0,
+        airRaidTimer: 0,
+        airRaidReturnTimer: 0,
+        laserAttackTimer: 0,
+        strafeTimer: 0,
+        facingX: -1,
+        introOriginX: bossSpawn.x,
+        introOriginY: bossSpawn.y
       },
       ticks: 0,
       spawnTimer: 0,
@@ -1288,6 +1375,7 @@ export function MissionGame({
       companionSkills: {}
     };
     victoryPendingRef.current = false;
+    bossOutcomeRecordedRef.current = false;
     triggerSound("bossImpact");
   };
 
@@ -1303,7 +1391,7 @@ export function MissionGame({
 
     let animId: number;
     const activeChapter = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
-    const bossBehavior = getBossBehaviorProfile(selectedChapter);
+    const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
 
     const isMobileDevice = window.innerWidth < 640;
     const spawnParticle = (st: any, p: any) => {
@@ -1337,7 +1425,27 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = showTipModal || startTitleActive;
+      const isPaused = showTipModal || startTitleActive || bossIntroPhase !== null;
+
+      if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
+        const boss = state.boss;
+        const originX = boss.introOriginX ?? boss.x;
+        const originY = boss.introOriginY ?? boss.y;
+        if (bossIntroPhase === "entrance") {
+          state.bossIntroFrame = (state.bossIntroFrame || 0) + 1;
+          const entranceProgress = Math.min(1, state.bossIntroFrame / 54);
+          boss.x = originX + Math.sin(state.bossIntroFrame * 0.22) * 12;
+          boss.y = originY + Math.sin(entranceProgress * Math.PI) * 34;
+          boss.currentPattern = 3;
+          boss.visualTimer = 2;
+          if (state.bossIntroFrame === 1) state.screenShake = 12;
+        } else {
+          boss.x = originX;
+          boss.y = originY;
+          boss.currentPattern = 0;
+          boss.visualTimer = 0;
+        }
+      }
       
       let dx = 0;
       let dy = 0;
@@ -1436,7 +1544,9 @@ export function MissionGame({
          player.lastAimY = dy;
        }
 
-       const speedMultiplier = 1 + (purchasedUpgrades.speed_boost || 0) * 0.1 + (stage === "BOSSBATTLE" ? (robotUpgrades.movement_speed || 0) * 0.08 : 0);
+       const speedMultiplier = stage === "BOSSBATTLE"
+         ? 1 + (robotUpgrades.movement_speed || 0) * 0.08
+         : 1 + (purchasedUpgrades.speed_boost || 0) * 0.1;
        const currentSpeed = (stage === "BOSSBATTLE" ? 2.5 : selectedAgent.speed) * speedMultiplier;
        if (stage === "PLAYING") {
          moveWithinMissionMask(player, dx * currentSpeed, dy * currentSpeed, player.radius);
@@ -1589,10 +1699,12 @@ export function MissionGame({
           const targetY = state.boss ? state.boss.y : player.y - 100;
           const punchAngle = Math.atan2(targetY - player.y, targetX - player.x);
           
-          const punchRange = 140;
+          // Generous melee reach keeps the large robot sprite and the actual
+          // collision zone aligned, especially on smaller touch screens.
+          const punchRange = 200;
           const distanceToBoss = state.boss ? Math.hypot(state.boss.x - player.x, state.boss.y - player.y) : 999;
           
-          if (state.boss && distanceToBoss <= punchRange + state.boss.radius) {
+          if (state.boss && !state.boss.submerged && distanceToBoss <= punchRange + state.boss.radius) {
             const punchDamage = 110; // High single hit damage
             state.boss.hp -= punchDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
@@ -1611,7 +1723,7 @@ export function MissionGame({
               vx: Math.cos(punchAngle) * 9,
               vy: Math.sin(punchAngle) * 9,
               damage: 0,
-              radius: 32,
+              radius: 42,
               color: "rgba(251, 146, 60, 0.35)",
               maxLife: 6,
               life: 0
@@ -1739,14 +1851,15 @@ export function MissionGame({
               setMechaLaserBattery(nextLaserBattery);
             }
 
-            const targetX = state.boss ? state.boss.x : player.x;
-            const targetY = state.boss ? state.boss.y : player.y - 300;
+            const targetBoss = state.boss && !state.boss.submerged ? state.boss : null;
+            const targetX = targetBoss ? targetBoss.x : player.x + player.lastAimX * 300;
+            const targetY = targetBoss ? targetBoss.y : player.y + player.lastAimY * 300;
             
-            if (state.boss) {
+            if (targetBoss) {
               const laserDmg = 9; // Good continuous damage
-              state.boss.hp -= laserDmg * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
-              setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
-              applyHitFeedback(state, state.boss, triggerSound, {
+              targetBoss.hp -= laserDmg * ((targetBoss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              setBossHp(Math.max(0, Math.ceil(targetBoss.hp)));
+              applyHitFeedback(state, targetBoss, triggerSound, {
                 strength: 0.7,
                 angle: Math.atan2(targetY - player.y, targetX - player.x),
                 color: "#e0f2fe",
@@ -1760,7 +1873,7 @@ export function MissionGame({
                 setMechaUltEnergy(nextUltOnLaser);
               }
 
-              if (state.boss.hp <= 0) {
+              if (targetBoss.hp <= 0) {
                 handleVictory();
               }
             }
@@ -1782,11 +1895,11 @@ export function MissionGame({
             });
 
             // Double sparks on target point
-            if (state.boss) {
+            if (targetBoss) {
               for (let i = 0; i < 2; i++) {
                 state.particles.push({
-                  x: state.boss.x + (Math.random() - 0.5) * 20,
-                  y: state.boss.y + (Math.random() - 0.5) * 20,
+                  x: targetBoss.x + (Math.random() - 0.5) * 20,
+                  y: targetBoss.y + (Math.random() - 0.5) * 20,
                   vx: (Math.random() - 0.5) * 4,
                   vy: (Math.random() - 0.5) * 4,
                   radius: 2,
@@ -1844,7 +1957,7 @@ export function MissionGame({
           state.enemies = [];
 
           // Deal colossal damage to Boss
-          if (state.boss) {
+          if (state.boss && !state.boss.submerged) {
             const ultDamage = 450;
             state.boss.hp -= ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
@@ -1950,7 +2063,9 @@ export function MissionGame({
 
           const fanSize = lightAttackProfile.fanSize;
           const dist = lightAttackProfile.range;
-          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+          const bonusDamageMult = stage === "BOSSBATTLE"
+            ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
+            : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
           const damage = (isHigh ? 45 : 18) * (1 + weaponLevels["range_attack"] * 0.15) * bonusDamageMult;
 
           // Purify enemies in sector
@@ -1971,12 +2086,11 @@ export function MissionGame({
                 });
                 // pushback
                 const push = isHigh ? 35 : 12;
-                moveWithinMissionMask(
-                  enemy,
-                  Math.cos(eAngle) * push,
-                  Math.sin(eAngle) * push,
-                  enemy.radius,
-                );
+                if (enemy.isBossMinion && stage === "BOSSBATTLE") {
+                  moveWithinBossArenaMask(enemy, Math.cos(eAngle) * push, Math.sin(eAngle) * push, enemy.radius, state.mapSize);
+                } else {
+                  moveWithinMissionMask(enemy, Math.cos(eAngle) * push, Math.sin(eAngle) * push, enemy.radius);
+                }
                 // sparks
                 for (let i = 0; i < 3; i++) {
                   state.particles.push({
@@ -1996,7 +2110,7 @@ export function MissionGame({
           });
 
           // If Boss Battle: Deal damage to boss too!
-          if (state.boss) {
+          if (state.boss && !state.boss.submerged) {
             const bdx = state.boss.x - srcX;
             const bdy = state.boss.y - srcY;
             const bDist = Math.hypot(bdx, bdy);
@@ -2056,7 +2170,9 @@ export function MissionGame({
 
           if (target) {
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
-            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+            const bonusDamageMult = stage === "BOSSBATTLE"
+              ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
+              : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
             const bulletDamage = (isHigh ? 22 : 10) * (1 + weaponLevels["laser_weapon"] * 0.2) * bonusDamageMult;
             
             if (isHigh) {
@@ -2113,7 +2229,9 @@ export function MissionGame({
           targets.forEach((t) => {
             const dist = Math.hypot(t.x - srcX, t.y - srcY);
             if (dist < (isHigh ? 240 : 130)) {
-              const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+              const bonusDamageMult = stage === "BOSSBATTLE"
+                ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
+                : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
               const dmg = (isHigh ? 12 : 5) * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
               t.hp -= dmg;
               applyHitFeedback(state, t as any, triggerSound, {
@@ -2155,7 +2273,9 @@ export function MissionGame({
           let srcY = player.y;
 
           const zoneRadius = isHigh ? 110 : 60;
-          const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+          const bonusDamageMult = stage === "BOSSBATTLE"
+            ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
+            : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
           const damage = (isHigh ? 3 : 1) * (1 + weaponLevels["special_lighting"] * 0.3) * bonusDamageMult;
           // Deploy behind/centered
           state.lightZones.push({
@@ -2198,7 +2318,9 @@ export function MissionGame({
 
           if (target) {
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
-            const bonusDamageMult = 1 + (purchasedUpgrades.damage_boost || 0) * 0.15 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05;
+            const bonusDamageMult = stage === "BOSSBATTLE"
+              ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
+              : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
             const dmg = (isHigh ? 65 : 30) * (1 + weaponLevels["heavy_beam"] * 0.3) * bonusDamageMult;
             
             // Deal damage
@@ -2335,7 +2457,7 @@ export function MissionGame({
         });
 
         // Slow down Boss if inside work lamp zone
-        if (state.boss) {
+        if (state.boss && !state.boss.submerged) {
           const d = Math.hypot(state.boss.x - zone.x, state.boss.y - zone.y);
           if (d <= zone.radius + state.boss.radius) {
             state.boss.hp -= zone.damage * 0.4 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
@@ -2361,18 +2483,32 @@ export function MissionGame({
 
         if (d > 0.1) {
           if (Math.abs(dxToPlayer) > 0.1) enemy.facingLeft = dxToPlayer < 0;
-          moveWithinMissionMask(
-            enemy,
-            (dxToPlayer / d) * enemy.speed,
-            (dyToPlayer / d) * enemy.speed,
-            enemy.radius,
-          );
+          if (enemy.isBossMinion && stage === "BOSSBATTLE") {
+            moveWithinBossArenaMask(
+              enemy,
+              (dxToPlayer / d) * enemy.speed,
+              (dyToPlayer / d) * enemy.speed,
+              enemy.radius,
+              state.mapSize,
+            );
+          } else {
+            moveWithinMissionMask(
+              enemy,
+              (dxToPlayer / d) * enemy.speed,
+              (dyToPlayer / d) * enemy.speed,
+              enemy.radius,
+            );
+          }
         }
 
         // Deal contact damage to player
         if (d <= player.radius + enemy.radius && player.invincibleTime === 0) {
           recordAction("takeDamage");
-          player.hp = Math.max(0, (player.hp ?? 3) - 1);
+          const contactDamage = enemy.isBossMinion
+            ? enemy.bossMinionKind === "nut" ? 16 : 11
+            : 1;
+          const actualDamage = player.isShieldActive ? Math.ceil(contactDamage * 0.2) : contactDamage;
+          player.hp = Math.max(0, (player.hp ?? 3) - actualDamage);
           setHp(player.hp);
           if (player.hp <= 0) {
             handleGameOver();
@@ -2381,16 +2517,36 @@ export function MissionGame({
           triggerSound("hit");
 
           // Knockback player slightly
-          moveWithinMissionMask(
-            player,
-            (dxToPlayer / d) * -15,
-            (dyToPlayer / d) * -15,
-            player.radius,
-          );
+          if (enemy.isBossMinion && stage === "BOSSBATTLE") {
+            moveWithinBossArenaMask(player, (dxToPlayer / d) * -24, (dyToPlayer / d) * -24, player.radius, state.mapSize);
+          } else {
+            moveWithinMissionMask(player, (dxToPlayer / d) * -15, (dyToPlayer / d) * -15, player.radius);
+          }
         }
 
         // Check if enemy died
         if (enemy.hp <= 0) {
+          if (enemy.isBossMinion) {
+            recordAction("defeatBossSummon");
+            applyDeathFeedback(state, enemy, triggerSound);
+            setScore((scoreValue) => scoreValue + enemy.points);
+            for (let i = 0; i < 12; i++) {
+              const angle = (i / 12) * Math.PI * 2;
+              spawnParticle(state, {
+                x: enemy.x,
+                y: enemy.y,
+                vx: Math.cos(angle) * (1.5 + Math.random() * 3),
+                vy: Math.sin(angle) * (1.5 + Math.random() * 3),
+                radius: 2 + Math.random() * 2,
+                color: i % 2 === 0 ? "#fbbf24" : "#cbd5e1",
+                life: 0,
+                maxLife: 20,
+                alpha: 1,
+                text: i === 0 ? "PARTS PURIFIED" : undefined,
+              });
+            }
+            return false;
+          }
           recordEnemyDefeated(enemy.type);
           applyDeathFeedback(state, enemy, triggerSound);
           state.enemyDeathEffects.push({
@@ -2522,7 +2678,7 @@ export function MissionGame({
           }
         }
 
-        if (b.visual === "rock") {
+        if (b.visual === "rock" || b.visual === "tool") {
           b.rotation = (b.rotation || 0) + (b.angularVelocity || 0.12);
         }
 
@@ -2668,7 +2824,7 @@ export function MissionGame({
           });
 
           // Collision with Boss
-          if (state.boss && !hit && Math.hypot(state.boss.x - b.x, state.boss.y - b.y) <= state.boss.radius + b.radius) {
+          if (state.boss && !state.boss.submerged && !hit && Math.hypot(state.boss.x - b.x, state.boss.y - b.y) <= state.boss.radius + b.radius) {
             state.boss.hp -= b.damage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             hit = true;
@@ -2856,7 +3012,7 @@ export function MissionGame({
       if (stage === "BOSSBATTLE" && state.boss) {
         const boss = state.boss;
 
-        if (!isBossArenaPositionWalkable(boss.x, boss.y, boss.radius, state.mapSize)) {
+        if ((boss.airRaidTimer || 0) <= 0 && (boss.airRaidReturnTimer || 0) <= 0 && !isBossArenaPositionWalkable(boss.x, boss.y, boss.radius, state.mapSize)) {
           const correctedSpawn = findNearestBossArenaSpawn(boss, boss.radius, state.mapSize);
           boss.x = correctedSpawn.x;
           boss.y = correctedSpawn.y;
@@ -2867,6 +3023,368 @@ export function MissionGame({
         if (boss.visualTimer > 0) boss.visualTimer--;
         if (boss.defenseTimer === undefined) boss.defenseTimer = 0;
         if (boss.defenseTimer > 0) boss.defenseTimer--;
+
+        // METSTRADE aquatic attacks are timed independently from the standard
+        // projectile patterns so their warning, impact, and recovery stay readable.
+        if (boss.diveTimer === undefined) boss.diveTimer = 0;
+        if (boss.tentacleTimer === undefined) boss.tentacleTimer = 0;
+        if (boss.chainDashRemaining === undefined) boss.chainDashRemaining = 0;
+        if (boss.roarTimer === undefined) boss.roarTimer = 0;
+        if (boss.summonTimer === undefined) boss.summonTimer = 0;
+        if (boss.airRaidTimer === undefined) boss.airRaidTimer = 0;
+        if (boss.airRaidReturnTimer === undefined) boss.airRaidReturnTimer = 0;
+        if (boss.laserAttackTimer === undefined) boss.laserAttackTimer = 0;
+        if (boss.strafeTimer === undefined) boss.strafeTimer = 0;
+        if (!Array.isArray(state.bombingZones)) state.bombingZones = [];
+
+        // AUTOMECHANIKA bombing zones remain visible after the aircraft exits.
+        // Their timers are deliberately staggered so the player can read and
+        // escape each marked impact instead of taking unavoidable burst damage.
+        state.bombingZones = state.bombingZones.filter((zone: BombingZone) => {
+          zone.timer--;
+          if (zone.timer === 0) {
+            state.screenShake = 15;
+            triggerSound("bossImpact");
+            for (let i = 0; i < 22; i++) {
+              const angle = (i / 22) * Math.PI * 2;
+              const speed = 2.5 + Math.random() * 5.5;
+              spawnParticle(state, {
+                x: zone.x + (Math.random() - 0.5) * zone.radius * 0.45,
+                y: zone.y + (Math.random() - 0.5) * zone.radius * 0.45,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: 3 + Math.random() * 5,
+                color: i % 3 === 0 ? "#fef3c7" : i % 2 === 0 ? "#f97316" : "#ef4444",
+                life: 0,
+                maxLife: 25,
+                alpha: 1,
+                text: i === 0 ? "💥 MISSILE IMPACT 💥" : undefined,
+              });
+            }
+            const impactDistance = Math.hypot(player.x - zone.x, player.y - zone.y);
+            if (impactDistance <= zone.radius + player.radius && player.invincibleTime === 0) {
+              const actualDamage = player.isShieldActive ? Math.ceil(28 * 0.2) : 28;
+              recordAction("takeDamage");
+              player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
+              setHp(player.hp);
+              player.invincibleTime = player.isShieldActive ? 20 : 54;
+              if (player.hp <= 0) handleGameOver();
+            }
+          }
+          return zone.timer > -18;
+        });
+
+        if (boss.airRaidTimer > 0) {
+          boss.airRaidTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.airRaidTimer);
+          const flightEndsAt = 92;
+          if (boss.airRaidTimer > flightEndsAt) {
+            const progress = Math.min(1, (150 - boss.airRaidTimer) / (150 - flightEndsAt));
+            boss.x = (boss.airRaidStartX ?? -boss.radius * 2)
+              + ((boss.airRaidEndX ?? state.mapSize.width + boss.radius * 2) - (boss.airRaidStartX ?? -boss.radius * 2)) * progress;
+            boss.y = (boss.airRaidY ?? state.mapSize.height * 0.25) + Math.sin(progress * Math.PI * 3) * 18;
+            boss.submerged = false;
+          } else {
+            boss.submerged = true;
+          }
+          if (boss.airRaidTimer === 0) {
+            const returnPoint = findNearestBossArenaSpawn(
+              { x: state.mapSize.width * 0.5, y: state.mapSize.height * 0.2 },
+              boss.radius,
+              state.mapSize,
+            );
+            boss.x = returnPoint.x;
+            boss.y = -boss.radius * 1.8;
+            boss.airRaidReturnY = returnPoint.y;
+            boss.airRaidReturnTimer = 58;
+            boss.submerged = false;
+            boss.currentPattern = 0;
+            boss.visualTimer = 0;
+          }
+        }
+
+        if (boss.airRaidReturnTimer > 0) {
+          boss.airRaidReturnTimer--;
+          boss.attackCooldown = 0;
+          boss.submerged = false;
+          boss.currentPattern = 0;
+          boss.visualTimer = 0;
+          const progress = 1 - boss.airRaidReturnTimer / 58;
+          const easedProgress = 1 - Math.pow(1 - progress, 3);
+          const targetY = boss.airRaidReturnY ?? state.mapSize.height * 0.2;
+          boss.x = state.mapSize.width * 0.5 + Math.sin(progress * Math.PI * 2) * 14;
+          boss.y = -boss.radius * 1.8 + (targetY + boss.radius * 1.8) * easedProgress;
+          if (boss.airRaidReturnTimer === 0) {
+            boss.x = state.mapSize.width * 0.5;
+            boss.y = targetY;
+            boss.vx = bossBehavior.moveSpeed * (boss.facingX || -1);
+            boss.vy = 0;
+            triggerSound("power");
+          }
+        }
+
+        if (boss.laserAttackTimer > 0) {
+          boss.laserAttackTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.laserAttackTimer);
+          if (boss.laserAttackTimer > 32) {
+            boss.laserTargetX = player.x;
+            boss.laserTargetY = player.y;
+            boss.facingX = Math.sign(player.x - boss.x) || boss.facingX || 1;
+          }
+          if (boss.laserAttackTimer === 28) {
+            const targetX = boss.laserTargetX ?? player.x;
+            const targetY = boss.laserTargetY ?? player.y;
+            const beamDx = targetX - boss.x;
+            const beamDy = targetY - boss.y;
+            const beamLengthSq = Math.max(1, beamDx * beamDx + beamDy * beamDy);
+            const projection = Math.max(0, Math.min(1, ((player.x - boss.x) * beamDx + (player.y - boss.y) * beamDy) / beamLengthSq));
+            const closestX = boss.x + beamDx * projection;
+            const closestY = boss.y + beamDy * projection;
+            if (Math.hypot(player.x - closestX, player.y - closestY) <= player.radius + 24 && player.invincibleTime === 0) {
+              const actualDamage = player.isShieldActive ? Math.ceil(32 * 0.2) : 32;
+              recordAction("takeDamage");
+              player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
+              setHp(player.hp);
+              player.invincibleTime = player.isShieldActive ? 20 : 58;
+              if (player.hp <= 0) handleGameOver();
+            }
+            state.screenShake = 17;
+            triggerSound("bossImpact");
+          }
+        }
+
+        if (boss.strafeTimer > 0) {
+          boss.strafeTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.strafeTimer);
+          if (boss.strafeTimer >= 18 && boss.strafeTimer % 8 === 0) {
+            const aimAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            boss.facingX = Math.sign(player.x - boss.x) || boss.facingX || 1;
+            triggerSound("shoot");
+            for (let lane = -1; lane <= 1; lane++) {
+              const angle = aimAngle + lane * 0.11;
+              state.bullets.push({
+                x: boss.x + Math.cos(angle) * boss.radius * 0.55,
+                y: boss.y + Math.sin(angle) * boss.radius * 0.55,
+                vx: Math.cos(angle) * 5.4,
+                vy: Math.sin(angle) * 5.4,
+                damage: 10,
+                radius: 5,
+                color: lane === 0 ? "#fef3c7" : "#fb923c",
+                isEnemy: true,
+              });
+            }
+          }
+        }
+
+        if (boss.summonTimer > 0) {
+          boss.summonTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.summonTimer);
+
+          if (boss.summonTimer === 22) {
+            const currentSummons = state.enemies.filter((enemy: EnemyEntity) => enemy.isBossMinion).length;
+            const summonCount = Math.max(0, Math.min(5, 8 - currentSummons));
+            const kinds: Array<"bolt" | "nut" | "wrench"> = ["bolt", "nut", "wrench"];
+            triggerSound("bossImpact");
+            state.screenShake = 9;
+
+            for (let i = 0; i < summonCount; i++) {
+              const angle = (i / Math.max(1, summonCount)) * Math.PI * 2 + state.ticks * 0.02;
+              const spawn = findNearestBossArenaSpawn(
+                { x: boss.x + Math.cos(angle) * 105, y: boss.y + Math.sin(angle) * 105 },
+                16,
+                state.mapSize,
+              );
+              const kind = kinds[i % kinds.length];
+              const hpValue = kind === "nut" ? 135 : kind === "wrench" ? 105 : 85;
+              state.enemies.push({
+                x: spawn.x,
+                y: spawn.y,
+                hp: hpValue,
+                maxHp: hpValue,
+                speed: kind === "bolt" ? 1.45 : kind === "wrench" ? 1.15 : 0.82,
+                radius: kind === "nut" ? 18 : 14,
+                color: kind === "bolt" ? "#94a3b8" : kind === "nut" ? "#f59e0b" : "#38bdf8",
+                type: kind === "nut" ? "clumper" : kind === "wrench" ? "stalker" : "mote",
+                points: 35,
+                facingLeft: player.x < spawn.x,
+                isBossMinion: true,
+                bossMinionKind: kind,
+              });
+            }
+          }
+        }
+
+        if (boss.diveTimer > 0) {
+          boss.diveTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.diveTimer);
+
+          if (boss.diveTimer === 38) {
+            boss.diveTargetX = player.x;
+            boss.diveTargetY = player.y;
+          }
+
+          if (boss.diveTimer === 1) {
+            const surfacePoint = findNearestBossArenaSpawn(
+              { x: boss.diveTargetX ?? player.x, y: boss.diveTargetY ?? player.y },
+              boss.radius,
+              state.mapSize,
+            );
+            boss.x = surfacePoint.x;
+            boss.y = surfacePoint.y;
+            boss.vx = bossBehavior.moveSpeed;
+            boss.vy = 0;
+            boss.submerged = false;
+            boss.visualTimer = 28;
+            state.screenShake = 18;
+            triggerSound("bossImpact");
+
+            for (let i = 0; i < 28; i++) {
+              const angle = (i / 28) * Math.PI * 2;
+              const speed = 2.5 + Math.random() * 5;
+              spawnParticle(state, {
+                x: boss.x + Math.cos(angle) * boss.radius * 0.35,
+                y: boss.y + Math.sin(angle) * boss.radius * 0.35,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: 2 + Math.random() * 4,
+                color: i % 2 === 0 ? "#22d3ee" : "#0e7490",
+                life: 0,
+                maxLife: 24,
+                alpha: 1,
+                text: i === 0 ? "🌊 DIVE AMBUSH! 🌊" : undefined
+              });
+            }
+
+            const ambushDistance = Math.hypot(player.x - boss.x, player.y - boss.y);
+            if (ambushDistance <= boss.radius + 64 && player.invincibleTime === 0) {
+              const actualDamage = player.isShieldActive ? Math.ceil(34 * 0.2) : 34;
+              recordAction("takeDamage");
+              player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
+              setHp(player.hp);
+              player.invincibleTime = player.isShieldActive ? 20 : 58;
+              if (player.hp <= 0) handleGameOver();
+            }
+          }
+        }
+
+        if (boss.tentacleTimer > 0) {
+          boss.tentacleTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.tentacleTimer);
+
+          if (boss.tentacleTimer === 24) {
+            const strikeX = boss.tentacleTargetX ?? player.x;
+            const strikeY = boss.tentacleTargetY ?? player.y;
+            state.screenShake = 13;
+            triggerSound("bossImpact");
+
+            for (let i = 0; i < 24; i++) {
+              const angle = (i / 24) * Math.PI * 2;
+              const distance = 28 + Math.random() * 82;
+              spawnParticle(state, {
+                x: strikeX + Math.cos(angle) * distance,
+                y: strikeY + Math.sin(angle) * distance,
+                vx: -Math.cos(angle) * (1.2 + Math.random() * 2),
+                vy: -Math.sin(angle) * (1.2 + Math.random() * 2),
+                radius: 3 + Math.random() * 4,
+                color: i % 2 === 0 ? "#c026d3" : "#7e22ce",
+                life: 0,
+                maxLife: 28,
+                alpha: 1,
+                text: i === 0 ? "🐙 TENTACLE FIELD! 🐙" : undefined
+              });
+            }
+
+            const tentacleDistance = Math.hypot(player.x - strikeX, player.y - strikeY);
+            if (tentacleDistance <= 118 + player.radius && player.invincibleTime === 0) {
+              const actualDamage = player.isShieldActive ? Math.ceil(26 * 0.2) : 26;
+              recordAction("takeDamage");
+              player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
+              setHp(player.hp);
+              player.invincibleTime = player.isShieldActive ? 20 : 52;
+              if (player.hp <= 0) handleGameOver();
+            }
+          }
+        }
+
+        if (boss.roarTimer > 0) {
+          boss.roarTimer--;
+          boss.attackCooldown = 0;
+          boss.visualTimer = Math.max(boss.visualTimer || 0, boss.roarTimer);
+
+          if (boss.roarTimer === 18) {
+            const roarX = boss.roarX ?? boss.x;
+            const roarY = boss.roarY ?? boss.y;
+            state.screenShake = 16;
+            triggerSound("bossImpact");
+
+            for (let i = 0; i < 30; i++) {
+              const angle = (i / 30) * Math.PI * 2;
+              const speed = 3 + Math.random() * 5;
+              spawnParticle(state, {
+                x: roarX + Math.cos(angle) * 26,
+                y: roarY + Math.sin(angle) * 26,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: 3 + Math.random() * 3,
+                color: i % 2 === 0 ? "#fb7185" : "#f59e0b",
+                life: 0,
+                maxLife: 24,
+                alpha: 1,
+                text: i === 0 ? "🦁 IMPACT ROAR! 🦁" : undefined
+              });
+            }
+
+            const dxFromRoar = player.x - roarX;
+            const dyFromRoar = player.y - roarY;
+            const distanceFromRoar = Math.max(1, Math.hypot(dxFromRoar, dyFromRoar));
+            if (distanceFromRoar <= 220 + player.radius && player.invincibleTime === 0) {
+              const actualDamage = player.isShieldActive ? Math.ceil(18 * 0.2) : 18;
+              recordAction("takeDamage");
+              player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
+              setHp(player.hp);
+              moveWithinBossArenaMask(
+                player,
+                (dxFromRoar / distanceFromRoar) * 145,
+                (dyFromRoar / distanceFromRoar) * 145,
+                player.radius,
+                state.mapSize,
+              );
+              player.invincibleTime = player.isShieldActive ? 20 : 48;
+              if (player.hp <= 0) handleGameOver();
+            }
+          }
+        }
+
+        if (
+          bossBehavior.usesChainDash
+          && boss.dashTimer === 0
+          && boss.chainDashRemaining > 0
+          && boss.roarTimer <= 0
+        ) {
+          const dashNumber = 4 - boss.chainDashRemaining;
+          boss.chainDashRemaining--;
+          boss.dashTimer = bossBehavior.dashExecutionThreshold + 14;
+          boss.visualTimer = boss.dashTimer;
+          triggerSound("power");
+          state.particles.push({
+            x: boss.x,
+            y: boss.y - boss.radius - 10,
+            vx: 0,
+            vy: -1,
+            radius: 1,
+            color: "#fb7185",
+            life: 0,
+            maxLife: 26,
+            alpha: 1,
+            text: `⚡ CHAIN DASH ${dashNumber}/3 ⚡`
+          });
+        }
         
         const isStunnedNow = boss.stunTimer > 0;
         if (state.lastBossStunActive !== isStunnedNow) {
@@ -2895,7 +3413,16 @@ export function MissionGame({
         } else {
 
         // Check if boss is currently in dash mode
-        if (boss.dashTimer && boss.dashTimer > 0) {
+        if (boss.submerged) {
+          boss.vx = 0;
+          boss.vy = 0;
+        } else if (boss.airRaidReturnTimer > 0 || boss.laserAttackTimer > 0 || boss.strafeTimer > 0) {
+          boss.vx = 0;
+          boss.vy = 0;
+        } else if (boss.roarTimer > 0) {
+          boss.vx = 0;
+          boss.vy = 0;
+        } else if (boss.dashTimer && boss.dashTimer > 0) {
           boss.dashTimer--;
           
           if (boss.dashTimer > bossBehavior.dashExecutionThreshold) {
@@ -2998,12 +3525,25 @@ export function MissionGame({
         }
 
         // Keep boss within overall screen bounds
-        boss.x = Math.max(boss.radius, Math.min(state.mapSize.width - boss.radius, boss.x));
-        boss.y = Math.max(boss.radius, Math.min(state.mapSize.height - boss.radius, boss.y));
+        if (boss.airRaidTimer <= 0 && boss.airRaidReturnTimer <= 0) {
+          boss.x = Math.max(boss.radius, Math.min(state.mapSize.width - boss.radius, boss.x));
+          boss.y = Math.max(boss.radius, Math.min(state.mapSize.height - boss.radius, boss.y));
+        }
 
         // Active Attack timer
-        boss.attackCooldown++;
-        if (boss.attackCooldown >= bossBehavior.attackInterval) {
+        const bossSpecialBusy = boss.submerged
+          || boss.tentacleTimer > 0
+          || boss.roarTimer > 0
+          || boss.summonTimer > 0
+          || boss.airRaidTimer > 0
+          || boss.airRaidReturnTimer > 0
+          || boss.laserAttackTimer > 0
+          || boss.strafeTimer > 0
+          || state.bombingZones.length > 0
+          || (boss.dashTimer || 0) > 0
+          || boss.chainDashRemaining > 0;
+        if (!bossSpecialBusy) boss.attackCooldown++;
+        if (!bossSpecialBusy && boss.attackCooldown >= bossBehavior.attackInterval) {
           boss.attackCooldown = 0;
           
           // Randomly select 1 of 4 powerful attack patterns
@@ -3139,6 +3679,7 @@ export function MissionGame({
             triggerSound("power");
             state.screenShake = 12; // Shake immediately to announce the doom dash!
             boss.dashTimer = bossBehavior.dashTimer;
+            boss.chainDashRemaining = bossBehavior.usesChainDash ? 2 : 0;
 
             // Spawn action text particle
             state.particles.push({
@@ -3153,6 +3694,8 @@ export function MissionGame({
               alpha: 1,
               text: bossBehavior.usesRockProjectiles
                 ? "🚨 LONG-RANGE EXCAVATOR CHARGE!!! 🚨"
+                : bossBehavior.usesChainDash
+                  ? "🚨 TRIPLE CHAIN DASH INCOMING!!! 🚨"
                 : "🚨 MECHA-CRUSH DASH CHARGE!!! 🚨"
             });
           } else if (pattern === 3) {
@@ -3191,14 +3734,222 @@ export function MissionGame({
                 angularVelocity: (Math.random() - 0.5) * 0.18
               });
             }
+          } else if (pattern === 4 && bossBehavior.usesDiveAmbush) {
+            // METSTRADE: disappear below the surface, lock a late target point,
+            // then burst back into the arena for a close-range impact.
+            triggerSound("power");
+            boss.diveTimer = 78;
+            boss.diveTargetX = player.x;
+            boss.diveTargetY = player.y;
+            boss.submerged = true;
+            boss.visualTimer = 78;
+            state.screenShake = 6;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 10,
+              vx: 0,
+              vy: -1,
+              radius: 1,
+              color: "#22d3ee",
+              life: 0,
+              maxLife: 42,
+              alpha: 1,
+              text: "🌊 SUBMERGED // AMBUSH INCOMING 🌊"
+            });
+            for (let i = 0; i < 18; i++) {
+              const angle = (i / 18) * Math.PI * 2;
+              spawnParticle(state, {
+                x: boss.x + Math.cos(angle) * boss.radius,
+                y: boss.y + Math.sin(angle) * boss.radius,
+                vx: -Math.cos(angle) * 1.8,
+                vy: -Math.sin(angle) * 1.8,
+                radius: 2 + Math.random() * 3,
+                color: i % 2 === 0 ? "#67e8f9" : "#155e75",
+                life: 0,
+                maxLife: 24,
+                alpha: 1
+              });
+            }
+          } else if (pattern === 5 && bossBehavior.usesTentacleArea) {
+            // METSTRADE: lock a circular zone and give the player a clear
+            // telegraph before the tentacles converge and deal area damage.
+            triggerSound("power");
+            boss.tentacleTimer = 70;
+            boss.tentacleTargetX = player.x;
+            boss.tentacleTargetY = player.y;
+            boss.visualTimer = 70;
+            state.particles.push({
+              x: player.x,
+              y: player.y - 132,
+              vx: 0,
+              vy: -0.4,
+              radius: 1,
+              color: "#e879f9",
+              life: 0,
+              maxLife: 46,
+              alpha: 1,
+              text: "🐙 TENTACLE ZONE // MOVE! 🐙"
+            });
+          } else if (pattern === 6 && bossBehavior.usesKnockbackRoar) {
+            // AAPEX: a telegraphed radial roar that creates space before the
+            // next pursuit sequence and pushes nearby robots toward the edge.
+            triggerSound("power");
+            boss.roarTimer = 56;
+            boss.roarX = boss.x;
+            boss.roarY = boss.y;
+            boss.visualTimer = 56;
+            state.screenShake = 5;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 12,
+              vx: 0,
+              vy: -0.6,
+              radius: 1,
+              color: "#fb7185",
+              life: 0,
+              maxLife: 38,
+              alpha: 1,
+              text: "🦁 SHOCKWAVE ROAR // RETREAT! 🦁"
+            });
+          } else if (pattern === 7 && bossBehavior.usesHardwareSummons) {
+            // TITE × IHT: telegraph a hardware reinforcement call before
+            // spawning a capped group of bolt, nut, and wrench minions.
+            triggerSound("power");
+            boss.summonTimer = 62;
+            boss.visualTimer = 62;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 12,
+              vx: 0,
+              vy: -0.7,
+              radius: 1,
+              color: "#fbbf24",
+              life: 0,
+              maxLife: 44,
+              alpha: 1,
+              text: "🔩 HARDWARE SUPPORT INCOMING! 🔧"
+            });
+          } else if (pattern === 8 && bossBehavior.usesToolBarrage) {
+            // TITE × IHT: fan-shaped magnetic tool throw. The rotating tool
+            // silhouettes make its lanes distinct from regular projectiles.
+            triggerSound("shoot");
+            state.screenShake = 7;
+            const aimAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            for (let i = -3; i <= 3; i++) {
+              const angle = aimAngle + i * 0.18;
+              state.bullets.push({
+                x: boss.x,
+                y: boss.y,
+                vx: Math.cos(angle) * (3.1 + Math.abs(i) * 0.08),
+                vy: Math.sin(angle) * (3.1 + Math.abs(i) * 0.08),
+                damage: 16,
+                radius: 10,
+                color: i % 2 === 0 ? "#f59e0b" : "#94a3b8",
+                isEnemy: true,
+                visual: "tool",
+                rotation: i * 0.35,
+                angularVelocity: i % 2 === 0 ? 0.2 : -0.2,
+              });
+            }
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 12,
+              vx: 0,
+              vy: -0.8,
+              radius: 1,
+              color: "#38bdf8",
+              life: 0,
+              maxLife: 42,
+              alpha: 1,
+              text: "🔧 MAGNETIC TOOL BARRAGE! 🔧"
+            });
+          } else if (pattern === 9 && bossBehavior.usesBombingRun) {
+            // AUTOMECHANIKA: cross the full screen, disappear beyond the edge,
+            // then detonate a staggered chain of clearly marked missile zones.
+            triggerSound("power");
+            const flightDirection = player.x >= state.mapSize.width * 0.5 ? 1 : -1;
+            boss.facingX = flightDirection;
+            boss.airRaidStartX = flightDirection > 0 ? -boss.radius * 2.4 : state.mapSize.width + boss.radius * 2.4;
+            boss.airRaidEndX = flightDirection > 0 ? state.mapSize.width + boss.radius * 2.4 : -boss.radius * 2.4;
+            boss.airRaidY = Math.max(boss.radius, Math.min(state.mapSize.height * 0.4, player.y - 150));
+            boss.x = boss.airRaidStartX;
+            boss.y = boss.airRaidY;
+            boss.airRaidTimer = 150;
+            boss.visualTimer = 150;
+            state.screenShake = 7;
+            state.bombingZones = Array.from({ length: 5 }, (_, index) => {
+              const spreadAngle = (index / 5) * Math.PI * 2 + state.ticks * 0.03;
+              const desired = {
+                x: player.x + Math.cos(spreadAngle) * (48 + index * 24),
+                y: player.y + Math.sin(spreadAngle) * (42 + index * 20),
+              };
+              const strike = findNearestBossArenaSpawn(desired, 24, state.mapSize);
+              return { x: strike.x, y: strike.y, radius: 58, timer: 76 + index * 13 };
+            });
+            state.particles.push({
+              x: state.mapSize.width * 0.5,
+              y: 90,
+              vx: 0,
+              vy: -0.4,
+              radius: 1,
+              color: "#fb923c",
+              life: 0,
+              maxLife: 52,
+              alpha: 1,
+              text: "✈️ EAGLE BOMBING RUN // WATCH THE GROUND! ✈️",
+            });
+          } else if (pattern === 10 && bossBehavior.usesAimedLaser) {
+            // AUTOMECHANIKA: track briefly, lock the robot's last position,
+            // then fire a single high-damage beam along that readable line.
+            triggerSound("power");
+            boss.laserAttackTimer = 72;
+            boss.laserTargetX = player.x;
+            boss.laserTargetY = player.y;
+            boss.facingX = Math.sign(player.x - boss.x) || boss.facingX || 1;
+            boss.visualTimer = 72;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 12,
+              vx: 0,
+              vy: -0.6,
+              radius: 1,
+              color: "#ef4444",
+              life: 0,
+              maxLife: 44,
+              alpha: 1,
+              text: "🔻 TWIN-EAGLE LASER LOCK // EVADE! 🔻",
+            });
+          } else if (pattern === 11 && bossBehavior.usesStrafingBurst) {
+            // AUTOMECHANIKA: repeated three-lane machine-gun bursts. Each burst
+            // re-aims, rewarding continuous movement without filling the screen.
+            triggerSound("shoot");
+            boss.strafeTimer = 88;
+            boss.facingX = Math.sign(player.x - boss.x) || boss.facingX || 1;
+            boss.visualTimer = 88;
+            state.particles.push({
+              x: boss.x,
+              y: boss.y - boss.radius - 12,
+              vx: 0,
+              vy: -0.6,
+              radius: 1,
+              color: "#fbbf24",
+              life: 0,
+              maxLife: 42,
+              alpha: 1,
+              text: "⚠️ MACHINE-GUN STRAFING BURST! ⚠️",
+            });
           }
         }
         } // End of stunTimer else block
 
         // Contact damage to Mecha (from direct contact with the Boss)
         const distToPlayer = Math.hypot(player.x - boss.x, player.y - boss.y);
-        if (distToPlayer <= player.radius + boss.radius && player.invincibleTime === 0) {
-          const actualDamage = player.isShieldActive ? Math.ceil(22 * 0.2) : 22;
+        if (!boss.submerged && boss.airRaidTimer <= 0 && boss.airRaidReturnTimer <= 0 && distToPlayer <= player.radius + boss.radius && player.invincibleTime === 0) {
+          const isChainDashImpact = bossBehavior.usesChainDash
+            && (boss.dashTimer || 0) > 0
+            && (boss.dashTimer || 0) <= bossBehavior.dashExecutionThreshold;
+          const contactDamage = isChainDashImpact ? 30 : 22;
+          const actualDamage = player.isShieldActive ? Math.ceil(contactDamage * 0.2) : contactDamage;
           recordAction("takeDamage");
           player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
           setHp(player.hp);
@@ -3207,6 +3958,38 @@ export function MissionGame({
           }
           player.invincibleTime = player.isShieldActive ? 20 : 55; // Shorter invincibility if shielded
           triggerSound(player.isShieldActive ? "click" : "hit");
+
+          if (isChainDashImpact) {
+            const impactVx = boss.dashVx || (player.x - boss.x);
+            const impactVy = boss.dashVy || (player.y - boss.y);
+            const impactLength = Math.max(1, Math.hypot(impactVx, impactVy));
+            moveWithinBossArenaMask(
+              player,
+              (impactVx / impactLength) * 165,
+              (impactVy / impactLength) * 165,
+              player.radius,
+              state.mapSize,
+            );
+            boss.dashTimer = 0;
+            state.screenShake = 18;
+            for (let i = 0; i < 18; i++) {
+              const spread = (Math.random() - 0.5) * 1.4;
+              const angle = Math.atan2(impactVy, impactVx) + spread;
+              const speed = 3 + Math.random() * 6;
+              spawnParticle(state, {
+                x: player.x,
+                y: player.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: 2 + Math.random() * 4,
+                color: i % 2 === 0 ? "#fb7185" : "#fbbf24",
+                life: 0,
+                maxLife: 22,
+                alpha: 1,
+                text: i === 0 ? "💥 LAUNCH IMPACT! 💥" : undefined
+              });
+            }
+          }
           
           if (player.isShieldActive) {
             if (player.shieldDurability === undefined) player.shieldDurability = 4;
@@ -3439,6 +4222,23 @@ export function MissionGame({
           ctx.arc(-b.radius * 0.25, -b.radius * 0.2, Math.max(2, b.radius * 0.18), 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
+        } else if (b.visual === "tool") {
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(b.rotation || 0);
+          ctx.fillStyle = b.color;
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.lineWidth = 3;
+          ctx.shadowColor = b.color;
+          ctx.shadowBlur = 8;
+          ctx.fillRect(-3, -b.radius, 6, b.radius * 1.6);
+          ctx.beginPath();
+          ctx.arc(0, -b.radius * 0.72, b.radius * 0.55, 0.2 * Math.PI, 0.8 * Math.PI, true);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(0, b.radius * 0.72, b.radius * 0.34, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
         } else {
           ctx.fillStyle = b.color;
           ctx.beginPath();
@@ -3449,8 +4249,58 @@ export function MissionGame({
 
       // D. Draw Enemies (Shadow monsters)
       state.enemies.forEach((enemy) => {
-        const enemyImage = enemySpriteImagesRef.current[enemy.type];
         const hitFeedback = getHitRenderOffset(enemy);
+        if (enemy.isBossMinion) {
+          const pulse = 1 + Math.sin(state.ticks * 0.12 + enemy.x) * 0.06;
+          ctx.save();
+          ctx.translate(enemy.x + hitFeedback.x, enemy.y + hitFeedback.y);
+          ctx.rotate(state.ticks * (enemy.bossMinionKind === "wrench" ? -0.035 : 0.028));
+          ctx.scale(pulse, pulse);
+          ctx.imageSmoothingEnabled = false;
+          ctx.shadowColor = hitFeedback.active ? "#ffffff" : enemy.color;
+          ctx.shadowBlur = hitFeedback.active ? 18 : 9;
+          ctx.strokeStyle = hitFeedback.active ? "#ffffff" : "#e2e8f0";
+          ctx.fillStyle = hitFeedback.active ? "#ffffff" : enemy.color;
+          ctx.lineWidth = 4;
+
+          if (enemy.bossMinionKind === "nut") {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const angle = i * Math.PI / 3;
+              const x = Math.cos(angle) * 17;
+              const y = Math.sin(angle) * 17;
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, 6, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (enemy.bossMinionKind === "wrench") {
+            ctx.fillRect(-5, -17, 10, 28);
+            ctx.beginPath();
+            ctx.arc(0, -15, 10, 0.2 * Math.PI, 0.8 * Math.PI, true);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 14, 6, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            ctx.fillRect(-4, -15, 8, 30);
+            ctx.fillRect(-12, -16, 24, 9);
+            ctx.fillStyle = "#0f172a";
+            ctx.fillRect(-2, -5, 4, 4);
+            ctx.fillRect(-2, 3, 4, 4);
+          }
+          ctx.restore();
+
+          ctx.fillStyle = "rgba(0,0,0,0.72)";
+          ctx.fillRect(enemy.x - 18, enemy.y - enemy.radius - 10, 36, 4);
+          ctx.fillStyle = "#f59e0b";
+          ctx.fillRect(enemy.x - 18, enemy.y - enemy.radius - 10, Math.max(0, enemy.hp / enemy.maxHp) * 36, 4);
+          return;
+        }
+
+        const enemyImage = enemySpriteImagesRef.current[enemy.type];
         if (enemyImage?.complete && enemyImage.naturalWidth > 0) {
           const spriteSize = enemy.type === "clumper" ? 64 : enemy.type === "stalker" ? 52 : 50;
           const aspectRatio = enemyImage.naturalWidth / enemyImage.naturalHeight;
@@ -3518,12 +4368,158 @@ export function MissionGame({
       });
 
       // E. Draw Boss (if active)
+      // AUTOMECHANIKA missile targets render independently from the aircraft,
+      // so warnings and impacts stay visible while it is beyond the screen.
+      state.bombingZones.forEach((zone: BombingZone) => {
+        ctx.save();
+        if (zone.timer > 0) {
+          const pulse = 1 + Math.sin(state.ticks * 0.32 + zone.x * 0.01) * 0.08;
+          ctx.fillStyle = "rgba(127, 29, 29, 0.2)";
+          ctx.strokeStyle = zone.timer < 25 ? "rgba(254, 243, 199, 0.98)" : "rgba(248, 113, 113, 0.88)";
+          ctx.lineWidth = zone.timer < 25 ? 6 : 3;
+          ctx.setLineDash(zone.timer < 25 ? [] : [10, 7]);
+          ctx.beginPath();
+          ctx.arc(zone.x, zone.y, zone.radius * pulse, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.strokeStyle = "rgba(251, 191, 36, 0.75)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(zone.x - 15, zone.y);
+          ctx.lineTo(zone.x + 15, zone.y);
+          ctx.moveTo(zone.x, zone.y - 15);
+          ctx.lineTo(zone.x, zone.y + 15);
+          ctx.stroke();
+        } else {
+          const impactProgress = Math.min(1, Math.abs(zone.timer) / 18);
+          ctx.globalAlpha = 1 - impactProgress;
+          ctx.fillStyle = "rgba(255, 237, 213, 0.9)";
+          ctx.strokeStyle = "#f97316";
+          ctx.lineWidth = 8 * (1 - impactProgress) + 2;
+          ctx.beginPath();
+          ctx.arc(zone.x, zone.y, zone.radius * (0.45 + impactProgress * 1.25), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+
       if (state.boss) {
         const boss = state.boss;
         const bossHitFeedback = getHitRenderOffset(boss);
         
         let bx = boss.x + bossHitFeedback.x;
         let by = boss.y + bossHitFeedback.y;
+
+        if ((boss.laserAttackTimer || 0) > 0 && boss.laserTargetX !== undefined && boss.laserTargetY !== undefined) {
+          const firing = (boss.laserAttackTimer || 0) <= 28;
+          ctx.save();
+          ctx.strokeStyle = firing ? "rgba(254, 242, 242, 0.98)" : "rgba(248, 113, 113, 0.72)";
+          ctx.lineWidth = firing ? 15 : 3;
+          ctx.shadowColor = firing ? "#ef4444" : "transparent";
+          ctx.shadowBlur = firing ? 24 : 0;
+          ctx.setLineDash(firing ? [] : [12, 8]);
+          ctx.beginPath();
+          ctx.moveTo(boss.x, boss.y);
+          ctx.lineTo(boss.laserTargetX, boss.laserTargetY);
+          ctx.stroke();
+          if (firing) {
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 5;
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // METSTRADE attack telegraphs remain visible even while the Boss body
+        // is submerged, giving the player a fair and readable escape window.
+        if ((boss.diveTimer || 0) > 0 && boss.diveTargetX !== undefined && boss.diveTargetY !== undefined) {
+          const warningProgress = 1 - Math.min(1, (boss.diveTimer || 0) / 78);
+          const warningRadius = 42 + warningProgress * 34 + Math.sin(state.ticks * 0.35) * 6;
+          ctx.save();
+          ctx.strokeStyle = `rgba(34, 211, 238, ${0.45 + warningProgress * 0.4})`;
+          ctx.fillStyle = `rgba(8, 145, 178, ${0.08 + warningProgress * 0.16})`;
+          ctx.lineWidth = 3 + warningProgress * 3;
+          ctx.setLineDash([10, 7]);
+          ctx.beginPath();
+          ctx.arc(boss.diveTargetX, boss.diveTargetY, warningRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (let ring = 0; ring < 3; ring++) {
+            ctx.globalAlpha = 0.5 - ring * 0.12;
+            ctx.beginPath();
+            ctx.arc(boss.diveTargetX, boss.diveTargetY, 20 + ring * 18 + (state.ticks % 18), 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        if ((boss.tentacleTimer || 0) > 0 && boss.tentacleTargetX !== undefined && boss.tentacleTargetY !== undefined) {
+          const strikeX = boss.tentacleTargetX;
+          const strikeY = boss.tentacleTargetY;
+          const beforeImpact = (boss.tentacleTimer || 0) > 24;
+          const warningProgress = beforeImpact ? 1 - ((boss.tentacleTimer || 0) - 24) / 46 : 1;
+          ctx.save();
+          ctx.fillStyle = beforeImpact ? "rgba(126, 34, 206, 0.12)" : "rgba(217, 70, 239, 0.25)";
+          ctx.strokeStyle = beforeImpact ? "rgba(232, 121, 249, 0.8)" : "rgba(250, 232, 255, 0.95)";
+          ctx.lineWidth = beforeImpact ? 3 : 6;
+          ctx.setLineDash(beforeImpact ? [8, 6] : []);
+          ctx.beginPath();
+          ctx.arc(strikeX, strikeY, 118, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2 + state.ticks * 0.018;
+            const outerRadius = 145;
+            const innerRadius = beforeImpact ? 92 - warningProgress * 58 : 18;
+            const startX = strikeX + Math.cos(angle) * outerRadius;
+            const startY = strikeY + Math.sin(angle) * outerRadius;
+            const endX = strikeX + Math.cos(angle + 0.45) * innerRadius;
+            const endY = strikeY + Math.sin(angle + 0.45) * innerRadius;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(
+              strikeX + Math.cos(angle + 0.8) * 76,
+              strikeY + Math.sin(angle + 0.8) * 76,
+              endX,
+              endY,
+            );
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        if ((boss.roarTimer || 0) > 0 && boss.roarX !== undefined && boss.roarY !== undefined) {
+          const beforeImpact = (boss.roarTimer || 0) > 18;
+          const warningProgress = beforeImpact ? 1 - ((boss.roarTimer || 0) - 18) / 38 : 1;
+          const roarRadius = 55 + warningProgress * 165;
+          ctx.save();
+          ctx.strokeStyle = beforeImpact ? "rgba(251, 113, 133, 0.82)" : "rgba(254, 243, 199, 0.98)";
+          ctx.fillStyle = beforeImpact ? "rgba(159, 18, 57, 0.08)" : "rgba(245, 158, 11, 0.2)";
+          ctx.lineWidth = beforeImpact ? 4 : 8;
+          ctx.setLineDash(beforeImpact ? [12, 8] : []);
+          ctx.beginPath();
+          ctx.arc(boss.roarX, boss.roarY, roarRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (let ring = 0; ring < 2; ring++) {
+            ctx.globalAlpha = 0.5 - ring * 0.18;
+            ctx.beginPath();
+            ctx.arc(boss.roarX, boss.roarY, Math.max(20, roarRadius - 28 - ring * 30), 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        ctx.save();
+        if (boss.submerged) ctx.globalAlpha = 0;
         
         // Shake boss and draw charging visuals when preparing a dash
         if (boss.dashTimer && boss.dashTimer > bossBehavior.dashExecutionThreshold) {
@@ -3620,24 +4616,46 @@ export function MissionGame({
         } else if ((boss.visualTimer || 0) > 0) {
           if (boss.currentPattern === 0) bossVisualState = "area";
           else if (boss.currentPattern === 1 || boss.currentPattern === 3) bossVisualState = "tracking";
-          else if (boss.currentPattern === 2) bossVisualState = "special";
+          else if (boss.currentPattern === 2 || boss.currentPattern === 4) bossVisualState = "special";
+          else if (boss.currentPattern === 5 || boss.currentPattern === 6) bossVisualState = "area";
+          else if (boss.currentPattern === 7) bossVisualState = "area";
+          else if (boss.currentPattern === 8) bossVisualState = "tracking";
+          else if (boss.currentPattern === 9) bossVisualState = "area";
+          else if (boss.currentPattern === 10) bossVisualState = "special";
+          else if (boss.currentPattern === 11) bossVisualState = "tracking";
         }
 
         const bossVisualImage = bossVisualImagesRef.current[bossVisualState]
           || bossVisualImagesRef.current.idle;
 
         if (bossVisualImage?.complete && bossVisualImage.naturalWidth > 0) {
-          const spriteDrawSize = rad * 4.2;
+          const spriteDrawSize = rad * (selectedChapter === 2 ? 5 : 4.2);
           const hoverOffset = Math.sin(state.ticks * 0.075) * 3;
+          const directionalVelocityX = (boss.dashTimer || 0) > 0 ? boss.dashVx : boss.vx;
+          if (Math.abs(directionalVelocityX || 0) > 0.05) boss.facingX = Math.sign(directionalVelocityX);
+          // AAPEX artwork faces left by default. Flip its full sprite set whenever
+          // the Boss is travelling right so chained dashes always read correctly.
+          const mirrorAapexSprite = selectedChapter === 4 && (boss.facingX || -1) > 0;
+          // AUTOMECHANIKA uses different source-facing directions: the laser
+          // and bombing art face right, while the strafing art faces left.
+          // Keep the frontal idle frame untouched and mirror each attack from
+          // its own authored direction.
+          const mirrorAutomechanikaSprite = selectedChapter === 2
+            && bossVisualState !== "idle"
+            && (bossVisualState === "tracking"
+              ? (boss.facingX || -1) > 0
+              : (boss.facingX || 1) < 0);
           ctx.save();
           ctx.imageSmoothingEnabled = false;
           ctx.shadowColor = bossHitFeedback.active ? "#ffffff" : activeChapter.themeColor;
           ctx.shadowBlur = bossHitFeedback.active ? 26 : 18 + Math.sin(state.ticks * 0.08) * 6;
           ctx.filter = bossHitFeedback.active ? "brightness(0) invert(1)" : "none";
+          ctx.translate(bx, by + hoverOffset);
+          ctx.scale(mirrorAapexSprite || mirrorAutomechanikaSprite ? -1 : 1, 1);
           ctx.drawImage(
             bossVisualImage,
-            bx - spriteDrawSize / 2,
-            by - spriteDrawSize / 2 + hoverOffset,
+            -spriteDrawSize / 2,
+            -spriteDrawSize / 2,
             spriteDrawSize,
             spriteDrawSize,
           );
@@ -3685,9 +4703,30 @@ export function MissionGame({
         // Display Active Action Alert
         let statusText = "⚔️ SYSTEM ONLINE / COMBAT OPTIMIZATION ⚔️";
         let statusColor = "text-zinc-400";
-        if (boss.dashTimer && boss.dashTimer > bossBehavior.dashExecutionThreshold) {
-          statusText = "⚠️ WARNING: ENGINE CHARGING [OVERDRIVE DANGER] ⚠️";
+        if ((boss.airRaidReturnTimer || 0) > 0) {
+          statusText = "✈️ TWIN-EAGLE RETURNING FROM ABOVE ✈️";
+          statusColor = "text-orange-300 animate-pulse";
+        } else if ((boss.airRaidTimer || 0) > 0) {
+          statusText = boss.submerged
+            ? "✈️ AIRCRAFT OFF-SCREEN // MISSILE IMPACTS ACTIVE ✈️"
+            : "✈️ TWIN-EAGLE BOMBING RUN ✈️";
+          statusColor = "text-orange-400 animate-pulse";
+        } else if ((boss.laserAttackTimer || 0) > 0) {
+          statusText = (boss.laserAttackTimer || 0) > 28
+            ? "🔻 LASER TARGET LOCK // KEEP MOVING 🔻"
+            : "🔴 HIGH-ENERGY LASER FIRING 🔴";
           statusColor = "text-rose-500 animate-pulse";
+        } else if ((boss.strafeTimer || 0) > 0) {
+          statusText = "⚠️ MACHINE-GUN STRAFING // BREAK THE AIM ⚠️";
+          statusColor = "text-amber-400 animate-pulse";
+        } else if (boss.dashTimer && boss.dashTimer > bossBehavior.dashExecutionThreshold) {
+          statusText = bossBehavior.usesChainDash
+            ? `⚠️ CHAIN DASH // ${boss.chainDashRemaining || 0} FOLLOW-UP(S) ⚠️`
+            : "⚠️ WARNING: ENGINE CHARGING [OVERDRIVE DANGER] ⚠️";
+          statusColor = "text-rose-500 animate-pulse";
+        } else if ((boss.roarTimer || 0) > 0) {
+          statusText = "🦁 SHOCKWAVE ROAR CHARGING // LEAVE THE RADIUS 🦁";
+          statusColor = "text-rose-400 animate-pulse";
         } else if ((boss.defenseTimer || 0) > 0) {
           statusText = "⛏️ MINING ARMOR ACTIVE // DAMAGE REDUCTION 65% ⛏️";
           statusColor = "text-amber-400";
@@ -3697,9 +4736,14 @@ export function MissionGame({
         }
         
         ctx.save();
-        ctx.fillStyle = statusText.includes("WARNING") ? "#ef4444" : statusText.includes("MINING ARMOR") ? "#f59e0b" : statusText.includes("CRITICAL") ? "#fbbf24" : "#a1a1aa";
+        ctx.fillStyle = statusText.includes("LASER") || statusText.includes("WARNING") || statusText.includes("CHAIN DASH") || statusText.includes("SHOCKWAVE")
+          ? "#ef4444"
+          : statusText.includes("BOMBING") || statusText.includes("MISSILE") || statusText.includes("STRAFING") || statusText.includes("MINING ARMOR")
+            ? "#f59e0b"
+            : statusText.includes("CRITICAL") ? "#fbbf24" : "#a1a1aa";
         ctx.font = "bold 8px monospace";
         ctx.fillText(statusText, bx, by - boss.radius - 8);
+        ctx.restore();
         ctx.restore();
       }
 
@@ -3828,6 +4872,13 @@ export function MissionGame({
           ctx.save();
           const drawWidth = windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76;
           const drawHeight = drawWidth * (fh / fw);
+          const mirrorPunch = Boolean(
+            isActionActive
+            && player.actionType === "punch"
+            && player.lastRobotDir === "left"
+          );
+          ctx.translate(player.x, player.y - 4);
+          if (mirrorPunch) ctx.scale(-1, 1);
 
           ctx.drawImage(
             drawImg,
@@ -3835,8 +4886,8 @@ export function MissionGame({
             0,
             fw,
             fh,
-            player.x - drawWidth / 2,
-            player.y - drawHeight / 2 - 4, // slight shift upwards to match center of mass
+            -drawWidth / 2,
+            -drawHeight / 2,
             drawWidth,
             drawHeight
           );
@@ -3845,6 +4896,7 @@ export function MissionGame({
           // Draw cyber defensive shield if active!
           if (player.isShieldActive) {
             ctx.save();
+            const shieldRadius = player.radius + 40;
             
             // Outer neon cyan glowing ring
             ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
@@ -3852,20 +4904,19 @@ export function MissionGame({
             ctx.shadowColor = "#22d3ee";
             ctx.shadowBlur = 15;
             ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius + 18, 0, Math.PI * 2);
+            ctx.arc(player.x, player.y, shieldRadius, 0, Math.PI * 2);
             ctx.stroke();
             
             // Translucent neon cyan filled field with hexagon wireframe grid overlay
             ctx.shadowBlur = 0; // reset shadow
             ctx.fillStyle = "rgba(6, 182, 212, 0.12)";
             ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius + 18, 0, Math.PI * 2);
+            ctx.arc(player.x, player.y, shieldRadius, 0, Math.PI * 2);
             ctx.fill();
 
             // Hexagonal lines overlay
             ctx.strokeStyle = "rgba(34, 211, 238, 0.38)";
             ctx.lineWidth = 1.3;
-            const shieldRadius = player.radius + 18;
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 3) {
               const hx1 = player.x + Math.cos(angle) * shieldRadius;
               const hy1 = player.y + Math.sin(angle) * shieldRadius;
@@ -3994,6 +5045,7 @@ export function MissionGame({
           // Draw cyber defensive shield if active!
           if (player.isShieldActive) {
             ctx.save();
+            const shieldRadius = player.radius + 40;
             
             // Outer neon cyan glowing ring
             ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
@@ -4001,20 +5053,19 @@ export function MissionGame({
             ctx.shadowColor = "#22d3ee";
             ctx.shadowBlur = 15;
             ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius + 18, 0, Math.PI * 2);
+            ctx.arc(player.x, player.y, shieldRadius, 0, Math.PI * 2);
             ctx.stroke();
             
             // Translucent neon cyan filled field with hexagon wireframe grid overlay
             ctx.shadowBlur = 0; // reset shadow
             ctx.fillStyle = "rgba(6, 182, 212, 0.12)";
             ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius + 18, 0, Math.PI * 2);
+            ctx.arc(player.x, player.y, shieldRadius, 0, Math.PI * 2);
             ctx.fill();
 
             // Hexagonal lines overlay
             ctx.strokeStyle = "rgba(34, 211, 238, 0.38)";
             ctx.lineWidth = 1.3;
-            const shieldRadius = player.radius + 18;
             for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 3) {
               const hx1 = player.x + Math.cos(angle) * shieldRadius;
               const hy1 = player.y + Math.sin(angle) * shieldRadius;
@@ -4203,13 +5254,17 @@ export function MissionGame({
 
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
     if (victoryPendingRef.current) return;
     victoryPendingRef.current = true;
     recordAction("bossDefeated");
+    if (!bossOutcomeRecordedRef.current) {
+      bossOutcomeRecordedRef.current = true;
+      recordExhibitionBossOutcome(selectedChapter, "victory");
+    }
     recordAction("stagesCleared");
     const feedbackState = engineRef.current as any;
     if (feedbackState.boss) {
@@ -4529,7 +5584,7 @@ export function MissionGame({
       {stage === "PLAYING" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none" ref={containerRef}>
           {/* Streamlined, Compact Top Status Bar */}
-          <div className="w-full bg-zinc-950/95 border-b border-zinc-900 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 z-15 select-none flex-shrink-0">
+          <div className="absolute left-2 right-2 top-2 z-30 flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-1.5 shadow-xl backdrop-blur-md select-none">
             {/* Left Column: Player Status & Mini Stats */}
             <div className="flex items-center gap-2 xs:gap-3 flex-wrap">
               {/* Agent mini badge */}
@@ -4635,28 +5690,29 @@ export function MissionGame({
               >
                 <span>搖桿</span>
               </button>
+              <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-400 hover:border-orange-500 hover:text-orange-300" aria-label="離開任務"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
           {/* Core Interactive Web Game Canvas (Responsive vertical / horizontal) */}
-          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-1.5 sm:p-2 relative overflow-hidden">
+          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center relative overflow-hidden">
             <div
-              className="relative flex items-center justify-center"
+              className="relative flex h-full w-full items-center justify-center"
               style={{
                 width: isMobile
                   ? "100%"
-                  : "min(1400px, 100%, calc((100vh - 9rem) * 20 / 11))"
+                  : "min(1400px, 100%, calc(100vh * 14 / 9))"
               }}
             >
               <canvas 
                 ref={canvasRef} 
                 tabIndex={-1}
                 width={isMobile ? 500 : 1400}
-                height={isMobile ? 750 : 770}
+                height={isMobile ? 750 : 900}
                 className={
                   isMobile 
                     ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded" 
-                    : "h-auto w-full aspect-[20/11] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
+                    : "h-auto w-full max-h-full max-w-[1400px] aspect-[14/9] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
                 }
               />
             </div>
@@ -4664,7 +5720,7 @@ export function MissionGame({
 
           {/* Bottom Game Controls Dock (Positioned at the very bottom, non-blocking) */}
           {showTouchControls && (
-            <div className="w-full bg-zinc-950 border-t border-zinc-900 p-3 sm:p-4 flex flex-col xs:flex-row items-center justify-between gap-4 z-20">
+            <div className="absolute bottom-2 left-2 right-2 z-30 flex flex-col items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 p-2 shadow-xl backdrop-blur-md xs:flex-row sm:px-3">
               {/* Left Side: Joystick D-pad */}
               <div className="flex items-center gap-3">
                 <span className="text-zinc-500 text-[10px] uppercase font-mono tracking-wider hidden sm:block">移動方向 Control:</span>
@@ -4778,15 +5834,17 @@ export function MissionGame({
                   獲得了足夠的光子核心！請選擇一項 SCI 工業照明科技進行升級：
                 </p>
 
-                <div className="space-y-1.5 sm:space-y-2.5">
+                <div className="flex w-full flex-col gap-1.5 sm:gap-2.5" role="listbox" aria-label="科技升級選項">
                   {upgradeChoices.map((choice, i) => (
                     <button
                       key={choice.id}
                       onClick={() => handleSelectUpgrade(choice)}
                       onMouseEnter={() => setSelectedUpgradeIndex(i)}
                       onFocus={() => setSelectedUpgradeIndex(i)}
+                      role="option"
+                      aria-selected={selectedUpgradeIndex === i}
                       aria-current={selectedUpgradeIndex === i ? "true" : undefined}
-                      className={`w-full p-2 sm:p-3 border text-left transition-all duration-200 cursor-pointer flex items-center gap-2 sm:gap-3.5 group rounded-none ${
+                      className={`flex w-full shrink-0 items-center gap-2 border p-2 text-left transition-all duration-200 cursor-pointer sm:gap-3.5 sm:p-3 group rounded-none ${
                         selectedUpgradeIndex === i
                           ? "bg-orange-500/10 border-orange-400 shadow-[inset_3px_0_0_#fb923c,0_0_14px_rgba(249,115,22,0.12)]"
                           : "bg-zinc-950/80 border-zinc-800 hover:border-orange-500/80"
@@ -4954,7 +6012,7 @@ export function MissionGame({
       {stage === "BOSSBATTLE" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none">
           {/* Streamlined, Compact Top Status Bar for Boss Battle */}
-          <div className="w-full bg-zinc-950/95 border-b border-zinc-900 px-3 py-2 flex flex-wrap items-center justify-between gap-3 z-15 select-none flex-shrink-0">
+          <div className="absolute left-2 right-2 top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-2 shadow-xl backdrop-blur-md select-none">
             {/* Left Side: Encounter info, Mecha HP & Coins */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1 text-[10px] font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded px-1.5 py-0.5">
@@ -5010,11 +6068,12 @@ export function MissionGame({
                 <RotateCcw className="w-3 h-3" />
                 <span>重新挑戰</span>
               </button>
+              <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-400 hover:border-rose-500 hover:text-rose-300" aria-label="離開魔王戰"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
           {/* Expanded Boss Arena */}
-          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center p-1.5 sm:p-2 relative overflow-hidden">
+          <div className="absolute inset-0 w-full bg-zinc-950 flex flex-col items-center justify-center overflow-hidden">
             <div className="w-full h-full flex items-center justify-center">
               <div className="w-full h-full flex items-center justify-center relative">
                 <canvas
@@ -5027,12 +6086,27 @@ export function MissionGame({
                       : "w-full h-auto max-w-[1400px] max-h-full border border-zinc-800 bg-zinc-950 aspect-[2/1] shadow-2xl rounded"
                   }
                 />
+                {bossIntroPhase && (
+                  <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center overflow-hidden bg-black/20 backdrop-blur-[0.5px]">
+                    {bossIntroPhase === "entrance" ? (
+                      <div className="absolute inset-x-0 top-[14%] text-center">
+                        <p className="animate-pulse font-mono text-xs font-black tracking-[0.45em] text-rose-400 drop-shadow-[0_0_12px_rgba(244,63,94,.9)] sm:text-base">BOSS SIGNAL DETECTED</p>
+                        <div className="mx-auto mt-2 h-px w-48 animate-pulse bg-gradient-to-r from-transparent via-rose-500 to-transparent" />
+                      </div>
+                    ) : (
+                      <div className="text-center animate-scale-up">
+                        <h1 className="text-6xl font-black tracking-[0.16em] text-orange-400 drop-shadow-[0_0_26px_rgba(249,115,22,.95)] sm:text-9xl">START!</h1>
+                        <p className="mt-2 font-mono text-[10px] font-bold tracking-[0.35em] text-zinc-200 sm:text-sm">BOSS COMBAT PROTOCOL ACTIVE</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Bottom Game Controls Dock for Boss Battle */}
-          <div className="w-full bg-zinc-950 border-t border-zinc-900 p-2.5 sm:p-4 z-20 flex-shrink-0">
+          <div className="absolute bottom-2 left-2 right-2 z-30 rounded border border-zinc-700/60 bg-zinc-950/75 p-2.5 shadow-xl backdrop-blur-md sm:p-3">
             <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-stretch justify-between gap-3 sm:gap-4">
               
               {/* Controls Section */}
@@ -5435,7 +6509,7 @@ export function MissionGame({
       )}
 
       {/* Global Bottom Back Bar */}
-      <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 flex justify-between items-center text-[10px] text-zinc-500 font-sans z-10">
+      {stage !== "PLAYING" && stage !== "BOSSBATTLE" && <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 flex justify-between items-center text-[10px] text-zinc-500 font-sans z-10">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="hidden md:inline">勇敢の燈燈小隊 ── 攜手 SCI 工業照明科技 驅散一切未知的暗影</span>
           <span className="font-mono text-zinc-400">⌨ 方向鍵/WASD 移動・Enter/Space 確認・R 重試・Esc 離開</span>
@@ -5447,7 +6521,7 @@ export function MissionGame({
           <X className="w-3.5 h-3.5" />
           <span>返回事業組基地 (EXIT MISSION)</span>
         </button>
-      </div>
+      </div>}
 
       {/* 🛠️ BOSS CONTROL OPERATIONS MODAL OVERLAY */}
       {false && showBossTipModal && (

@@ -12,6 +12,21 @@ export interface GameEventDefinition {
   once: boolean;
 }
 
+const EXHIBITION_BOSS_EVENTS: GameEventDefinition[] = [
+  { id: "event_ampa_failure", title: "AMPA 敗退分析", content: "停電核心擊退了小隊，但診斷系統保留了它過載時的電力波形。", icon: "⚡", triggerType: "actionCount", action: "ampaBossFailure", requiredCount: 1, rewardCard: "card_ampa_failure", once: true },
+  { id: "event_ampa_victory", title: "AMPA 作戰完成", content: "停電核心已被壓制，備援照明與穩定供電資料完成歸檔。", icon: "🏆", triggerType: "actionCount", action: "ampaBossVictory", requiredCount: 1, rewardCard: "card_ampa_victory", once: true },
+  { id: "event_frankfurt_failure", title: "Automechanika 敗退分析", content: "黑暗工程機甲守住了陣地，關節運作資料則成為下一次挑戰的線索。", icon: "🔩", triggerType: "actionCount", action: "frankfurtBossFailure", requiredCount: 1, rewardCard: "card_frankfurt_failure", once: true },
+  { id: "event_frankfurt_victory", title: "Automechanika 作戰完成", content: "工程機甲停止運轉，小隊完成攻擊循環與維護資料的整理。", icon: "🏆", triggerType: "actionCount", action: "frankfurtBossVictory", requiredCount: 1, rewardCard: "card_frankfurt_victory", once: true },
+  { id: "event_tite_failure", title: "TITE × IHT 敗退分析", content: "深海黑影消失在水下，但聲納記錄捕捉到了它接近前的水流變化。", icon: "🌊", triggerType: "actionCount", action: "titeBossFailure", requiredCount: 1, rewardCard: "card_tite_failure", once: true },
+  { id: "event_tite_victory", title: "TITE × IHT 作戰完成", content: "海事戰區恢復照明，密封與耐蝕資料已完成驗證。", icon: "🏆", triggerType: "actionCount", action: "titeBossVictory", requiredCount: 1, rewardCard: "card_tite_victory", once: true },
+  { id: "event_aapex_failure", title: "AAPEX 敗退分析", content: "山神黑獸的連續衝刺擊退了機器人，但輪跡完整揭露了它的轉向規律。", icon: "💨", triggerType: "actionCount", action: "aapexBossFailure", requiredCount: 1, rewardCard: "card_aapex_failure", once: true },
+  { id: "event_aapex_victory", title: "AAPEX 作戰完成", content: "高速衝刺被成功制止，小隊取得完整的動力與制動控制資料。", icon: "🏆", triggerType: "actionCount", action: "aapexBossVictory", requiredCount: 1, rewardCard: "card_aapex_victory", once: true },
+  { id: "event_metstrade_failure", title: "METSTRADE 敗退分析", content: "潛水突襲迫使小隊撤退，壓力記錄卻標示出觸手攻擊的安全空隙。", icon: "🐙", triggerType: "actionCount", action: "metstradeBossFailure", requiredCount: 1, rewardCard: "card_metstrade_failure", once: true },
+  { id: "event_metstrade_victory", title: "METSTRADE 作戰完成", content: "暗影列車已停止，水下作業與視認資料完成歸檔。", icon: "🏆", triggerType: "actionCount", action: "metstradeBossVictory", requiredCount: 1, rewardCard: "card_metstrade_victory", once: true },
+  { id: "event_bauma_failure", title: "BAUMA 敗退分析", content: "重裝魔王守住礦區，現場碎石與衝擊痕跡留下了可利用的破綻。", icon: "🪨", triggerType: "actionCount", action: "baumaBossFailure", requiredCount: 1, rewardCard: "card_bauma_failure", once: true },
+  { id: "event_bauma_victory", title: "BAUMA 作戰完成", content: "礦區威脅解除，重型設備的衝擊與耐久資料完成驗證。", icon: "🏆", triggerType: "actionCount", action: "baumaBossVictory", requiredCount: 1, rewardCard: "card_bauma_victory", once: true },
+];
+
 export const EVENT_CONFIG: GameEventDefinition[] = [
   {
     id: "event_ip66",
@@ -82,11 +97,11 @@ export const EVENT_CONFIG: GameEventDefinition[] = [
   {
     id: "event_safety",
     title: "最終照明檢查",
-    content: "擊敗魔王後，小隊回顧戰場中的視線、陰影與安全距離。",
+    content: "多次受到攻擊後，小隊回顧戰場中的視線、陰影與安全距離。",
     icon: "🛡️",
     triggerType: "actionCount",
-    action: "bossDefeated",
-    requiredCount: 1,
+    action: "takeDamage",
+    requiredCount: 5,
     rewardCard: "card_safety",
     once: true,
   },
@@ -101,6 +116,7 @@ export const EVENT_CONFIG: GameEventDefinition[] = [
     rewardCard: "card_service",
     once: true,
   },
+  ...EXHIBITION_BOSS_EVENTS,
 ];
 
 const CUSTOM_EVENT_STORAGE_KEY = "sci_knowledge_custom_event_config";

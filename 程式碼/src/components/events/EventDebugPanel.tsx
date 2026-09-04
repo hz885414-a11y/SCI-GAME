@@ -29,6 +29,7 @@ function CardSetupRow({ card, configured, source, onEdit }: { card: KnowledgeCar
         </div>
         <p className="mt-1 font-mono text-[8px] text-zinc-600">{card.id} · {card.category}</p>
         <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-zinc-400">{card.description}</p>
+        {card.bossEffect && <p className="mt-1 text-[9px] font-bold text-rose-300">⚔ {card.bossEffect.label}</p>}
         {!configured && <p className="mt-2 text-[9px] font-bold text-amber-400">請到「新增事件」頁選擇這張卡片並設定觸發條件。</p>}
         <button type="button" onClick={onEdit} className="mt-2 border border-cyan-800 px-2 py-1 text-[9px] font-bold text-cyan-300 hover:bg-cyan-950/40">編輯卡片</button>
       </div>
@@ -50,7 +51,7 @@ export function EventDebugPanel() {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [form, setForm] = useState({ id: "", title: "", content: "", icon: "✨", action: "killEnemy" as PlayerAction, requiredCount: 1, rewardCard: CARD_DATABASE[0]?.id || "" });
-  const [cardForm, setCardForm] = useState({ id: "", category: "lighting" as KnowledgeCardCategory, icon: "💡", title: "", description: "", industryNote: "", image: "" });
+  const [cardForm, setCardForm] = useState({ id: "", category: "lighting" as KnowledgeCardCategory, icon: "💡", title: "", description: "", industryNote: "", image: "", effectChapter: 0, hpReduction: 0, moveReduction: 0, dashReduction: 0, attackDelay: 0 });
   const snapshot = useEventSystem();
   const allEvents = getAllEventDefinitions();
   const allCards = getAllCardDefinitions();
@@ -63,7 +64,7 @@ export function EventDebugPanel() {
     if (cardFilter === "configured") return configuredCardIds.has(card.id);
     if (cardFilter === "missing") return !configuredCardIds.has(card.id);
     return true;
-  }), [cardFilter, allEvents.length, allCards.length]);
+  }), [cardFilter, allEvents, allCards]);
   const filteredEvents = useMemo(() => allEvents.filter((gameEvent) => {
     const query = eventSearch.trim().toLowerCase();
     const matchesSearch = !query || `${gameEvent.title} ${gameEvent.id} ${gameEvent.rewardCard}`.toLowerCase().includes(query);
@@ -73,7 +74,7 @@ export function EventDebugPanel() {
     const source: DefinitionSource = isStoredCustom && isBuiltIn ? "overridden" : isStoredCustom ? "custom" : "builtIn";
     const matchesSource = eventSourceFilter === "all" || eventSourceFilter === source;
     return matchesSearch && matchesAction && matchesSource;
-  }), [allEvents.length, customEventIds.size, eventActionFilter, eventSearch, eventSourceFilter]);
+  }), [allEvents, customEventIds.size, eventActionFilter, eventSearch, eventSourceFilter]);
 
   const debugEnabled = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.localStorage.getItem("sci_event_debug") === "true");
   if (!debugEnabled) return null;
@@ -102,7 +103,7 @@ export function EventDebugPanel() {
 
   const startNewCard = () => {
     setEditingCardId(null);
-    setCardForm({ id: "", category: "lighting", icon: "💡", title: "", description: "", industryNote: "", image: "" });
+    setCardForm({ id: "", category: "lighting", icon: "💡", title: "", description: "", industryNote: "", image: "", effectChapter: 0, hpReduction: 0, moveReduction: 0, dashReduction: 0, attackDelay: 0 });
     setNotice("");
     setPage("createCard");
   };
@@ -111,7 +112,14 @@ export function EventDebugPanel() {
     const card = allCards.find((item) => item.id === cardId);
     if (!card) return;
     setEditingCardId(cardId);
-    setCardForm({ id: card.id, category: card.category, icon: card.icon, title: card.title, description: card.description, industryNote: card.industryNote, image: card.image });
+    setCardForm({
+      id: card.id, category: card.category, icon: card.icon, title: card.title, description: card.description, industryNote: card.industryNote, image: card.image,
+      effectChapter: card.bossEffect?.chapter || 0,
+      hpReduction: Math.round((1 - (card.bossEffect?.bossHpMultiplier ?? 1)) * 100),
+      moveReduction: Math.round((1 - (card.bossEffect?.moveSpeedMultiplier ?? 1)) * 100),
+      dashReduction: Math.round((1 - (card.bossEffect?.dashSpeedMultiplier ?? 1)) * 100),
+      attackDelay: Math.round(((card.bossEffect?.attackIntervalMultiplier ?? 1) - 1) * 100),
+    });
     setNotice(`正在編輯「${card.title}」。卡片代碼會保留，避免產生重複資料。`);
     setPage("createCard");
   };
@@ -167,7 +175,25 @@ export function EventDebugPanel() {
       setNotice("這個卡片代碼已存在；請直接從卡片列表按「編輯」，或使用另一個代碼。");
       return;
     }
-    saveCustomCardDefinition({ id: cardId, category: cardForm.category, icon: cardForm.icon.trim() || "📘", title: cardForm.title.trim(), description: cardForm.description.trim(), industryNote: cardForm.industryNote.trim() || "產業補充內容尚待完善。", image: cardForm.image.trim() });
+    const clampPercent = (value: number) => Math.max(0, Math.min(50, Number(value) || 0));
+    const effectSummary = [
+      cardForm.hpReduction > 0 ? `生命 -${clampPercent(cardForm.hpReduction)}%` : "",
+      cardForm.moveReduction > 0 ? `移動 -${clampPercent(cardForm.moveReduction)}%` : "",
+      cardForm.dashReduction > 0 ? `衝刺 -${clampPercent(cardForm.dashReduction)}%` : "",
+      cardForm.attackDelay > 0 ? `攻擊間隔 +${clampPercent(cardForm.attackDelay)}%` : "",
+    ].filter(Boolean).join("、");
+    saveCustomCardDefinition({
+      id: cardId, category: cardForm.category, icon: cardForm.icon.trim() || "📘", title: cardForm.title.trim(), description: cardForm.description.trim(), industryNote: cardForm.industryNote.trim() || "產業補充內容尚待完善。", image: cardForm.image.trim(),
+      bossEffect: cardForm.effectChapter > 0 && effectSummary ? {
+        type: "bossWeakening",
+        chapter: cardForm.effectChapter,
+        label: `再戰效果：${effectSummary}`,
+        bossHpMultiplier: 1 - clampPercent(cardForm.hpReduction) / 100,
+        moveSpeedMultiplier: 1 - clampPercent(cardForm.moveReduction) / 100,
+        dashSpeedMultiplier: 1 - clampPercent(cardForm.dashReduction) / 100,
+        attackIntervalMultiplier: 1 + clampPercent(cardForm.attackDelay) / 100,
+      } : undefined,
+    });
     notifyEventSystemChanged();
     snapshot.refresh();
     if (editingCardId) {
@@ -228,6 +254,16 @@ export function EventDebugPanel() {
                 <label className="space-y-1 sm:col-span-2"><span>卡片標題</span><input value={cardForm.title} onChange={(event) => setCardForm({ ...cardForm, title: event.target.value })} placeholder="玩家在圖鑑中看到的名稱" className="w-full border border-zinc-700 bg-black p-2" /></label>
                 <label className="space-y-1 sm:col-span-2"><span>主要知識說明</span><textarea value={cardForm.description} onChange={(event) => setCardForm({ ...cardForm, description: event.target.value })} placeholder="簡短說明這項產業知識" rows={3} className="w-full resize-none border border-zinc-700 bg-black p-2" /></label>
                 <label className="space-y-1 sm:col-span-2"><span>產業補充內容</span><textarea value={cardForm.industryNote} onChange={(event) => setCardForm({ ...cardForm, industryNote: event.target.value })} placeholder="卡片放大後顯示的延伸說明" rows={3} className="w-full resize-none border border-zinc-700 bg-black p-2" /></label>
+                <div className="space-y-3 border border-rose-900/60 bg-rose-950/10 p-3 sm:col-span-2">
+                  <div><b className="text-rose-300">魔王弱化效果（選填）</b><p className="mt-1 text-[9px] leading-relaxed text-zinc-600">玩家取得卡片後，效果會在下一次挑戰指定展覽魔王時自動套用；數值上限為 50%。</p></div>
+                  <label className="block space-y-1"><span>套用展覽</span><select value={cardForm.effectChapter} onChange={(event) => setCardForm({ ...cardForm, effectChapter: Number(event.target.value) })} className="w-full border border-zinc-700 bg-black p-2"><option value={0}>不弱化魔王</option><option value={1}>AMPA</option><option value={2}>Automechanika Frankfurt</option><option value={3}>TITE × IHT</option><option value={4}>AAPEX</option><option value={5}>METSTRADE</option><option value={6}>BAUMA</option></select></label>
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    <label className="space-y-1"><span>生命降低 %</span><input type="number" min="0" max="50" value={cardForm.hpReduction} onChange={(event) => setCardForm({ ...cardForm, hpReduction: Number(event.target.value) })} className="w-full border border-zinc-700 bg-black p-2" /></label>
+                    <label className="space-y-1"><span>移動降低 %</span><input type="number" min="0" max="50" value={cardForm.moveReduction} onChange={(event) => setCardForm({ ...cardForm, moveReduction: Number(event.target.value) })} className="w-full border border-zinc-700 bg-black p-2" /></label>
+                    <label className="space-y-1"><span>衝刺降低 %</span><input type="number" min="0" max="50" value={cardForm.dashReduction} onChange={(event) => setCardForm({ ...cardForm, dashReduction: Number(event.target.value) })} className="w-full border border-zinc-700 bg-black p-2" /></label>
+                    <label className="space-y-1"><span>攻擊變慢 %</span><input type="number" min="0" max="50" value={cardForm.attackDelay} onChange={(event) => setCardForm({ ...cardForm, attackDelay: Number(event.target.value) })} className="w-full border border-zinc-700 bg-black p-2" /></label>
+                  </div>
+                </div>
               </div>
               <div className="mt-4 border border-zinc-800 bg-black/30 p-3"><p className="text-[9px] text-zinc-600">卡片預覽</p><div className="mt-2 flex gap-3"><span className="grid h-14 w-14 place-items-center border border-cyan-800 bg-cyan-950/20 text-2xl">{cardForm.icon || "📘"}</span><div><b className="text-sm text-white">{cardForm.title || "尚未輸入卡片標題"}</b><p className="mt-1 text-[10px] text-zinc-500">{cardForm.description || "尚未輸入卡片說明"}</p></div></div></div>
               <div className="mt-4 flex gap-2">{editingCardId && <button type="button" onClick={() => { setEditingCardId(null); setPage("cards"); setNotice(""); }} className="border border-zinc-700 px-4 text-zinc-400">取消</button>}<button type="button" onClick={createCard} className="flex-1 border border-cyan-600 bg-cyan-950/40 p-3 font-black text-cyan-200 hover:bg-cyan-900/50">{editingCardId ? "儲存卡片修改" : "儲存卡片並設定事件"}</button></div>

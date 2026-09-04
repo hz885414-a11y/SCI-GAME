@@ -75,6 +75,7 @@ export function EventPopup({ event, playSound }: EventPopupProps) {
                   <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400">CATEGORY // {card.category}</p>
                   <p className="mt-2 text-sm font-bold leading-relaxed text-zinc-100">{card.description}</p>
                   <p className="mt-3 border-t border-zinc-800 pt-3 text-xs leading-relaxed text-zinc-400">{card.industryNote}</p>
+                  {card.bossEffect && <p className="mt-3 border border-rose-700/60 bg-rose-950/35 p-3 text-xs font-bold leading-relaxed text-rose-200">⚔ 知識應用：{card.bossEffect.label}</p>}
                 </div>
               </div>
               <button type="button" onClick={finish} className="w-full border border-cyan-500/70 bg-cyan-950/50 px-5 py-3 text-sm font-black tracking-widest text-cyan-100 transition hover:bg-cyan-900/60 active:scale-[0.98]">

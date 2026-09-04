@@ -17,10 +17,30 @@ const SHARED_BOSS_VISUALS: BossVisualSet = {
 // Each chapter has its own slot so future Boss artwork can be replaced one chapter at a time.
 export const BOSS_VISUALS_BY_CHAPTER: Record<number, BossVisualSet> = {
   1: { ...SHARED_BOSS_VISUALS },
-  2: { ...SHARED_BOSS_VISUALS },
-  3: { ...SHARED_BOSS_VISUALS },
-  4: { ...SHARED_BOSS_VISUALS },
-  5: { ...SHARED_BOSS_VISUALS },
+  2: {
+    idle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_06-BOSS-normal.png",
+    area: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_06-BOSS-bombing.png",
+    special: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_06-BOSS-laser.png",
+    tracking: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_06-BOSS-strafing.png",
+  },
+  3: {
+    idle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_04-BOSS-normal.png",
+    area: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_04-BOSS-Area.png",
+    special: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_O4-BOSS-special.png",
+    tracking: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_04-BOSS-track.png",
+  },
+  4: {
+    idle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_05-BOSS-normal.png",
+    area: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_05-BOSS-Area.png",
+    special: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_05-BOSS-special.png",
+    tracking: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_05-BOSS-track.png",
+  },
+  5: {
+    idle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_03-BOSS-normal.png",
+    area: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_03-BOSS-Area.png",
+    special: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_03-BOSS-special.png",
+    tracking: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/BOSS_03-BOSS-track.png",
+  },
   6: {
     idle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/Enemy_02-BOSS-normal.png",
     area: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/7.BOSS/Enemy_02-BOSS-Area.png",

@@ -32,6 +32,19 @@ export const PLAYER_ACTIONS = [
   "useMechaShield",
   "useMechaUltimate",
   "bossDefeated",
+  "defeatBossSummon",
+  "ampaBossVictory",
+  "ampaBossFailure",
+  "frankfurtBossVictory",
+  "frankfurtBossFailure",
+  "titeBossVictory",
+  "titeBossFailure",
+  "aapexBossVictory",
+  "aapexBossFailure",
+  "metstradeBossVictory",
+  "metstradeBossFailure",
+  "baumaBossVictory",
+  "baumaBossFailure",
   "stagesCleared",
 ] as const;
 
@@ -64,8 +77,30 @@ export const PLAYER_ACTION_INFO: Record<PlayerAction, { label: string; descripti
   useMechaShield: { label: "機器人啟動防禦", description: "在魔王戰中啟動一次機器人防禦護盾。", group: "機器人技能" },
   useMechaUltimate: { label: "機器人使用終極技能", description: "在魔王戰中成功發動一次終極技能。", group: "機器人技能" },
   bossDefeated: { label: "擊敗魔王", description: "完成最後一擊並擊敗任意魔王。", group: "魔王" },
+  defeatBossSummon: { label: "擊敗魔王召喚物", description: "在魔王戰中清除一個由魔王召喚的支援單位。", group: "魔王" },
+  ampaBossVictory: { label: "AMPA 魔王挑戰成功", description: "在 AMPA 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  ampaBossFailure: { label: "AMPA 魔王挑戰失敗", description: "在 AMPA 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
+  frankfurtBossVictory: { label: "Automechanika 魔王挑戰成功", description: "在 Automechanika Frankfurt 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  frankfurtBossFailure: { label: "Automechanika 魔王挑戰失敗", description: "在 Automechanika Frankfurt 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
+  titeBossVictory: { label: "TITE × IHT 魔王挑戰成功", description: "在 TITE × IHT 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  titeBossFailure: { label: "TITE × IHT 魔王挑戰失敗", description: "在 TITE × IHT 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
+  aapexBossVictory: { label: "AAPEX 魔王挑戰成功", description: "在 AAPEX 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  aapexBossFailure: { label: "AAPEX 魔王挑戰失敗", description: "在 AAPEX 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
+  metstradeBossVictory: { label: "METSTRADE 魔王挑戰成功", description: "在 METSTRADE 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  metstradeBossFailure: { label: "METSTRADE 魔王挑戰失敗", description: "在 METSTRADE 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
+  baumaBossVictory: { label: "BAUMA 魔王挑戰成功", description: "在 BAUMA 展覽作戰中擊敗魔王。", group: "展覽魔王結果" },
+  baumaBossFailure: { label: "BAUMA 魔王挑戰失敗", description: "在 BAUMA 展覽魔王戰中挑戰失敗。", group: "展覽魔王結果" },
   stagesCleared: { label: "完成關卡", description: "累計完成的完整關卡數量。", group: "任務" },
 };
+
+const EXHIBITION_BOSS_OUTCOME_ACTIONS = {
+  1: { victory: "ampaBossVictory", failure: "ampaBossFailure" },
+  2: { victory: "frankfurtBossVictory", failure: "frankfurtBossFailure" },
+  3: { victory: "titeBossVictory", failure: "titeBossFailure" },
+  4: { victory: "aapexBossVictory", failure: "aapexBossFailure" },
+  5: { victory: "metstradeBossVictory", failure: "metstradeBossFailure" },
+  6: { victory: "baumaBossVictory", failure: "baumaBossFailure" },
+} as const satisfies Record<number, Record<"victory" | "failure", PlayerAction>>;
 
 export const EMPTY_PLAYER_STATS = Object.fromEntries(
   PLAYER_ACTIONS.map((action) => [action, 0]),
@@ -100,6 +135,11 @@ const ENEMY_DEFEAT_ACTIONS = {
 export function recordEnemyDefeated(enemyType: keyof typeof ENEMY_DEFEAT_ACTIONS): void {
   recordAction("killEnemy");
   recordAction(ENEMY_DEFEAT_ACTIONS[enemyType]);
+}
+
+export function recordExhibitionBossOutcome(chapter: number, outcome: "victory" | "failure"): void {
+  const action = EXHIBITION_BOSS_OUTCOME_ACTIONS[chapter as keyof typeof EXHIBITION_BOSS_OUTCOME_ACTIONS]?.[outcome];
+  if (action) recordAction(action);
 }
 
 export function resetPlayerStats(): void {
