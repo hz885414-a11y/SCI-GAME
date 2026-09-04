@@ -4637,12 +4637,12 @@ export function MissionGame({
           // the Boss is travelling right so chained dashes always read correctly.
           const mirrorAapexSprite = selectedChapter === 4 && (boss.facingX || -1) > 0;
           // AUTOMECHANIKA uses different source-facing directions: the laser
-          // and bombing art face right, while the strafing art faces left.
+          // and strafing art face left, while the bombing art faces right.
           // Keep the frontal idle frame untouched and mirror each attack from
           // its own authored direction.
           const mirrorAutomechanikaSprite = selectedChapter === 2
             && bossVisualState !== "idle"
-            && (bossVisualState === "tracking"
+            && (bossVisualState === "tracking" || bossVisualState === "special"
               ? (boss.facingX || -1) > 0
               : (boss.facingX || 1) < 0);
           ctx.save();
