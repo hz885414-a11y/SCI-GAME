@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { playSound, startBackgroundMusic, stopBackgroundMusic, waitForBackgroundMusicReady } from "../utils/audio";
-import { BOOT_CRITICAL_ASSETS, DEFERRED_ASSET_MANIFEST } from "../data/coreAssetManifest";
+import { BOOT_CRITICAL_ASSETS } from "../data/coreAssetManifest";
 import { UI_IMAGE_ASSETS } from "../data/gameAssetUrls";
 import { preloadAssetManifest } from "../utils/preloadImages";
 import { 
@@ -279,9 +279,6 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
       if (cancelled) return;
       setProgress(100);
       setCurrentAsset(result.failed > 0 ? "部分遠端素材將於背景重試" : "核心素材載入完成");
-      // Start the rest in a small background queue. Prologue chapters 2 and 3
-      // are ordered first so they are normally ready before the player turns the page.
-      void preloadAssetManifest(DEFERRED_ASSET_MANIFEST, undefined, 10000, 3);
       window.setTimeout(() => {
         if (cancelled) return;
         playSound("success");

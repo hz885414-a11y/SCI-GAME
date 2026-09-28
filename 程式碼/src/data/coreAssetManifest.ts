@@ -80,18 +80,12 @@ const prologueArtwork = prologuePages
   .filter((page): page is typeof page & { backgroundImage: string } => Boolean(page.backgroundImage))
   .map((page) => ({ label: `PROLOGUE CHAPTER ${page.id}`, url: page.backgroundImage }));
 
-// Only assets needed immediately after the boot screen block entry. Keeping
-// this list short prevents the cold-cache boot from competing with later art.
+// The boot screen must never depend on remote GitHub image hosts. Mobile
+// browsers can terminate or reload a tab when several large PNGs decode at
+// once, so only the locally bundled title is allowed to block startup. Other
+// artwork is loaded by the screen that actually needs it.
 export const BOOT_CRITICAL_ASSETS: CoreAssetItem[] = [
   { label: "MAIN TITLE", url: UI_IMAGE_ASSETS.mainTitle },
-  { label: "PROLOGUE CHAPTER 1", url: prologueArtwork[0]?.url ?? "" },
-  { label: "OPS BACKGROUND", url: BACKGROUND_ASSETS.business },
-  { label: "CLAIRE NORMAL", url: characterImages.claire.normal },
-  { label: "CLAIRE HAPPY", url: characterImages.claire.happy },
-  { label: "ETHAN NORMAL", url: characterImages.ethan.normal },
-  { label: "ETHAN HAPPY", url: characterImages.ethan.happy },
-  { label: "LEO NORMAL", url: characterImages.leo.normal },
-  { label: "LEO HAPPY", url: characterImages.leo.happy },
 ].filter((asset) => asset.url);
 
 const criticalUrls = new Set(BOOT_CRITICAL_ASSETS.map((asset) => asset.url));
