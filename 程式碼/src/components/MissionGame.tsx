@@ -1,16 +1,21 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
-  Gamepad2, Play, RotateCcw, Heart, Zap, Lightbulb, 
+  Gamepad2, Play, Pause, RotateCcw, Heart, Zap, Lightbulb, 
   ShieldAlert, X, HelpCircle, Trophy, ChevronRight, 
-  Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock
+  Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock, Menu
 } from "lucide-react";
 import { SpriteAnimator } from "./SpriteAnimator";
 import { BossWarningTransition } from "./BossWarningTransition";
 import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites";
 import { getBossVisualSet, type BossVisualState } from "../data/bossVisualConfig";
-import { getEffectiveBossBehaviorProfile, getBossKnowledgeModifiers } from "../systems/bossKnowledgeEffects";
-import { recordAction, recordEnemyDefeated, recordExhibitionBossOutcome } from "../systems/playerStats";
+import { getEffectiveBossBehaviorProfile, getBossKnowledgeModifiers, getEffectiveBossDefinition } from "../systems/bossKnowledgeEffects";
+import { getPlayerStats, recordAction, recordEnemyDefeated, recordExhibitionBossOutcome } from "../systems/playerStats";
+import { getOwnedCards } from "../systems/playerCollection";
+import { getTriggeredEvents } from "../systems/eventManager";
+import { StageEnding, type StageEndingSummary } from "./StageEnding";
 import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, type MissionEnemyType } from "../data/gameAssetUrls";
+import { useGameConfig } from "../config/GameConfigContext";
+import { getSupplyEffectTotals } from "../data/supplyShopConfig";
 
 import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
 import {
@@ -54,7 +59,7 @@ interface MissionGameProps {
   setUnlockedChapters: React.Dispatch<React.SetStateAction<number[]>>;
 }
 
-type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER";
+type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER" | "ENDING";
 type EnemyType = MissionEnemyType;
 
 interface EnemyEntity {
@@ -273,8 +278,11 @@ export function MissionGame({
   unlockedChapters,
   setUnlockedChapters
 }: MissionGameProps) {
+  const { config: gameConfig } = useGameConfig();
+  const gameplayConfig = gameConfig.gameplay;
+  const supplyEffects = getSupplyEffectTotals(gameConfig.supplyShopItems, purchasedUpgrades);
   // Screens state
-  const [stage, setStage] = useState<GameStage>(resumeBossChapter ? "BOSS_WARNING" : "START");
+  const [stage, setStage] = useState<GameStage>(entrySource === "exhibition" && resumeBossChapter ? "BOSS_WARNING" : "START");
   const [selectedAgent, setSelectedAgent] = useState<Agent>(AGENTS[0]);
   const [selectedChapter, setSelectedChapter] = useState<number>(resumeBossChapter || 1);
   const [startStep, setStartStep] = useState<number>(1);
@@ -288,7 +296,11 @@ export function MissionGame({
   const [showTipModal, setShowTipModal] = useState<boolean>(false);
   const [showBossTipModal, setShowBossTipModal] = useState<boolean>(false);
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
-  const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "start" | null>(null);
+  const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "return" | "start" | null>(null);
+  const [isGamePaused, setIsGamePaused] = useState<boolean>(false);
+  const [isMobileGameMenuOpen, setIsMobileGameMenuOpen] = useState(false);
+  const [joystickPosition, setJoystickPosition] = useState({ x: 0, y: 0 });
+  const joystickRef = useRef<HTMLDivElement>(null);
 
   const handleConfirmTip = () => {
     keysRef.current = {};
@@ -314,8 +326,8 @@ export function MissionGame({
   }, []);
 
   // Core gameplay states synced with UI
-  const [hp, setHp] = useState<number>(3);
-  const [maxHp, setMaxHp] = useState<number>(3);
+  const [hp, setHp] = useState<number>(gameplayConfig.playerBaseHp);
+  const [maxHp, setMaxHp] = useState<number>(gameplayConfig.playerBaseHp);
   const [level, setLevel] = useState<number>(1);
   const [exp, setExp] = useState<number>(0);
   const [expNeeded, setExpNeeded] = useState<number>(100);
@@ -346,6 +358,7 @@ export function MissionGame({
   );
   const [collectedMaterials, setCollectedMaterials] = useState<MaterialInventory>(createEmptyMaterialInventory);
   const materialsBankedRef = useRef(false);
+  const missionCoinsBankedRef = useRef(false);
 
   // Upgrades overlay choice
   const [showUpgradeChoice, setShowUpgradeChoice] = useState<boolean>(false);
@@ -361,6 +374,9 @@ export function MissionGame({
   const [mechaLaserBattery, setMechaLaserBattery] = useState<number>(100);
   const [mechaShieldDurability, setMechaShieldDurability] = useState<number>(4);
   const [mechaShieldBroken, setMechaShieldBroken] = useState<boolean>(false);
+  const [mechaDamagePulse, setMechaDamagePulse] = useState(false);
+  const [bossDeathCinematic, setBossDeathCinematic] = useState(false);
+  const [endingSummary, setEndingSummary] = useState<StageEndingSummary | null>(null);
   const [bossStunActive, setBossStunActive] = useState<boolean>(false);
   const [robotSelection, setRobotSelection] = useState<RobotSelectionState | null>(() =>
     resumeBossChapter ? createC2932Deployment(robotUpgrades) : null
@@ -373,6 +389,9 @@ export function MissionGame({
   );
   const c2932SkillRef = useRef({ punchCount: 0, fieldEndsAt: 0 });
   const victoryPendingRef = useRef(false);
+  const missionCompletionRecordedRef = useRef(false);
+  const previousMechaHpRef = useRef<number | null>(null);
+  const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
 
   useEffect(() => {
@@ -784,6 +803,9 @@ export function MissionGame({
       ultEnergy: 0,
       isShieldActive: false,
       shieldDurability: 4,
+      hitFlashUntil: 0,
+      hitOffsetX: 0,
+      hitOffsetY: 0,
       maxShieldDurability: 4,
       shieldBrokenTimer: 0,
       laserBattery: 100,
@@ -855,13 +877,18 @@ export function MissionGame({
     mapSize: { ...MISSION_MAP_CONFIG.worldSize },
     camera: { x: 0, y: 0 },
     lowBatteryCooldown: 0,
+    sessionCoins: 0,
     screenShake: 0,
     companionSkills: {} as Record<string, number>
   });
 
   useEffect(() => {
     if (bossIntroPhase === "entrance") {
-      const timer = window.setTimeout(() => setBossIntroPhase("start"), 950);
+      const timer = window.setTimeout(() => setBossIntroPhase("return"), 950);
+      return () => window.clearTimeout(timer);
+    }
+    if (bossIntroPhase === "return") {
+      const timer = window.setTimeout(() => setBossIntroPhase("start"), 780);
       return () => window.clearTimeout(timer);
     }
     if (bossIntroPhase === "start") {
@@ -872,6 +899,26 @@ export function MissionGame({
       return () => window.clearTimeout(timer);
     }
   }, [bossIntroPhase]);
+
+  // The canvas simulation owns the robot HP. Mirror a clear hit reaction into
+  // both the simulation and the DOM HUD whenever that HP drops during a Boss fight.
+  useEffect(() => {
+    const previousHp = previousMechaHpRef.current;
+    previousMechaHpRef.current = hp;
+    if (stage !== "BOSSBATTLE" || previousHp === null || hp >= previousHp) return;
+    const state = engineRef.current;
+    state.player.hitFlashUntil = performance.now() + 320;
+    state.player.hitOffsetX = (Math.random() - .5) * 12;
+    state.player.hitOffsetY = (Math.random() - .5) * 12;
+    state.screenShake = Math.max(state.screenShake, 15);
+    for (let index = 0; index < 16; index++) {
+      const angle = Math.random() * Math.PI * 2;
+      state.particles.push({ x: state.player.x, y: state.player.y, vx: Math.cos(angle) * (2 + Math.random() * 5), vy: Math.sin(angle) * (2 + Math.random() * 5), radius: 2 + Math.random() * 3, color: index % 2 ? "#fb7185" : "#fef08a", life: 0, maxLife: 22, alpha: 1, text: index === 0 ? "⚠️ C2-932 受損！" : undefined });
+    }
+    setMechaDamagePulse(true);
+    const timer = window.setTimeout(() => setMechaDamagePulse(false), 420);
+    return () => window.clearTimeout(timer);
+  }, [hp, stage]);
 
   // Sound triggering helper wrapper
   const triggerSound = (s: string) => {
@@ -893,9 +940,53 @@ export function MissionGame({
     });
   };
 
+  const toggleGamePause = () => {
+    if (stage !== "PLAYING" && stage !== "BOSSBATTLE") return;
+    keysRef.current = {};
+    setJoystickPosition({ x: 0, y: 0 });
+    setIsGamePaused((paused) => {
+      triggerSound("click");
+      return !paused;
+    });
+  };
+
+  const releaseJoystick = () => {
+    keysRef.current.arrowleft = false;
+    keysRef.current.arrowright = false;
+    keysRef.current.arrowup = false;
+    keysRef.current.arrowdown = false;
+    setJoystickPosition({ x: 0, y: 0 });
+  };
+
+  const moveJoystick = (clientX: number, clientY: number) => {
+    const pad = joystickRef.current;
+    if (!pad) return;
+    const rect = pad.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    const maxDistance = rect.width * 0.3;
+    const distance = Math.hypot(dx, dy);
+    const scale = distance > maxDistance ? maxDistance / distance : 1;
+    const x = dx * scale;
+    const y = dy * scale;
+    setJoystickPosition({ x, y });
+    const threshold = 7;
+    keysRef.current.arrowleft = x < -threshold;
+    keysRef.current.arrowright = x > threshold;
+    keysRef.current.arrowup = y < -threshold;
+    keysRef.current.arrowdown = y > threshold;
+  };
+
   // Keyboard and mouse handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
+      if (isCombatStage && (e.code === "Escape" || e.code === "KeyP")) {
+        e.preventDefault();
+        if (!e.repeat && !showTipModal && !startTitleActive && bossIntroPhase === null) toggleGamePause();
+        return;
+      }
+
       if (e.code === "Escape") {
         e.preventDefault();
         onClose();
@@ -914,7 +1005,6 @@ export function MissionGame({
         return;
       }
 
-      const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
       if (!isCombatStage && stage !== "BOSS_WARNING") {
         const root = gameRootRef.current;
         if (!root) return;
@@ -951,6 +1041,8 @@ export function MissionGame({
         return;
       }
 
+      if (isGamePaused) return;
+
       keysRef.current[e.key.toLowerCase()] = true;
       keysRef.current[e.code] = true;
 
@@ -982,7 +1074,7 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage, showUpgradeChoice, showTipModal, onClose]);
+  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, onClose]);
 
   useEffect(() => {
     if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
@@ -1075,16 +1167,18 @@ export function MissionGame({
 
   // Setup / reset game for survivors stage
   const getPlayerMaxBattery = (agent = selectedAgent) => {
-    const bonus = (purchasedUpgrades.start_battery || 0) * 20;
+    const bonus = supplyEffects.battery;
     return agent.maxBattery + bonus;
   };
 
   const handleGameOver = () => {
-    recordAction("gameOver");
+    // The Boss-specific outcome must enter the candidate list before gameOver
+    // closes this mission's card-event batch.
     if (stage === "BOSSBATTLE" && !bossOutcomeRecordedRef.current) {
       bossOutcomeRecordedRef.current = true;
       recordExhibitionBossOutcome(selectedChapter, "failure");
     }
+    recordAction("gameOver");
     setStage("GAMEOVER");
     triggerSound("game_over");
     setCoins((prev) => {
@@ -1096,14 +1190,18 @@ export function MissionGame({
 
   const startGame = () => {
     if (!missionMapReady) return;
+    setIsGamePaused(false);
+    setIsMobileGameMenuOpen(false);
+    setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
     const baseAgent = AGENTS.find((agent) => agent.id === selectedAgent.id) || AGENTS[0];
     setSelectedAgent(baseAgent);
+    missionCompletionRecordedRef.current = false;
     recordAction("startMission");
     triggerSound("click");
     setSessionCoins(0);
-    const bonusHp = purchasedUpgrades.shield_boost || 0;
+    const bonusHp = supplyEffects.shield;
     const initialHp = (baseAgent.id === "leo" ? 4 : 3) + bonusHp;
     setHp(initialHp);
     setMaxHp(initialHp);
@@ -1117,6 +1215,7 @@ export function MissionGame({
     setWeaponLevels(getAdventureWeaponLevels());
     setCollectedMaterials(createEmptyMaterialInventory());
     materialsBankedRef.current = false;
+    missionCoinsBankedRef.current = false;
     setRobotSelection(null);
     robotSelectionRef.current = null;
 
@@ -1125,6 +1224,19 @@ export function MissionGame({
     const initialPlayerPosition = isMissionPositionWalkable(configuredSpawn.x, configuredSpawn.y, 14)
       ? configuredSpawn
       : findWalkableSpawn(14) || configuredSpawn;
+    const mapSize = { ...MISSION_MAP_CONFIG.worldSize };
+    const viewportWidth = isMobile ? 500 : 1400;
+    const viewportHeight = isMobile ? 750 : 900;
+    const initialCamera = {
+      x: Math.max(
+        0,
+        Math.min(mapSize.width - viewportWidth, initialPlayerPosition.x - viewportWidth / 2),
+      ),
+      y: Math.max(
+        0,
+        Math.min(mapSize.height - viewportHeight, initialPlayerPosition.y - viewportHeight / 2),
+      ),
+    };
 
     // Reset loop engine state
     engineRef.current = {
@@ -1158,9 +1270,10 @@ export function MissionGame({
       boss: null,
       ticks: 0,
       spawnTimer: 0,
-      mapSize: { ...MISSION_MAP_CONFIG.worldSize },
-      camera: { x: 375, y: 375 },
-      lowBatteryCooldown: 0
+      mapSize,
+      camera: initialCamera,
+      lowBatteryCooldown: 0,
+      sessionCoins: 0
     };
 
     // Spawn initial items & decorations
@@ -1218,6 +1331,30 @@ export function MissionGame({
 
   // Report Sequence transition
   const enterReport = () => {
+    // A normal timed mission can now end here without requiring a Boss battle.
+    // This is the mission boundary used by the card-event system to select one
+    // eligible event/card by priority.
+    if (!missionCompletionRecordedRef.current) {
+      missionCompletionRecordedRef.current = true;
+      recordAction("stagesCleared");
+    }
+    if (!missionCoinsBankedRef.current) {
+      missionCoinsBankedRef.current = true;
+      const collectedCoins = Math.max(0, Math.floor(engineRef.current.sessionCoins || 0));
+      setSessionCoins(collectedCoins);
+      setCoins((current) => current + collectedCoins);
+    }
+    // Normal missions no longer lead into a mandatory Boss battle, so their
+    // successful report is now the chapter-progression checkpoint.
+    const nextChapter = selectedChapter + 1;
+    if (nextChapter <= 6) {
+      setUnlockedChapters((current) => {
+        if (current.includes(nextChapter)) return current;
+        const next = [...current, nextChapter].sort((a, b) => a - b);
+        try { localStorage.setItem("squad_unlocked_chapters", JSON.stringify(next)); } catch { /* local persistence is optional */ }
+        return next;
+      });
+    }
     triggerSound("victory");
     setStage("REPORT");
   };
@@ -1230,6 +1367,7 @@ export function MissionGame({
   };
 
   const prepareRobotDeployment = () => {
+    if (entrySource !== "exhibition") return;
     triggerSound("click");
     bankCollectedMaterials();
     const selection = createC2932Deployment(robotUpgrades);
@@ -1238,6 +1376,7 @@ export function MissionGame({
     setStage("ROBOT_DEPLOYMENT");
   };
   const startBossWarning = () => {
+    if (entrySource !== "exhibition") return;
     triggerSound("click");
     const selection = createC2932Deployment(robotUpgrades);
     robotSelectionRef.current = selection;
@@ -1247,7 +1386,15 @@ export function MissionGame({
 
   // Set up Boss Battle
   const startBossBattle = () => {
+    if (entrySource !== "exhibition") return;
+    setIsGamePaused(false);
+    setIsMobileGameMenuOpen(false);
+    setJoystickPosition({ x: 0, y: 0 });
     triggerSound("click");
+    // A Task Center Boss battle is its own mission. Reset the card-event
+    // batch before recording Boss-specific actions or a previous normal run
+    // could leave this encounter marked as already rewarded.
+    recordAction("startMission");
     recordAction("startBossBattle");
     if (entrySource === "exhibition") recordAction("exhibitionBossBattle");
     if (selectedChapter === 3) recordAction("marineBattle");
@@ -1264,35 +1411,36 @@ export function MissionGame({
 
     const activeRobotSelection = robotSelectionRef.current;
     if (!activeRobotSelection) return;
-    const calculatedMechaHp = 100 + (robotUpgrades.defense_power || 0) * 25;
+    const calculatedMechaHp = gameplayConfig.mechaBaseHp + (robotUpgrades.defense_power || 0) * gameplayConfig.mechaHpPerDefenseLevel;
     setHp(calculatedMechaHp);
     setMaxHp(calculatedMechaHp);
 
     const ch = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
+    const bossDefinition = getEffectiveBossDefinition(selectedChapter);
     const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
     const bossKnowledgeModifiers = getBossKnowledgeModifiers(selectedChapter);
-    setBossActiveName(ch.bossName);
+    setBossActiveName(bossDefinition.name || ch.bossName);
     // Substantially higher Boss HP for an epic combat challenge!
-    const calculatedBossHp = Math.round((2800 + selectedChapter * 1200) * bossKnowledgeModifiers.bossHpMultiplier);
+    const calculatedBossHp = Math.round(bossDefinition.hp * bossKnowledgeModifiers.bossHpMultiplier);
     setBossHp(calculatedBossHp);
     setBossMaxHp(calculatedBossHp);
 
     const isMobileDevice = window.innerWidth < 640;
-    const arenaWidth = isMobileDevice ? 500 : 1400;
-    const arenaHeight = isMobileDevice ? 750 : 700;
-    const arenaMapSize = { width: arenaWidth, height: arenaHeight };
+    const viewportWidth = isMobileDevice ? 500 : 1400;
+    const viewportHeight = isMobileDevice ? 750 : 700;
+    const arenaMapSize = { ...BOSS_ARENA_CONFIG.worldSize };
     const playerSpawn = findNearestBossArenaSpawn(
       {
-        x: arenaWidth * BOSS_ARENA_CONFIG.playerSpawn.xRatio,
-        y: arenaHeight * BOSS_ARENA_CONFIG.playerSpawn.yRatio,
+        x: arenaMapSize.width * BOSS_ARENA_CONFIG.playerSpawn.xRatio,
+        y: arenaMapSize.height * BOSS_ARENA_CONFIG.playerSpawn.yRatio,
       },
       22,
       arenaMapSize,
     );
     const bossSpawn = findNearestBossArenaSpawn(
       {
-        x: arenaWidth * BOSS_ARENA_CONFIG.bossSpawn.xRatio,
-        y: arenaHeight * BOSS_ARENA_CONFIG.bossSpawn.yRatio,
+        x: arenaMapSize.width * BOSS_ARENA_CONFIG.bossSpawn.xRatio,
+        y: arenaMapSize.height * BOSS_ARENA_CONFIG.bossSpawn.yRatio,
       },
       bossBehavior.radius,
       arenaMapSize,
@@ -1342,7 +1490,7 @@ export function MissionGame({
         maxHp: calculatedBossHp,
         radius: bossBehavior.radius,
         attackCooldown: 0,
-        name: ch.bossName,
+        name: bossDefinition.name || ch.bossName,
         targetY: 130,
         currentPattern: 0,
         visualTimer: 0,
@@ -1368,9 +1516,13 @@ export function MissionGame({
       },
       ticks: 0,
       spawnTimer: 0,
-      mapSize: arenaMapSize, // Bounded Arena size matches responsive canvas
-      camera: { x: 0, y: 0 },
+      mapSize: arenaMapSize,
+      camera: {
+        x: Math.max(0, Math.min(arenaMapSize.width - viewportWidth, bossSpawn.x - viewportWidth / 2)),
+        y: Math.max(0, Math.min(arenaMapSize.height - viewportHeight, bossSpawn.y - viewportHeight / 2)),
+      },
       lowBatteryCooldown: 0,
+      sessionCoins: 0,
       screenShake: 18,
       companionSkills: {}
     };
@@ -1425,7 +1577,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = showTipModal || startTitleActive || bossIntroPhase !== null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -1546,7 +1698,7 @@ export function MissionGame({
 
        const speedMultiplier = stage === "BOSSBATTLE"
          ? 1 + (robotUpgrades.movement_speed || 0) * 0.08
-         : 1 + (purchasedUpgrades.speed_boost || 0) * 0.1;
+         : 1 + supplyEffects.speed;
        const currentSpeed = (stage === "BOSSBATTLE" ? 2.5 : selectedAgent.speed) * speedMultiplier;
        if (stage === "PLAYING") {
          moveWithinMissionMask(player, dx * currentSpeed, dy * currentSpeed, player.radius);
@@ -1588,17 +1740,22 @@ export function MissionGame({
       player.x = Math.max(player.radius, Math.min(state.mapSize.width - player.radius, player.x));
       player.y = Math.max(player.radius, Math.min(state.mapSize.height - player.radius, player.y));
 
-      // Camera Tracking (Survivors Mode has scrolling)
+      // Camera tracking uses world coordinates in both exploration and the larger boss arena.
       if (stage === "PLAYING") {
         state.camera.x = player.x - canvas.width / 2;
         state.camera.y = player.y - canvas.height / 2;
         // Clamp camera to map bounds
         state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, state.camera.x));
         state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, state.camera.y));
-      } else {
-        // Boss Arena camera stays locked at center/origin
-        state.camera.x = 0;
-        state.camera.y = 0;
+      } else if (stage === "BOSSBATTLE") {
+        const focusBoss = (bossIntroPhase === "entrance" || bossDeathCinematicRef.current) && state.boss;
+        const focusX = focusBoss ? state.boss.x : player.x;
+        const focusY = focusBoss ? state.boss.y : player.y;
+        const targetCameraX = Math.max(0, Math.min(state.mapSize.width - canvas.width, focusX - canvas.width / 2));
+        const targetCameraY = Math.max(0, Math.min(state.mapSize.height - canvas.height, focusY - canvas.height / 2));
+        const followStrength = bossIntroPhase === "return" ? 0.1 : 0.12;
+        state.camera.x += (targetCameraX - state.camera.x) * followStrength;
+        state.camera.y += (targetCameraY - state.camera.y) * followStrength;
       }
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
@@ -1705,7 +1862,7 @@ export function MissionGame({
           const distanceToBoss = state.boss ? Math.hypot(state.boss.x - player.x, state.boss.y - player.y) : 999;
           
           if (state.boss && !state.boss.submerged && distanceToBoss <= punchRange + state.boss.radius) {
-            const punchDamage = 110; // High single hit damage
+            const punchDamage = gameplayConfig.mechaPunchDamage;
             state.boss.hp -= punchDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
@@ -1958,7 +2115,7 @@ export function MissionGame({
 
           // Deal colossal damage to Boss
           if (state.boss && !state.boss.submerged) {
-            const ultDamage = 450;
+            const ultDamage = gameplayConfig.mechaUltimateDamage;
             state.boss.hp -= ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
@@ -2065,8 +2222,11 @@ export function MissionGame({
           const dist = lightAttackProfile.range;
           const bonusDamageMult = stage === "BOSSBATTLE"
             ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-            : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-          const damage = (isHigh ? 45 : 18) * (1 + weaponLevels["range_attack"] * 0.15) * bonusDamageMult;
+            : 1 + supplyEffects.damage;
+          const rangeBaseDamage = stage === "BOSSBATTLE"
+            ? (isHigh ? gameplayConfig.robotRangeHighDamage : gameplayConfig.robotRangeLowDamage)
+            : (isHigh ? gameplayConfig.rangeHighDamage : gameplayConfig.rangeLowDamage);
+          const damage = rangeBaseDamage * (1 + weaponLevels["range_attack"] * 0.15) * bonusDamageMult;
 
           // Purify enemies in sector
           state.enemies.forEach((enemy) => {
@@ -2172,8 +2332,11 @@ export function MissionGame({
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
             const bonusDamageMult = stage === "BOSSBATTLE"
               ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-              : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-            const bulletDamage = (isHigh ? 22 : 10) * (1 + weaponLevels["laser_weapon"] * 0.2) * bonusDamageMult;
+              : 1 + supplyEffects.damage;
+            const laserBaseDamage = stage === "BOSSBATTLE"
+              ? (isHigh ? gameplayConfig.robotLaserHighDamage : gameplayConfig.robotLaserLowDamage)
+              : (isHigh ? gameplayConfig.laserHighDamage : gameplayConfig.playerBaseAttack);
+            const bulletDamage = laserBaseDamage * (1 + weaponLevels["laser_weapon"] * 0.2) * bonusDamageMult;
             
             if (isHigh) {
               // 3-way spread lasers
@@ -2231,8 +2394,11 @@ export function MissionGame({
             if (dist < (isHigh ? 240 : 130)) {
               const bonusDamageMult = stage === "BOSSBATTLE"
                 ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-                : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-              const dmg = (isHigh ? 12 : 5) * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
+                : 1 + supplyEffects.damage;
+              const trackingBaseDamage = stage === "BOSSBATTLE"
+                ? (isHigh ? gameplayConfig.robotTrackingHighDamage : gameplayConfig.robotTrackingLowDamage)
+                : (isHigh ? gameplayConfig.trackingHighDamage : gameplayConfig.trackingLowDamage);
+              const dmg = trackingBaseDamage * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
               t.hp -= dmg;
               applyHitFeedback(state, t as any, triggerSound, {
                 strength: isHigh ? 1.4 : 0.7,
@@ -2275,8 +2441,11 @@ export function MissionGame({
           const zoneRadius = isHigh ? 110 : 60;
           const bonusDamageMult = stage === "BOSSBATTLE"
             ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-            : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-          const damage = (isHigh ? 3 : 1) * (1 + weaponLevels["special_lighting"] * 0.3) * bonusDamageMult;
+            : 1 + supplyEffects.damage;
+          const specialBaseDamage = stage === "BOSSBATTLE"
+            ? (isHigh ? gameplayConfig.robotSpecialHighDamage : gameplayConfig.robotSpecialLowDamage)
+            : (isHigh ? gameplayConfig.specialHighDamage : gameplayConfig.specialLowDamage);
+          const damage = specialBaseDamage * (1 + weaponLevels["special_lighting"] * 0.3) * bonusDamageMult;
           // Deploy behind/centered
           state.lightZones.push({
             x: srcX - dx * 40,
@@ -2320,8 +2489,11 @@ export function MissionGame({
             const angle = Math.atan2(target.y - srcY, target.x - srcX);
             const bonusDamageMult = stage === "BOSSBATTLE"
               ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-              : 1 + (purchasedUpgrades.damage_boost || 0) * 0.15;
-            const dmg = (isHigh ? 65 : 30) * (1 + weaponLevels["heavy_beam"] * 0.3) * bonusDamageMult;
+              : 1 + supplyEffects.damage;
+            const heavyBaseDamage = stage === "BOSSBATTLE"
+              ? (isHigh ? gameplayConfig.robotHeavyHighDamage : gameplayConfig.robotHeavyLowDamage)
+              : (isHigh ? gameplayConfig.heavyHighDamage : gameplayConfig.heavyLowDamage);
+            const dmg = heavyBaseDamage * (1 + weaponLevels["heavy_beam"] * 0.3) * bonusDamageMult;
             
             // Deal damage
             target.hp -= dmg;
@@ -2383,8 +2555,8 @@ export function MissionGame({
       // Spawn enemies in survivors mode
       if (stage === "PLAYING") {
         state.spawnTimer++;
-        const spawnLimit = 35 - Math.min(25, Math.floor(state.ticks / 150)); // speed up spawn rate over time
-        if (state.spawnTimer >= spawnLimit && state.enemies.length < 90) {
+        const spawnLimit = Math.max(gameplayConfig.spawnMinInterval, gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150));
+        if (state.spawnTimer >= spawnLimit && state.enemies.length < gameplayConfig.maxEnemies) {
           state.spawnTimer = 0;
           
           // Spawn near the edge of the visible area, but only on white mask pixels.
@@ -2394,20 +2566,20 @@ export function MissionGame({
           if (spawn) {
             const rand = Math.random();
             let type: EnemyType = "mote";
-            let hpVal = 15 + selectedChapter * 12;
+            let hpVal = (gameplayConfig.moteBaseHp + selectedChapter * gameplayConfig.moteHpPerChapter) * gameplayConfig.monsterHpMultiplier;
             let spd = 0.6 + Math.random() * 0.3; // Slower walking
             let radius = 10;
             let col = "rgba(168, 85, 247, 0.7)"; // purple blob
 
             if (rand > 0.8) {
               type = "clumper";
-              hpVal = 50 + selectedChapter * 20;
+              hpVal = (gameplayConfig.clumperBaseHp + selectedChapter * gameplayConfig.clumperHpPerChapter) * gameplayConfig.monsterHpMultiplier;
               spd = 0.35; // Slower walking
               radius = 18;
               col = "rgba(107, 114, 128, 0.85)"; // heavy grey blob
             } else if (rand > 0.6) {
               type = "stalker";
-              hpVal = 10 + selectedChapter * 8;
+              hpVal = (gameplayConfig.stalkerBaseHp + selectedChapter * gameplayConfig.stalkerHpPerChapter) * gameplayConfig.monsterHpMultiplier;
               spd = 1.1; // Slower walking
               radius = 8;
               col = "rgba(239, 68, 68, 0.8)"; // red shadow crawler
@@ -2563,26 +2735,26 @@ export function MissionGame({
           setScore((s) => s + enemy.points);
           
           // 35% chance to drop a shiny gold coin
-          if (Math.random() < 0.35) {
+          if (Math.random() < gameplayConfig.coinDropChance) {
             const coinSpawn = findWalkableSpawn(6, enemy, 10) || enemy;
             state.collectibles.push({
               x: coinSpawn.x,
               y: coinSpawn.y,
               type: "coin",
-              amount: Math.floor(Math.random() * 3) + 1,
+              amount: Math.floor(Math.random() * Math.max(1, gameplayConfig.coinDropMax - gameplayConfig.coinDropMin + 1)) + gameplayConfig.coinDropMin,
               radius: 6,
               pulse: Math.random() * Math.PI
             });
           }
 
           const dropChance = Math.random();
-          if (dropChance > 0.85) {
+          if (dropChance > 1 - gameplayConfig.batteryDropChance) {
             // Drop battery
             state.collectibles.push({
               x: enemy.x,
               y: enemy.y,
               type: "battery",
-              amount: 25,
+              amount: gameplayConfig.batteryRestoreAmount,
               radius: 8,
               pulse: 0
             });
@@ -2592,14 +2764,14 @@ export function MissionGame({
               x: enemy.x,
               y: enemy.y,
               type: "gem",
-              amount: 15 + selectedChapter * 3,
+              amount: gameplayConfig.expGemBase + selectedChapter * gameplayConfig.expGemPerChapter,
               radius: 5,
               pulse: 0
             });
           }
 
           // Modification materials are mission rewards only; they do not change the current loadout.
-          if (Math.random() < 0.22) {
+          if (Math.random() < gameplayConfig.materialDropChance) {
             const materialId = MATERIAL_IDS[Math.floor(Math.random() * MATERIAL_IDS.length)];
             const materialSpawn = findWalkableSpawn(10, enemy, 16) || enemy;
             state.collectibles.push({
@@ -2951,7 +3123,8 @@ export function MissionGame({
           } else if (col.type === "coin") {
             const coinAmount = col.amount || 1;
             recordAction("collectCoin", coinAmount);
-            setSessionCoins((prev) => prev + coinAmount);
+            state.sessionCoins = (state.sessionCoins || 0) + coinAmount;
+            setSessionCoins(state.sessionCoins);
             applyCollectFeedback(
               state,
               col.x,
@@ -3009,7 +3182,7 @@ export function MissionGame({
       });
 
       // 9. UPDATE BOSS LOGIC (For Boss Battle Stage)
-      if (stage === "BOSSBATTLE" && state.boss) {
+      if (stage === "BOSSBATTLE" && state.boss && !victoryPendingRef.current) {
         const boss = state.boss;
 
         if ((boss.airRaidTimer || 0) <= 0 && (boss.airRaidReturnTimer || 0) <= 0 && !isBossArenaPositionWalkable(boss.x, boss.y, boss.radius, state.mapSize)) {
@@ -4411,6 +4584,12 @@ export function MissionGame({
         
         let bx = boss.x + bossHitFeedback.x;
         let by = boss.y + bossHitFeedback.y;
+        if (bossDeathCinematicRef.current) {
+          // Death animation: the Boss stays in place, shakes apart and never
+          // resumes its normal movement or attack animation.
+          bx += Math.sin(state.ticks * 1.9) * 7;
+          by += Math.cos(state.ticks * 1.35) * 5;
+        }
 
         if ((boss.laserAttackTimer || 0) > 0 && boss.laserTargetX !== undefined && boss.laserTargetY !== undefined) {
           const firing = (boss.laserAttackTimer || 0) <= 28;
@@ -4749,6 +4928,13 @@ export function MissionGame({
 
       // F. Draw Player Character / Assembled Robot Mecha
       ctx.save();
+      const mechaHitFeedback = getHitRenderOffset(player);
+      if (stage === "BOSSBATTLE" && mechaHitFeedback.active) {
+        ctx.translate(mechaHitFeedback.x, mechaHitFeedback.y);
+        ctx.filter = "brightness(1.8) sepia(1) saturate(7) hue-rotate(310deg)";
+        ctx.shadowColor = "#fb7185";
+        ctx.shadowBlur = 28;
+      }
       if (player.invincibleTime % 4 > 2) {
         ctx.globalAlpha = 0.3; // flash visual when invuln
       }
@@ -5161,11 +5347,16 @@ export function MissionGame({
         const mctx = maskCanvas.getContext("2d");
         
         if (mctx) {
-          // Clear cached canvas before redrawing
+          // The previous frame ends in destination-out mode. Reset before
+          // rebuilding the black mask or the new fill would erase instead of
+          // painting, making the darkness disappear after the first frame.
+          mctx.globalCompositeOperation = "source-over";
+          mctx.globalAlpha = 1;
           mctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
           
-          // Fill with darkness (changed from 0.94 opacity to 0.70 for a brighter, more playable screen)
-          mctx.fillStyle = "rgba(7, 8, 12, 0.70)";
+          // Exhibition work-light presentation: the unlit map stays genuinely
+          // dark, while the player's lamp cuts a readable pool through it.
+          mctx.fillStyle = "rgba(0, 0, 0, 0.90)";
           mctx.fillRect(0, 0, canvas.width, canvas.height);
 
           // Subtraction mode - cut holes in dark fog
@@ -5177,11 +5368,13 @@ export function MissionGame({
           const px = player.x - camX;
           const py = player.y - camY;
 
-          // Expanded light radii for brighter visuals
-          const baseRadius = isHigh ? 330 : 180;
+          // LOW is a close-range inspection lamp; HIGH opens the surrounding
+          // space substantially so changing output also changes visibility.
+          const baseRadius = isHigh ? 320 : 235;
           const radGrad = mctx.createRadialGradient(px, py, 15, px, py, baseRadius);
           radGrad.addColorStop(0, "rgba(0,0,0,1)");
-          radGrad.addColorStop(0.35, "rgba(0,0,0,0.85)");
+          radGrad.addColorStop(isHigh ? 0.48 : 0.32, "rgba(0,0,0,0.92)");
+          radGrad.addColorStop(0.78, isHigh ? "rgba(0,0,0,0.52)" : "rgba(0,0,0,0.38)");
           radGrad.addColorStop(1, "rgba(0,0,0,0)");
           
           mctx.fillStyle = radGrad;
@@ -5199,18 +5392,32 @@ export function MissionGame({
 
           const sectorGrad = mctx.createRadialGradient(px, py, 10, px, py, sweepDist);
           sectorGrad.addColorStop(0, "rgba(0,0,0,1)");
-          sectorGrad.addColorStop(0.5, "rgba(0,0,0,0.8)");
+          sectorGrad.addColorStop(0.42, "rgba(0,0,0,0.82)");
+          sectorGrad.addColorStop(0.78, "rgba(0,0,0,0.34)");
           sectorGrad.addColorStop(1, "rgba(0,0,0,0)");
           mctx.fillStyle = sectorGrad;
+          mctx.filter = `blur(${isHigh ? 24 : 19}px)`;
 
           mctx.beginPath();
           mctx.moveTo(px, py);
           mctx.arc(px, py, sweepDist, angle - fanSize/2, angle + fanSize/2);
           mctx.closePath();
           mctx.fill();
+          mctx.filter = "none";
 
           // Draw the completed mask onto our visual canvas
           ctx.drawImage(maskCanvas, 0, 0);
+
+          // Warm central bloom evokes a physical industrial work light and
+          // keeps the character readable even in LOW mode.
+          const lampBloom = ctx.createRadialGradient(px, py, 4, px, py, isHigh ? 150 : 92);
+          lampBloom.addColorStop(0, isHigh ? "rgba(255,248,205,0.24)" : "rgba(255,244,190,0.18)");
+          lampBloom.addColorStop(0.55, isHigh ? "rgba(250,204,21,0.10)" : "rgba(250,204,21,0.06)");
+          lampBloom.addColorStop(1, "rgba(250,204,21,0)");
+          ctx.fillStyle = lampBloom;
+          ctx.beginPath();
+          ctx.arc(px, py, isHigh ? 150 : 92, 0, Math.PI * 2);
+          ctx.fill();
 
           // Draw the true damage area as a white work-light fan. This makes the
           // difference between LOW and HIGH visible without overstating range.
@@ -5223,7 +5430,8 @@ export function MissionGame({
           attackGradient.addColorStop(1, "rgba(255, 255, 255, 0.02)");
 
           ctx.save();
-          ctx.globalAlpha = attackPulse;
+          ctx.globalAlpha = attackPulse * (isHigh ? 0.82 : 0.7);
+          ctx.filter = `blur(${isHigh ? 11 : 8}px)`;
           ctx.fillStyle = attackGradient;
           ctx.shadowColor = "#ffffff";
           ctx.shadowBlur = isHigh ? 10 : 6;
@@ -5254,31 +5462,73 @@ export function MissionGame({
 
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
     if (victoryPendingRef.current) return;
     victoryPendingRef.current = true;
+    bossDeathCinematicRef.current = true;
+    setBossDeathCinematic(true);
     recordAction("bossDefeated");
     if (!bossOutcomeRecordedRef.current) {
       bossOutcomeRecordedRef.current = true;
       recordExhibitionBossOutcome(selectedChapter, "victory");
     }
+    const bossVictoryActions = ["ampaBossVictory", "frankfurtBossVictory", "titeBossVictory", "aapexBossVictory", "metstradeBossVictory", "baumaBossVictory"] as const;
+    const progressionStats = getPlayerStats();
+    const defeatedBossCount = bossVictoryActions.filter((action) => progressionStats[action] > 0).length;
+    const shouldShowStageEnding = defeatedBossCount === bossVictoryActions.length && localStorage.getItem("sci_stage_ending_seen") !== "true";
     recordAction("stagesCleared");
     const feedbackState = engineRef.current as any;
     if (feedbackState.boss) {
       feedbackState.boss.hp = 0;
+      // Snap the camera to the Boss before the destruction sequence starts.
+      // This makes the final explosion read as a dedicated close-up, not a
+      // continuation of the player-follow camera.
+      const canvas = canvasRef.current;
+      if (canvas) {
+        feedbackState.camera.x = Math.max(0, Math.min(feedbackState.mapSize.width - canvas.width, feedbackState.boss.x - canvas.width / 2));
+        feedbackState.camera.y = Math.max(0, Math.min(feedbackState.mapSize.height - canvas.height, feedbackState.boss.y - canvas.height / 2));
+      }
       applyDeathFeedback(feedbackState, feedbackState.boss, triggerSound, true);
+      const destructionTimer = window.setInterval(() => {
+        if (!bossDeathCinematicRef.current || !feedbackState.boss) return;
+        feedbackState.screenShake = Math.max(feedbackState.screenShake, 8);
+        for (let index = 0; index < 10; index++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 2 + Math.random() * 7;
+          feedbackState.particles.push({ x: feedbackState.boss.x, y: feedbackState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: 2 + Math.random() * 5, color: index % 3 === 0 ? "#fff7ed" : index % 2 ? "#fb7185" : "#f59e0b", life: 0, maxLife: 28, alpha: 1 });
+        }
+        triggerSound("explosion");
+      }, 260);
+      window.setTimeout(() => window.clearInterval(destructionTimer), 3000);
     } else {
       triggerCameraShake(feedbackState, 18);
       triggerSound("bossDeath");
     }
 
-    // Hold the final impact for a few frames before revealing the victory screen.
+    // Keep the camera on the destroyed Boss long enough for the explosion to read.
     window.setTimeout(() => {
+      bossDeathCinematicRef.current = false;
+      setBossDeathCinematic(false);
       triggerSound("victory");
-      setStage("VICTORY");
+      if (shouldShowStageEnding) {
+        localStorage.setItem("sci_stage_ending_seen", "true");
+        const finalStats = getPlayerStats();
+        const totalUpgradeLevels = ROBOT_UPGRADE_IDS.reduce((total, id) => total + Math.min(5, robotUpgrades[id] || 0), 0);
+        setEndingSummary({
+          defeatedBosses: bossVictoryActions.filter((action) => finalStats[action] > 0).length,
+          collectedMaterials: finalStats.collectMaterial,
+          earnedCards: getOwnedCards().length,
+          triggeredEvents: getTriggeredEvents().length,
+          robotCompletion: Math.round((totalUpgradeLevels / (ROBOT_UPGRADE_IDS.length * 5)) * 100),
+          totalPlaySeconds: Number(localStorage.getItem("sci_total_play_seconds")) || 0,
+        });
+        setStage("ENDING");
+      } else {
+        setStage("VICTORY");
+      }
 
     // Unlock next chapter if available
     const nextCh = selectedChapter + 1;
@@ -5312,11 +5562,12 @@ export function MissionGame({
       localStorage.setItem("light_crew_coins", String(updated));
       return updated;
     });
-    }, 140);
+    }, 3000);
   };
 
   return (
     <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
+      {stage === "ENDING" && endingSummary && <StageEnding summary={endingSummary} onReturnToBase={onClose} />}
       <BossWarningTransition
         active={stage === "BOSS_WARNING"}
         onComplete={startBossBattle}
@@ -5362,11 +5613,6 @@ export function MissionGame({
                   loading="eager"
                   draggable={false}
                 />
-
-                <p className="text-[10px] sm:text-xs text-zinc-400 leading-relaxed font-sans">
-                  世界被<b>「Dark Core（黑暗核心）」</b>侵蝕，所有城市失去電源，陰影中滋生了吞噬光源的暗黑魔怪。
-                  玩家扮演<b>「燈燈小隊」</b>，必須巧妙善用 SCI 高精密工業檢修燈，驅散四周蠕動的陰影生物，收集電池維持核心儲能，最後組裝成<b>「大型燈燈機器人」</b>強勢淨化章節 Boss！
-                </p>
 
                 {/* Quick Mechanics Guide */}
                 <div className="bg-zinc-900/50 border border-zinc-800 p-2 sm:p-3 rounded-md space-y-1 sm:space-y-2 text-[10px] sm:text-[11px] text-zinc-300 font-sans">
@@ -5419,12 +5665,13 @@ export function MissionGame({
                           <span className="text-[9px] sm:text-[11px] text-zinc-500 font-black tracking-wider">{agent.id.toUpperCase()}</span>
                         </div>
 
-                        <div className="flex-1 flex items-center justify-center mt-2 w-full">
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-4">
                           <SpriteAnimator
                             src={walkSprites[agent.id as "claire" | "ethan" | "leo"].src}
                             totalFrames={6}
                             idleFrame={0}
                             animationFrames={[1, 2, 3, 4, 5]}
+                            frameXOffsets={walkSprites[agent.id as "claire" | "ethan" | "leo"].frameXOffsets}
                             fps={3}
                             playing={true}
                             width={windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76}
@@ -5525,16 +5772,6 @@ export function MissionGame({
                     <span>⚠️ 需要解鎖第一章才可以玩第二章 (需依序通關解鎖)</span>
                   </div>
 
-                  {/* Chapter details */}
-                  <div className="p-2 sm:p-3 bg-zinc-900/40 border border-zinc-800/80 rounded">
-                    <div className="text-[9px] sm:text-[10px] text-zinc-400">關卡情報與首領</div>
-                    <div className="text-[10px] sm:text-xs font-bold text-white mt-0.5">
-                      首領：{CHAPTERS[selectedChapter - 1].bossName}
-                    </div>
-                    <p className="text-[9px] sm:text-[10px] text-zinc-400 mt-1 font-sans line-clamp-1 sm:line-clamp-none">
-                      {CHAPTERS[selectedChapter - 1].desc}
-                    </p>
-                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-1">
@@ -5582,9 +5819,9 @@ export function MissionGame({
 
       {/* 2. SURVIVORS PLAYING STATE */}
       {stage === "PLAYING" && (
-        <div className="flex-1 flex flex-col relative w-full h-full select-none" ref={containerRef}>
+        <div className="flex-1 flex flex-col relative w-full h-full select-none overflow-hidden" ref={containerRef}>
           {/* Streamlined, Compact Top Status Bar */}
-          <div className="absolute left-2 right-2 top-2 z-30 flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-1.5 shadow-xl backdrop-blur-md select-none">
+          <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-2 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-1.5 shadow-xl backdrop-blur-md select-none sm:flex">
             {/* Left Column: Player Status & Mini Stats */}
             <div className="flex items-center gap-2 xs:gap-3 flex-wrap">
               {/* Agent mini badge */}
@@ -5595,6 +5832,7 @@ export function MissionGame({
                     totalFrames={6}
                     idleFrame={0}
                     animationFrames={[1, 2, 3, 4, 5]}
+                    frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets}
                     fps={7}
                     playing={true}
                     width={28}
@@ -5690,12 +5928,13 @@ export function MissionGame({
               >
                 <span>搖桿</span>
               </button>
+              <button type="button" onClick={toggleGamePause} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-300 hover:border-amber-500 hover:text-amber-300" aria-label="暫停任務" title="暫停（P / Esc）"><Pause className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-400 hover:border-orange-500 hover:text-orange-300" aria-label="離開任務"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
           {/* Core Interactive Web Game Canvas (Responsive vertical / horizontal) */}
-          <div className="flex-1 w-full bg-zinc-950 flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute inset-0 w-full bg-zinc-950 flex flex-col items-center justify-center overflow-hidden sm:relative sm:flex-1">
             <div
               className="relative flex h-full w-full items-center justify-center"
               style={{
@@ -5711,7 +5950,7 @@ export function MissionGame({
                 height={isMobile ? 750 : 900}
                 className={
                   isMobile 
-                    ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded" 
+                    ? "h-full w-full bg-zinc-950 object-cover" 
                     : "h-auto w-full max-h-full max-w-[1400px] aspect-[14/9] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
                 }
               />
@@ -5720,7 +5959,7 @@ export function MissionGame({
 
           {/* Bottom Game Controls Dock (Positioned at the very bottom, non-blocking) */}
           {showTouchControls && (
-            <div className="absolute bottom-2 left-2 right-2 z-30 flex flex-col items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 p-2 shadow-xl backdrop-blur-md xs:flex-row sm:px-3">
+            <div className="absolute bottom-2 left-2 right-2 z-30 hidden flex-col items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 p-2 shadow-xl backdrop-blur-md xs:flex-row sm:flex sm:px-3">
               {/* Left Side: Joystick D-pad */}
               <div className="flex items-center gap-3">
                 <span className="text-zinc-500 text-[10px] uppercase font-mono tracking-wider hidden sm:block">移動方向 Control:</span>
@@ -5802,6 +6041,46 @@ export function MissionGame({
             </div>
           )}
 
+          {/* Mobile portrait HUD: all controls float above the full-height map. */}
+          <div className="pointer-events-none absolute inset-0 z-40 sm:hidden" style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+            <div className="pointer-events-auto absolute left-2 top-[max(8px,env(safe-area-inset-top))] flex max-w-[48%] items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 shadow-lg backdrop-blur-[6px]">
+              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full border border-orange-500/60 bg-black/50">
+                <div className="-ml-1 -mt-0.5 scale-90"><SpriteAnimator src={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].src} totalFrames={6} idleFrame={0} animationFrames={[1, 2, 3, 4, 5]} frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets} fps={7} playing={true} width={40} /></div>
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-black leading-none text-white">{selectedAgent.name}</p>
+                <div className="mt-1 flex gap-px">{Array.from({ length: maxHp }).map((_, i) => <Heart key={i} className={`h-2.5 w-2.5 ${i < hp ? "fill-rose-500 text-rose-500" : "text-zinc-700"}`} />)}</div>
+              </div>
+            </div>
+
+            <div className="pointer-events-auto absolute right-2 top-[max(8px,env(safe-area-inset-top))] flex items-start gap-1.5">
+              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] leading-4 shadow-lg backdrop-blur-[6px]">
+                <span className="text-amber-400">🪙 {sessionCoins}</span><span className="text-orange-300">◆ {score}</span>
+                <span className="text-cyan-300">LV.{level} {Math.floor(Math.min(100, (exp / expNeeded) * 100))}%</span>
+                <span className="font-black text-white"><Clock className="mr-0.5 inline h-2.5 w-2.5" />{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-500/60 bg-[rgba(10,10,14,0.78)] text-orange-400 backdrop-blur-[6px]" aria-label="任務選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
+                {isMobileGameMenuOpen && <div className="absolute right-0 mt-1 w-32 overflow-hidden rounded border border-zinc-700 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur-md">
+                  <button type="button" onClick={() => { setIsMobileGameMenuOpen(false); toggleGamePause(); }} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><Pause className="h-3.5 w-3.5 text-amber-400" />暫停</button>
+                  <button type="button" onClick={() => { setIsMobileGameMenuOpen(false); startGame(); }} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><RotateCcw className="h-3.5 w-3.5 text-rose-400" />重新挑戰</button>
+                  <button type="button" onClick={onClose} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><X className="h-3.5 w-3.5 text-zinc-400" />離開任務</button>
+                </div>}
+              </div>
+            </div>
+
+            <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
+              <div className="mb-1 ml-1 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-1 font-mono text-[10px] text-zinc-200 backdrop-blur-sm"><span>🔋</span><b>{batteryPercent}%</b>{batteryPercent <= 20 && <span className="font-black text-rose-400">LOW</span>}</div>
+              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-orange-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
+                <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/80 bg-orange-500/35 shadow-[0_0_14px_rgba(249,115,22,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
+              </div>
+            </div>
+
+            <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : "border-orange-500/70 bg-black/65 text-orange-300"}`} aria-label="切換強光或省電模式">
+              <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : "省電"}</b></span>
+            </button>
+          </div>
+
           {/* Bottom Mobile Control Toolbar for touch fallback */}
           <div className="absolute bottom-4 inset-x-0 p-4 flex items-center justify-between pointer-events-none z-10 opacity-0 select-none">
             {/* Quick tips */}
@@ -5879,14 +6158,14 @@ export function MissionGame({
           {/* Start Game Tips Modal Overlay */}
           {showTipModal && (
             <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-zinc-900 border border-orange-500/80 max-w-sm w-full p-5 sm:p-6 rounded text-center animate-scale-up space-y-4 shadow-xl shadow-orange-500/10">
+              <div className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl space-y-5 overflow-y-auto rounded border border-orange-500/80 bg-zinc-900 p-5 text-center shadow-xl shadow-orange-500/10 animate-scale-up sm:p-8">
                 <div className="flex flex-col items-center gap-2">
-                  <div className="text-4xl animate-bounce">💡</div>
-                  <h3 className="text-base sm:text-lg font-black text-orange-400 tracking-wider">
+                  <div className="text-5xl animate-bounce">💡</div>
+                  <h3 className="text-xl font-black tracking-wider text-orange-400 sm:text-2xl">
                     【 行動任務提示 】
                   </h3>
                 </div>
-                <div className="p-3 bg-zinc-950/80 border border-zinc-800 rounded text-[11px] sm:text-xs text-zinc-300 leading-relaxed text-left space-y-2 font-sans">
+                <div className="space-y-2 rounded border border-zinc-800 bg-zinc-950/80 p-4 text-left font-sans text-xs leading-7 text-zinc-300 sm:text-sm">
                   <p>
                     • 利用移動方向調整角色的標準照明攻擊，驅散陰影怪物。
                   </p>
@@ -5894,12 +6173,27 @@ export function MissionGame({
                     • 收集改裝素材並帶回實驗室；素材不會在關卡中直接改變裝備。
                   </p>
                 </div>
+                <div className="grid grid-cols-1 gap-3 text-left text-xs leading-6 text-zinc-300 sm:grid-cols-2 sm:text-sm">
+                  <div className="border border-zinc-700 bg-black/60 p-4">
+                    <p className="mb-2 text-sm font-black text-amber-400 sm:text-base">⌨ 電腦操作</p>
+                    <p><b className="whitespace-nowrap text-white">WASD／方向鍵：</b>移動並控制照明攻擊方向</p>
+                    <p><b className="whitespace-nowrap text-white">Space：</b>切換強光／省電模式</p>
+                    <p><b className="text-white">R：</b>重新挑戰</p>
+                    <p><b className="text-white">P／Esc：</b>暫停或繼續任務</p>
+                  </div>
+                  <div className="border border-zinc-700 bg-black/60 p-4">
+                    <p className="mb-2 text-sm font-black text-amber-400 sm:text-base">📱 手機操作</p>
+                    <p><b className="whitespace-nowrap text-white">方向控制鍵：</b>移動並控制照明攻擊方向</p>
+                    <p><b className="whitespace-nowrap text-white">強度按鈕：</b>切換強光／省電模式</p>
+                    <p>角色會朝目前移動方向自動進行照明攻擊。</p>
+                  </div>
+                </div>
                 <button
                   type="button"
                   autoFocus
                   aria-keyshortcuts="Enter Space"
                   onClick={handleConfirmTip}
-                  className="px-6 py-2.5 sm:py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-zinc-950 font-black text-xs tracking-widest uppercase rounded shadow-lg shadow-orange-500/20 active:scale-95 transition-all cursor-pointer w-full"
+                  className="w-full rounded bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3.5 text-sm font-black uppercase tracking-widest text-zinc-950 shadow-lg shadow-orange-500/20 transition-all hover:from-orange-400 hover:to-amber-400 active:scale-95 cursor-pointer sm:text-base"
                 >
                   確定開始 <span className="ml-1 text-[9px] opacity-70">[ ENTER / SPACE ]</span>
                 </button>
@@ -5928,9 +6222,9 @@ export function MissionGame({
         <div className="flex-1 w-full overflow-hidden p-3 sm:p-6 select-none">
           <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-emerald-500/25 bg-zinc-950/95 p-4 sm:p-6">
             <div className="text-center">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300"><Award className="h-4 w-4" />改裝素材回收完成</div>
-              <h2 className="mt-2 text-2xl font-black text-white sm:text-4xl">C2-932 素材結算</h2>
-              <p className="mt-2 text-xs text-zinc-400">本次取得的素材不會在關卡中直接改變機器人；返回實驗室後才能安裝或升級模組。</p>
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300"><Award className="h-4 w-4" />任務素材回收完成</div>
+              <h2 className="mt-2 text-2xl font-black text-white sm:text-4xl">小隊任務結算</h2>
+              <p className="mt-2 text-xs text-zinc-400">小隊清怪任務到此完成。機器人 Boss 作戰請從營業機動部的任務中心個別啟動。</p>
             </div>
 
             <div className="mt-4 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-4">
@@ -5943,18 +6237,12 @@ export function MissionGame({
               ))}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-4">
               <button
-                onClick={() => { bankCollectedMaterials(); onReturnToLab(selectedChapter); }}
-                className="min-h-12 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 text-sm font-black text-cyan-200"
+                onClick={() => { bankCollectedMaterials(); onClose(); }}
+                className="min-h-12 w-full rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 text-sm font-black text-cyan-200"
               >
-                儲存素材並返回實驗室
-              </button>
-              <button
-                onClick={() => { bankCollectedMaterials(); startBossWarning(); }}
-                className="min-h-12 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-4 text-sm font-black text-zinc-950"
-              >
-                使用目前實驗室改裝繼續挑戰
+                儲存素材並返回營業機動部
               </button>
             </div>
           </div>
@@ -6010,9 +6298,9 @@ export function MissionGame({
       )}
       {/* 4. BOSS BATTLE STATE */}
       {stage === "BOSSBATTLE" && (
-        <div className="flex-1 flex flex-col relative w-full h-full select-none">
+        <div className="flex-1 flex flex-col relative w-full h-full select-none overflow-hidden">
           {/* Streamlined, Compact Top Status Bar for Boss Battle */}
-          <div className="absolute left-2 right-2 top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-2 shadow-xl backdrop-blur-md select-none">
+          <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-3 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-2 shadow-xl backdrop-blur-md select-none sm:flex">
             {/* Left Side: Encounter info, Mecha HP & Coins */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1 text-[10px] font-bold text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded px-1.5 py-0.5">
@@ -6068,6 +6356,7 @@ export function MissionGame({
                 <RotateCcw className="w-3 h-3" />
                 <span>重新挑戰</span>
               </button>
+              <button type="button" onClick={toggleGamePause} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-300 hover:border-amber-500 hover:text-amber-300" aria-label="暫停魔王戰" title="暫停（P / Esc）"><Pause className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded border border-zinc-700 bg-black/35 text-zinc-400 hover:border-rose-500 hover:text-rose-300" aria-label="離開魔王戰"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
@@ -6080,18 +6369,21 @@ export function MissionGame({
                   ref={canvasRef}
                   width={isMobile ? 500 : 1400}
                   height={isMobile ? 750 : 700}
-                  className={
-                    isMobile
-                      ? "w-full max-w-[420px] aspect-[5/7.5] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
-                      : "w-full h-auto max-w-[1400px] max-h-full border border-zinc-800 bg-zinc-950 aspect-[2/1] shadow-2xl rounded"
-                  }
+                  className={`${isMobile ? "h-full w-full bg-zinc-950 object-cover" : "w-full h-auto max-w-[1400px] max-h-full border border-zinc-800 bg-zinc-950 aspect-[2/1] shadow-2xl rounded"} ${bossDeathCinematic ? "scale-[1.28] brightness-125 saturate-150 transition-all duration-300" : "transition-all duration-300"}`}
                 />
+                {mechaDamagePulse && <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-rose-500/10 animate-pulse"><div className="rounded border-2 border-rose-300 bg-black/75 px-5 py-3 text-center font-black text-rose-200 shadow-[0_0_36px_rgba(251,113,133,.9)]"><div className="text-xl">⚠️ C2-932 受到攻擊</div><small className="text-rose-300">機器人機體受損</small></div></div>}
+                {bossDeathCinematic && <div className="pointer-events-none absolute inset-0 z-35 flex items-center justify-center overflow-hidden bg-black/20"><div className="absolute h-72 w-72 animate-ping rounded-full border-8 border-amber-200/80 bg-orange-500/30 shadow-[0_0_100px_rgba(251,146,60,1)]" /><div className="absolute h-44 w-44 animate-pulse rounded-full border-8 border-rose-300/80 bg-amber-400/30 shadow-[0_0_80px_rgba(251,146,60,1)]" /><div className="relative text-center font-black text-white drop-shadow-[0_0_20px_rgba(251,146,60,1)]"><div className="text-7xl animate-bounce">💥</div><div className="mt-2 text-xl tracking-[.3em] text-amber-200">BOSS DESTROYED</div><small className="text-rose-200">{bossActiveName} 已被摧毀</small></div></div>}
                 {bossIntroPhase && (
                   <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center overflow-hidden bg-black/20 backdrop-blur-[0.5px]">
                     {bossIntroPhase === "entrance" ? (
                       <div className="absolute inset-x-0 top-[14%] text-center">
                         <p className="animate-pulse font-mono text-xs font-black tracking-[0.45em] text-rose-400 drop-shadow-[0_0_12px_rgba(244,63,94,.9)] sm:text-base">BOSS SIGNAL DETECTED</p>
                         <div className="mx-auto mt-2 h-px w-48 animate-pulse bg-gradient-to-r from-transparent via-rose-500 to-transparent" />
+                      </div>
+                    ) : bossIntroPhase === "return" ? (
+                      <div className="absolute inset-x-0 top-[14%] text-center">
+                        <p className="font-mono text-[10px] font-black tracking-[0.32em] text-cyan-300 drop-shadow-[0_0_12px_rgba(34,211,238,.85)] sm:text-sm">PILOT CAMERA LINK ESTABLISHED</p>
+                        <div className="mx-auto mt-2 h-px w-48 bg-gradient-to-r from-transparent via-cyan-400 to-transparent" />
                       </div>
                     ) : (
                       <div className="text-center animate-scale-up">
@@ -6105,8 +6397,43 @@ export function MissionGame({
             </div>
           </div>
 
+          {/* Mobile boss HUD: full-screen arena with centered boss health. */}
+          <div className="pointer-events-none absolute inset-0 z-30 sm:hidden" style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+            <div className="absolute left-1/2 top-[max(8px,env(safe-area-inset-top))] w-[58%] -translate-x-1/2 rounded-lg border border-rose-500/60 bg-[rgba(10,10,14,0.72)] px-2 py-1.5 shadow-[0_0_18px_rgba(244,63,94,.2)] backdrop-blur-[6px]">
+              <div className="mb-1 flex items-center justify-between gap-1 font-mono text-[8px] leading-none"><span className="truncate font-black tracking-wider text-rose-300">{bossActiveName}</span><span className="shrink-0 text-rose-400">{bossHp}/{bossMaxHp}</span></div>
+              <div className="h-2 overflow-hidden rounded-full border border-rose-950 bg-black"><div className="h-full bg-gradient-to-r from-rose-700 via-rose-500 to-orange-400 transition-all duration-150" style={{ width: `${Math.max(0, (bossHp / bossMaxHp) * 100)}%` }} /></div>
+            </div>
+
+            <div className="absolute left-2 top-[max(54px,calc(env(safe-area-inset-top)+54px))] rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] shadow-lg backdrop-blur-[6px]">
+              <p className="font-black text-zinc-200">C2-932</p><p className="mt-0.5 flex items-center gap-1 font-mono text-rose-400"><Heart className="h-3 w-3 fill-rose-500" />{hp}/{maxHp}</p>
+            </div>
+
+            <div className="pointer-events-auto absolute right-2 top-[max(54px,calc(env(safe-area-inset-top)+54px))]">
+              <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-rose-500/60 bg-[rgba(10,10,14,0.78)] text-rose-300 backdrop-blur-[6px]" aria-label="Boss 戰選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
+              {isMobileGameMenuOpen && <div className="absolute right-0 mt-1 w-32 overflow-hidden rounded border border-zinc-700 bg-zinc-950/95 p-1 shadow-2xl backdrop-blur-md">
+                <button type="button" onClick={() => { setIsMobileGameMenuOpen(false); toggleGamePause(); }} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><Pause className="h-3.5 w-3.5 text-amber-400" />暫停</button>
+                <button type="button" onClick={() => { setIsMobileGameMenuOpen(false); startBossBattle(); }} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><RotateCcw className="h-3.5 w-3.5 text-rose-400" />重新挑戰</button>
+                <button type="button" onClick={onClose} className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] text-zinc-200 hover:bg-zinc-800"><X className="h-3.5 w-3.5 text-zinc-400" />離開任務</button>
+              </div>}
+            </div>
+
+            <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
+              <div className="mb-1 ml-1 flex w-fit items-center gap-2 rounded bg-black/65 px-2 py-1 font-mono text-[9px] backdrop-blur-sm"><span className={mechaLaserBattery < 15 ? "font-black text-rose-400" : "text-sky-300"}>⚡ {Math.floor(mechaLaserBattery)}%</span><span className="text-fuchsia-300">ULT {mechaUltEnergy}%</span></div>
+              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-cyan-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
+                <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-300/80 bg-cyan-500/30 shadow-[0_0_14px_rgba(34,211,238,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
+              </div>
+            </div>
+
+            <div className="pointer-events-auto absolute bottom-[max(14px,env(safe-area-inset-bottom))] right-3 grid grid-cols-2 gap-2">
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.z = true; }} onPointerUp={() => { keysRef.current.z = false; }} onPointerCancel={() => { keysRef.current.z = false; }} className="grid h-14 w-14 place-items-center rounded-full border border-orange-500/70 bg-black/65 text-center backdrop-blur-sm"><span className="text-base">👊<b className="block text-[8px] text-orange-300">重拳</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.x = true; }} onPointerUp={() => { keysRef.current.x = false; }} onPointerCancel={() => { keysRef.current.x = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${mechaActiveShield ? "border-cyan-300 text-cyan-200" : "border-cyan-500/60"}`}><span className="text-base">🛡️<b className="block text-[8px] text-cyan-300">防禦</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.c = true; }} onPointerUp={() => { keysRef.current.c = false; }} onPointerCancel={() => { keysRef.current.c = false; }} className="grid h-14 w-14 place-items-center rounded-full border border-sky-500/70 bg-black/65 text-center backdrop-blur-sm"><span className="text-base">⚡<b className="block text-[8px] text-sky-300">雷射</b></span></button>
+              <button type="button" disabled={mechaUltEnergy < 100} onPointerDown={(e) => { e.preventDefault(); keysRef.current.v = true; }} onPointerUp={() => { keysRef.current.v = false; }} onPointerCancel={() => { keysRef.current.v = false; }} className={`grid h-14 w-14 place-items-center rounded-full border text-center backdrop-blur-sm ${mechaUltEnergy >= 100 ? "animate-pulse border-fuchsia-400 bg-fuchsia-950/85" : "border-zinc-700 bg-black/55 opacity-55"}`}><span className="text-base">💥<b className="block text-[8px] text-fuchsia-300">大招</b></span></button>
+            </div>
+          </div>
+
           {/* Bottom Game Controls Dock for Boss Battle */}
-          <div className="absolute bottom-2 left-2 right-2 z-30 rounded border border-zinc-700/60 bg-zinc-950/75 p-2.5 shadow-xl backdrop-blur-md sm:p-3">
+          <div className="absolute bottom-2 left-2 right-2 z-30 hidden rounded border border-zinc-700/60 bg-zinc-950/75 p-2.5 shadow-xl backdrop-blur-md sm:block sm:p-3">
             <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-stretch justify-between gap-3 sm:gap-4">
               
               {/* Controls Section */}
@@ -6349,6 +6676,7 @@ export function MissionGame({
               totalFrames={6}
               idleFrame={0}
               animationFrames={[1, 2, 3, 4, 5]}
+              frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets}
               fps={7}
               playing={true}
               width={80}
@@ -6402,8 +6730,7 @@ export function MissionGame({
                     onReturnToExhibition();
                     return;
                   }
-                  setStage("START");
-                  setStartStep(1);
+                  onClose();
                 }}
                 className="flex-1 py-2 sm:py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[10px] sm:text-xs font-bold tracking-widest uppercase cursor-pointer rounded"
               >
@@ -6445,6 +6772,7 @@ export function MissionGame({
               totalFrames={6}
               idleFrame={0}
               animationFrames={[1, 2, 3, 4, 5]}
+              frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets}
               fps={7}
               playing={false}
               width={80}
@@ -6489,8 +6817,7 @@ export function MissionGame({
                     onReturnToExhibition();
                     return;
                   }
-                  setStage("START");
-                  setStartStep(1);
+                  onClose();
                 }}
                 className="flex-1 py-2 sm:py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[10px] sm:text-xs font-bold tracking-widest uppercase cursor-pointer rounded"
               >
@@ -6508,11 +6835,24 @@ export function MissionGame({
         </div>
       )}
 
+      {isGamePaused && (stage === "PLAYING" || stage === "BOSSBATTLE") && (
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="任務暫停">
+          <div className="w-full max-w-sm border border-amber-500/70 bg-zinc-950/95 p-5 text-center shadow-[0_0_45px_rgba(245,158,11,0.18)] sm:p-7">
+            <div className="mx-auto grid h-12 w-12 place-items-center border border-amber-500/50 bg-amber-500/10 text-amber-400"><Pause className="h-6 w-6" /></div>
+            <p className="mt-4 font-mono text-[10px] tracking-[0.3em] text-amber-500">MISSION PAUSED</p>
+            <h2 className="mt-1 text-2xl font-black tracking-widest text-white">任務暫停</h2>
+            <p className="mt-2 text-xs leading-6 text-zinc-400">遊戲計時、角色、敵人與戰鬥已暫停</p>
+            <button type="button" onClick={toggleGamePause} autoFocus className="mt-5 flex w-full items-center justify-center gap-2 border border-amber-400 bg-amber-500 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-amber-400"><Play className="h-4 w-4" />繼續任務</button>
+            <p className="mt-3 font-mono text-[10px] tracking-wider text-zinc-500">按 P 或 Esc 繼續</p>
+          </div>
+        </div>
+      )}
+
       {/* Global Bottom Back Bar */}
       {stage !== "PLAYING" && stage !== "BOSSBATTLE" && <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 flex justify-between items-center text-[10px] text-zinc-500 font-sans z-10">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="hidden md:inline">勇敢の燈燈小隊 ── 攜手 SCI 工業照明科技 驅散一切未知的暗影</span>
-          <span className="font-mono text-zinc-400">⌨ 方向鍵/WASD 移動・Enter/Space 確認・R 重試・Esc 離開</span>
+          <span className="font-mono text-zinc-400">⌨ 方向鍵/WASD 移動・Enter/Space 確認・P/Esc 暫停・R 重試</span>
         </div>
         <button
           onClick={onClose}

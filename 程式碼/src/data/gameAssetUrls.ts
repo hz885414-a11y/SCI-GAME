@@ -1,3 +1,5 @@
+import mainTitle from "../assets/main-title.webp";
+
 export type MissionEnemyType = "mote" | "clumper" | "stalker";
 
 export const ENEMY_SPRITE_URLS: Record<MissionEnemyType, string> = {
@@ -12,6 +14,6 @@ export const ROBOT_BATTLE_SPRITES = {
 } as const;
 
 export const UI_IMAGE_ASSETS = {
-  mainTitle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/Main%20Title.png",
+  mainTitle,
   missionTitle: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/5.UI/Title.png",
 } as const;

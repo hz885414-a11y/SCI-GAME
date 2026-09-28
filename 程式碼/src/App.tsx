@@ -14,19 +14,28 @@ import { scenes } from "./data/scenes";
 import { preloadImages } from "./utils/preloadImages";
 import { FortuneModal, InstructionsModal, SettingsModal } from "./components/Modals";
 import { StartScreen, BootingScreen } from "./components/StartScreen";
+import { Prologue } from "./components/Prologue";
+import { clearPrologueSeen, hasSeenPrologue, markPrologueSeen } from "./systems/prologueStorage";
+import { clearTutorialCompleted, hasCompletedTutorial, markTutorialCompleted } from "./systems/tutorialStorage";
+import { TutorialOverlay } from "./components/TutorialOverlay";
+import fwWorklightLogo from "./assets/fw-worklight-logo.png";
 import { OpsDivision } from "./components/OpsDivision";
 import { SupplyDivision } from "./components/SupplyDivision";
 import { MissionGame } from "./components/MissionGame";
+import { StageEnding, type StageEndingSummary } from "./components/StageEnding";
 import { RobotLabPanel } from "./components/RobotLabPanel";
 import { PixelCursor } from "./components/PixelCursor";
 import { EventPopup } from "./components/events/EventPopup";
-import { EventDebugPanel } from "./components/events/EventDebugPanel";
 import { KnowledgeBookModal } from "./components/events/KnowledgeBookModal";
 import { useEventSystem } from "./systems/useEventSystem";
-import { recordAction } from "./systems/playerStats";
+import { getPlayerStats, recordAction, resetPlayerStats } from "./systems/playerStats";
+import { emitGameEvent, resetCardEventPlayer } from "./systems/gameEvents";
+import { clearEventRecords, getTriggeredEvents } from "./systems/eventManager";
+import { clearCardCollection, getOwnedCards } from "./systems/playerCollection";
 import { getAllCardDefinitions } from "./data/cardDatabase";
-import { createDefaultRobotUpgrades, createEmptyMaterialInventory, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
+import { createDefaultRobotUpgrades, createEmptyMaterialInventory, ROBOT_UPGRADE_IDS, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
+import { useGameConfig } from "./config/GameConfigContext";
 import {
   Lightbulb,
   BookOpen,
@@ -48,6 +57,19 @@ import {
 
 type AppScene = "lab" | "tech" | "ops" | "supply";
 
+const APP_LAST_SCENE_KEY = "light_crew_last_scene";
+
+const loadLastScene = (): AppScene => {
+  try {
+    const savedScene = localStorage.getItem(APP_LAST_SCENE_KEY);
+    return savedScene === "lab" || savedScene === "tech" || savedScene === "ops" || savedScene === "supply"
+      ? savedScene
+      : "ops";
+  } catch {
+    return "ops";
+  }
+};
+
 // Helper to load saved images synchronously during initial state creation
 const loadSavedImages = (id: string) => {
   const saved = localStorage.getItem(`custom_${id}_images`);
@@ -68,6 +90,7 @@ const loadSavedImages = (id: string) => {
 };
 
 export default function App() {
+  const { config: gameConfig } = useGameConfig();
   const eventSystem = useEventSystem();
   // Input and General State
   const [inputText, setInputText] = useState("");
@@ -75,7 +98,9 @@ export default function App() {
   const [textSpeed, setTextSpeed] = useState<"slow" | "normal" | "instant">("normal");
   const [isMuted, setIsMuted] = useState(false);
   const [isMusicMuted, setIsMusicMuted] = useState(false);
+  const [isSupplyVideoOpen, setIsSupplyVideoOpen] = useState(false);
   const [musicVolume, setMusicVolumeState] = useState(50);
+  const [characterBreakpoint, setCharacterBreakpoint] = useState<"desktop" | "tablet" | "mobile">(() => window.innerWidth < 640 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop");
 
   // Standee visual style customization (photo default as requested)
   const [standeeStyle, setStandeeStyle] = useState<"svg" | "photo">("photo");
@@ -114,6 +139,7 @@ export default function App() {
   const [pendingBossChapter, setPendingBossChapter] = useState<number | null>(null);
   const [missionEntrySource, setMissionEntrySource] = useState<"adventure" | "exhibition">("adventure");
   const [openMissionCenterToken, setOpenMissionCenterToken] = useState(0);
+  const [testEndingSummary, setTestEndingSummary] = useState<StageEndingSummary | null>(null);
   const [missionActive, setMissionActive] = useState(false);
   const desiredTrackRef = useRef<"theme" | "normal" | "mission">("theme");
 
@@ -176,6 +202,12 @@ export default function App() {
 
   // Keep localStorage updated when state changes
   useEffect(() => {
+    const syncCharacterBreakpoint = () => setCharacterBreakpoint(window.innerWidth < 640 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop");
+    window.addEventListener("resize", syncCharacterBreakpoint);
+    return () => window.removeEventListener("resize", syncCharacterBreakpoint);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem("light_crew_coins", coins.toString());
   }, [coins]);
 
@@ -195,10 +227,36 @@ export default function App() {
     localStorage.setItem("squad_unlocked_chapters", JSON.stringify(unlockedChapters));
   }, [unlockedChapters]);
 
+  useEffect(() => {
+    let lastRecordedAt = Date.now();
+    const resetClock = () => { lastRecordedAt = Date.now(); };
+    const recordElapsedTime = () => {
+      const now = Date.now();
+      if (document.visibilityState === "visible") {
+        const elapsed = Math.max(0, Math.round((now - lastRecordedAt) / 1000));
+        const previous = Number(localStorage.getItem("sci_total_play_seconds")) || 0;
+        localStorage.setItem("sci_total_play_seconds", String(previous + elapsed));
+      }
+      lastRecordedAt = now;
+    };
+    const timer = window.setInterval(recordElapsedTime, 10_000);
+    window.addEventListener("sci:playtime-reset", resetClock);
+    return () => { window.clearInterval(timer); window.removeEventListener("sci:playtime-reset", resetClock); recordElapsedTime(); };
+  }, []);
+
   // App Phases state: start (landing), booting (cutscene loading), main (interactive dashboard)
-  const [appPhase, setAppPhase] = useState<"start" | "booting" | "main">("start");
+  const [appPhase, setAppPhase] = useState<"start" | "prologue" | "booting" | "main">("start");
+  const [isPrologueReplayOpen, setIsPrologueReplayOpen] = useState(false);
+  const [isTutorialActive, setIsTutorialActive] = useState(false);
   // Current active area: lab, technology R&D, mobile operations, or supply
-  const [currentScene, setCurrentScene] = useState<AppScene>("ops");
+  const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
+
+  // Remember the last visited division while always showing the entry screen
+  // on a fresh page load.
+  useEffect(() => {
+    if (appPhase !== "main") return;
+    localStorage.setItem(APP_LAST_SCENE_KEY, currentScene);
+  }, [appPhase, currentScene]);
 
   // Scene transit states
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -207,7 +265,11 @@ export default function App() {
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
-    if (targetScene === "supply") recordAction("openShop");
+    if (targetScene === "supply") {
+      recordAction("openShop");
+    } else {
+      void emitGameEvent("enter_area", { area: targetScene });
+    }
     playSound("click");
     setPendingScene(targetScene);
     setIsTransitioning(true);
@@ -221,14 +283,20 @@ export default function App() {
         characterImages.claire.happy,
         characterImages.claire.sad,
         characterImages.claire.think,
+        characterImages.claire.dialog,
+        characterImages.claire.surprise,
         characterImages.ethan.normal,
         characterImages.ethan.happy,
         characterImages.ethan.sad,
         characterImages.ethan.think,
+        characterImages.ethan.dialog,
+        characterImages.ethan.surprise,
         characterImages.leo.normal,
         characterImages.leo.happy,
         characterImages.leo.sad,
-        characterImages.leo.think
+        characterImages.leo.think,
+        characterImages.leo.dialog,
+        characterImages.leo.surprise
       );
     }
     preloadImages(imagesToPreload);
@@ -358,24 +426,25 @@ export default function App() {
     };
   }, [isMuted]);
 
-  // Manage Background Music (BGM) loop based on isMusicMuted, user gesture, and app phase
-  const desiredTrack = appPhase === "start" ? "theme" : missionActive ? "mission" : "normal";
+  // Manage Background Music (BGM) loop based on isMusicMuted, video playback,
+  // user gesture, and app phase.
+  const desiredTrack = appPhase === "start" || appPhase === "booting" || appPhase === "prologue" ? "theme" : missionActive ? "mission" : "normal";
   desiredTrackRef.current = desiredTrack;
   useEffect(() => {
-    if (isMusicMuted) {
+    if (isMusicMuted || isSupplyVideoOpen) {
       stopBackgroundMusic();
       return;
     }
 
-    // In 'start' phase, the StartScreen component handles its own BGM trigger state.
-    // In 'booting' and 'main' phases, we run background music seamlessly.
-    if (appPhase === "booting" || appPhase === "main") {
+    // The opening screen and prologue share the theme track. Booting and the
+    // main game continue to use their existing background music behavior.
+    if (appPhase === "prologue" || appPhase === "booting" || appPhase === "main") {
       startBackgroundMusic(desiredTrack);
     }
 
     // Setup interactive gesture listener to satisfy browser autoplay restrictions
     const handleGesture = () => {
-      if (!isMusicMuted && (appPhase === "booting" || appPhase === "main")) {
+      if (!isMusicMuted && !isSupplyVideoOpen && (appPhase === "prologue" || appPhase === "booting" || appPhase === "main")) {
         startBackgroundMusic(desiredTrackRef.current);
       }
     };
@@ -387,13 +456,15 @@ export default function App() {
       document.removeEventListener("click", handleGesture);
       document.removeEventListener("touchstart", handleGesture);
     };
-  }, [isMusicMuted, appPhase, desiredTrack]);
+  }, [isMusicMuted, isSupplyVideoOpen, appPhase, desiredTrack]);
 
   const handleMissionOpenChange = (open: boolean) => {
     setMissionActive(open);
     setIsGameOpen(open);
     desiredTrackRef.current = open ? "mission" : "normal";
-    startBackgroundMusic(open ? "mission" : "normal");
+    if (!isMusicMuted && !isSupplyVideoOpen) {
+      startBackgroundMusic(open ? "mission" : "normal");
+    }
   };
 
 
@@ -423,7 +494,7 @@ export default function App() {
   };
 
   // Reset stats
-  const handleResetData = () => {
+  const handleResetData = async () => {
     const initial = { claire: 20, ethan: 20, leo: 20 };
     setAffectionPoints(initial);
     localStorage.setItem("light_crew_affection", JSON.stringify(initial));
@@ -457,11 +528,15 @@ export default function App() {
       damage_boost: 0,
       speed_boost: 0
     }));
+    localStorage.removeItem("sci_pending_video_rewards");
 
     setModificationMaterials(createEmptyMaterialInventory());
     setRobotUpgrades(createDefaultRobotUpgrades());
     localStorage.removeItem("c2_932_materials");
     localStorage.removeItem("c2_932_upgrades");
+    localStorage.setItem("sci_total_play_seconds", "0");
+    window.dispatchEvent(new Event("sci:playtime-reset"));
+    localStorage.removeItem("sci_stage_ending_seen");
 
     // Reset unlocked chapters in game missions
     setUnlockedChapters([1]);
@@ -469,10 +544,20 @@ export default function App() {
 
     // Reset custom exhibition URLs to defaults as part of full system reset
     localStorage.removeItem("sci_exhibition_urls");
+    localStorage.removeItem("light_crew_boot_complete");
+    localStorage.removeItem(APP_LAST_SCENE_KEY);
+
+    // Reset the event system alongside the rest of the player's progress.
+    resetPlayerStats();
+    clearEventRecords();
+    clearCardCollection();
+    clearPrologueSeen();
+    clearTutorialCompleted();
+    await resetCardEventPlayer();
 
     // Display a blocking alert (catch-safe for sandboxed iframes)
     try {
-      alert("系統數據、任務關卡與金幣資源已成功重置！系統將自動重新加載以套用全新狀態！");
+      alert("任務、金幣、前情提要、事件與卡片收藏已成功重置！系統將自動重新加載以套用全新狀態！");
     } catch (e) {
       console.warn("Alert blocked in sandboxed iframe.", e);
     }
@@ -583,12 +668,38 @@ export default function App() {
     const query = inputText.trim();
     if (!query) return;
 
+    if (query.toUpperCase() === "/RICH") {
+      setCoins(99999);
+      localStorage.setItem("light_crew_coins", "99999");
+      setInputText("");
+      playSound("success");
+      return;
+    }
+
+    if (query.toUpperCase() === "/END") {
+      const stats = getPlayerStats();
+      const bossVictoryActions = ["ampaBossVictory", "frankfurtBossVictory", "titeBossVictory", "aapexBossVictory", "metstradeBossVictory", "baumaBossVictory"] as const;
+      const totalUpgradeLevels = ROBOT_UPGRADE_IDS.reduce((total, id) => total + Math.min(5, robotUpgrades[id] || 0), 0);
+      setInputText("");
+      setTestEndingSummary({
+        defeatedBosses: bossVictoryActions.filter((action) => stats[action] > 0).length,
+        collectedMaterials: stats.collectMaterial,
+        earnedCards: getOwnedCards().length,
+        triggeredEvents: getTriggeredEvents().length,
+        robotCompletion: Math.round((totalUpgradeLevels / (ROBOT_UPGRADE_IDS.length * 5)) * 100),
+        totalPlaySeconds: Number(localStorage.getItem("sci_total_play_seconds")) || 0,
+      });
+      playSound("victory");
+      return;
+    }
+
     playSound("click");
 
     // Match Scenario based on keywords
-    let matchedScenario: Scenario = SCENARIOS.find((sc) => sc.id === "others")!;
+    const configuredScenarios = gameConfig.scenarios?.length ? gameConfig.scenarios : SCENARIOS;
+    let matchedScenario: Scenario = configuredScenarios.find((sc) => sc.id === "others") || configuredScenarios[0];
 
-    for (const scenario of SCENARIOS) {
+    for (const scenario of configuredScenarios) {
       if (scenario.id === "others") continue;
       const matches = scenario.keywords.some((keyword) => query.includes(keyword));
       if (matches) {
@@ -597,13 +708,22 @@ export default function App() {
       }
     }
 
+
     setSelectedScenario(matchedScenario);
 
-    const responseSet = RESPONSE_DATABASE[matchedScenario.id] || RESPONSE_DATABASE.others;
+    const responseSet = gameConfig.dialogues[matchedScenario.id] || gameConfig.dialogues.others || RESPONSE_DATABASE.others;
 
-    const claireText = responseSet.claire[Math.floor(Math.random() * responseSet.claire.length)];
-    const ethanText = responseSet.ethan[Math.floor(Math.random() * responseSet.ethan.length)];
-    const leoText = responseSet.leo[Math.floor(Math.random() * responseSet.leo.length)];
+    const claireIndex = Math.floor(Math.random() * responseSet.claire.length);
+    const ethanIndex = Math.floor(Math.random() * responseSet.ethan.length);
+    const leoIndex = Math.floor(Math.random() * responseSet.leo.length);
+    const claireText = responseSet.claire[claireIndex];
+    const ethanText = responseSet.ethan[ethanIndex];
+    const leoText = responseSet.leo[leoIndex];
+    const portraitConfig = gameConfig.dialoguePortraits?.[matchedScenario.id];
+    const resolvePortrait = (character: "claire" | "ethan" | "leo", index: number) => {
+      const portrait = portraitConfig?.[character]?.[index];
+      return portrait && portrait !== "auto" ? portrait : undefined;
+    };
 
     // Pick random banter
     const banterSet = responseSet.banter;
@@ -622,14 +742,17 @@ export default function App() {
       {
         speakerId: "claire",
         text: claireText,
+        portrait: resolvePortrait("claire", claireIndex),
       },
       {
         speakerId: "ethan",
         text: ethanText,
+        portrait: resolvePortrait("ethan", ethanIndex),
       },
       {
         speakerId: "leo",
         text: leoText,
+        portrait: resolvePortrait("leo", leoIndex),
       },
       ...randomBanter,
       {
@@ -808,7 +931,10 @@ export default function App() {
 
       {appPhase === "start" && (
         <StartScreen
-          onStart={() => setAppPhase("booting")}
+          onStart={() => {
+            setCurrentScene("ops");
+            setAppPhase("booting");
+          }}
           isMusicMuted={isMusicMuted}
           onMusicMuteToggle={handleMusicMuteToggle}
           musicVolume={musicVolume}
@@ -818,66 +944,63 @@ export default function App() {
 
       {appPhase === "booting" && (
         <BootingScreen
-          onComplete={() => setAppPhase("main")}
+          onComplete={() => {
+            if (!hasSeenPrologue()) {
+              setAppPhase("prologue");
+            } else {
+              if (!hasCompletedTutorial()) setIsTutorialActive(true);
+              setAppPhase("main");
+            }
+          }}
         />
       )}
 
       {appPhase === "main" && (
         <>
           {/* --- HEADER BAR (TOP) --- */}
-          <header className="relative z-30 border-b border-zinc-900 bg-black/40 backdrop-blur px-2.5 py-1.5 sm:px-6 sm:py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-1.5 sm:gap-4">
-          <div className="w-5 h-5 sm:w-10 sm:h-10 border border-orange-500 flex items-center justify-center flex-shrink-0">
-            <div className="w-1.5 h-1.5 sm:w-4 sm:h-4 bg-orange-500 animate-pulse"></div>
+          <header className="relative z-30 border-b border-zinc-900 bg-black/40 backdrop-blur px-2.5 py-2 sm:px-6 sm:py-4 flex items-center justify-between shrink-0">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden sm:h-[35px] sm:w-[35px]">
+            <img src={fwWorklightLogo} alt="FW Worklight" className="h-full w-full scale-[2.35] object-contain" />
           </div>
-          <div className="flex flex-col min-w-0">
-            <h1 className="text-[11px] sm:text-sm md:text-lg font-bold tracking-wider sm:tracking-widest text-white truncate max-w-[120px] xs:max-w-none">
+          <div className="shrink-0">
+            <h1 className="whitespace-nowrap text-[13px] font-bold tracking-wide text-white sm:text-sm sm:tracking-widest md:text-lg">
               燈燈小隊基地
             </h1>
-            <span className="text-[6px] sm:text-[9px] font-mono text-zinc-500 tracking-widest truncate">
-              PROJECT: LIGHT-UNIT-7 // DIAGNOSIS
-            </span>
           </div>
         </div>
 
         {/* Top interactive action buttons */}
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {/* Gold Coin Chip */}
-          <div className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1 bg-zinc-900/90 border border-zinc-800 text-yellow-400 font-extrabold text-[10px] sm:text-xs shadow-[0_0_10px_rgba(251,191,36,0.08)] select-none">
+          <div className="flex min-h-9 items-center gap-1 border border-zinc-800 bg-zinc-900/90 px-2 text-[11px] font-extrabold text-yellow-400 shadow-[0_0_10px_rgba(251,191,36,0.08)] select-none sm:min-h-0 sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-xs">
             <span className="animate-pulse">🪙</span>
             <span>{coins} <span className="hidden xs:inline text-[9.5px] text-zinc-500 font-bold ml-0.5">金幣</span></span>
           </div>
 
           <button
-            onClick={() => { playSound("click"); setIsFortuneOpen(true); }}
-            className="p-1 sm:p-2 border border-orange-500/80 hover:border-orange-400 bg-black/60 backdrop-blur text-orange-400 transition-all duration-200 rounded-none cursor-pointer flex items-center justify-center"
-            title="今日小籤"
-          >
-            <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-orange-500 animate-pulse" />
-          </button>
-
-          <button
+            data-knowledge-book
             onClick={() => { playSound("click"); setIsKnowledgeBookOpen(true); }}
-            className="relative p-1 sm:p-2 border border-zinc-700 hover:border-zinc-500 bg-black/40 backdrop-blur text-zinc-300 transition-all duration-200 rounded-none cursor-pointer flex items-center justify-center"
+            className="relative grid h-9 w-9 place-items-center border border-zinc-700 bg-black/40 text-zinc-300 backdrop-blur transition-all duration-200 hover:border-zinc-500 sm:h-auto sm:w-auto sm:p-2"
             title={`產業知識卡圖鑑（${eventSystem.ownedCards.length}/${getAllCardDefinitions().length}）`}
           >
-            <BookOpen className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" />
+            <BookOpen className="h-4 w-4 text-amber-400" />
             {eventSystem.ownedCards.length > 0 && <span className="absolute -right-1 -top-1 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-cyan-500 px-0.5 text-[7px] font-black text-black">{eventSystem.ownedCards.length}</span>}
           </button>
 
           <button
             onClick={() => { playSound("click"); setIsSettingsOpen(true); }}
-            className="p-1 sm:p-2 border border-zinc-700 hover:border-zinc-500 bg-black/40 backdrop-blur text-zinc-300 transition-all duration-200 rounded-none cursor-pointer flex items-center justify-center"
+            className="grid h-9 w-9 place-items-center border border-zinc-700 bg-black/40 text-zinc-300 backdrop-blur transition-all duration-200 hover:border-zinc-500 sm:h-auto sm:w-auto sm:p-2"
             title="調整參數設定"
           >
-            <Settings className="w-3 h-3 sm:w-4 sm:h-4" />
+            <Settings className="h-4 w-4" />
           </button>
         </div>
       </header>
 
       {/* --- HIGH-TECH AREA NAV BAR (場景切換) --- */}
-      <div className="relative z-30 bg-zinc-950/95 border-b border-zinc-900 px-2 py-1 sm:px-6 flex flex-row items-center justify-between gap-1 text-[10px] sm:text-xs font-mono shrink-0">
-        <div className="items-center gap-1.5 text-zinc-500 text-[9px] sm:text-xs hidden xs:flex truncate max-w-[40%]">
+      <div className="relative z-30 flex shrink-0 flex-row items-center justify-center gap-1 border-b border-zinc-900 bg-zinc-950/95 px-2 py-1 font-mono text-[10px] sm:px-6 sm:text-xs">
+        <div className="absolute left-6 hidden max-w-[25%] items-center gap-1.5 truncate text-xs text-zinc-500 lg:flex">
           <span className="w-1.5 h-1.5 bg-orange-500 animate-pulse flex-shrink-0" />
           <span className="hidden sm:inline">CURRENT_SECTOR:</span>
           <span className="text-orange-400 font-bold uppercase truncate">
@@ -892,54 +1015,58 @@ export default function App() {
           </span>
         </div>
         
-        <div className="flex items-center gap-0.5 sm:gap-1.5 w-full xs:w-auto justify-center xs:justify-end overflow-x-auto no-scrollbar">
+        <div className="grid w-full grid-cols-4 gap-0.5 sm:flex sm:w-auto sm:items-center sm:justify-center sm:gap-1.5">
           <button
+            data-tutorial-target="laboratory"
             onClick={() => handleSceneChange("lab")}
-            className={`px-3 py-1 sm:px-4 sm:py-1.5 border text-[11px] sm:text-sm font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center gap-1.5
+            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "lab"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
               }
             `}
           >
-            <Beaker className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
-            <span>勇氣の實驗室</span>
+            <Beaker className="hidden h-4 w-4 text-orange-500 sm:block" />
+            <span className="whitespace-nowrap">勇氣の實驗室</span>
           </button>
           <button
+            data-tutorial-target="robotAssembly"
             onClick={() => handleSceneChange("tech")}
-            className={`px-3 py-1 sm:px-4 sm:py-1.5 border text-[11px] sm:text-sm font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center gap-1.5
+            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "tech"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
               }
             `}
           >
-            <Wrench className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
-            <span>技術研發部</span>
+            <Wrench className="hidden h-4 w-4 text-orange-500 sm:block" />
+            <span className="whitespace-nowrap">技術研發部</span>
           </button>
           <button
+            data-tutorial-target="adventure"
             onClick={() => handleSceneChange("ops")}
-            className={`px-3 py-1 sm:px-4 sm:py-1.5 border text-[11px] sm:text-sm font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center gap-1.5
+            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "ops"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
               }
             `}
           >
-            <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
-            <span>營業機動部</span>
+            <Shield className="hidden h-4 w-4 text-orange-500 sm:block" />
+            <span className="whitespace-nowrap">營業機動部</span>
           </button>
           <button
+            data-tutorial-target="supply"
             onClick={() => handleSceneChange("supply")}
-            className={`px-3 py-1 sm:px-4 sm:py-1.5 border text-[11px] sm:text-sm font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center gap-1.5
+            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "supply"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
               }
             `}
           >
-            <Boxes className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
-            <span>後勤補給部</span>
+            <Boxes className="hidden h-4 w-4 text-orange-500 sm:block" />
+            <span className="whitespace-nowrap">後勤補給部</span>
           </button>
         </div>
       </div>
@@ -949,9 +1076,9 @@ export default function App() {
         <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-4 md:px-6 py-1 sm:py-3 flex flex-col justify-end relative z-20 overflow-hidden">
         
         {/* Three Characters Container */}
-        <div className="flex justify-center items-center sm:items-end sm:grid sm:grid-cols-3 gap-1.5 sm:gap-3 md:gap-6 w-full relative mb-2 sm:mb-4 flex-1 min-h-0">
+        <div className="character-stage pointer-events-none relative z-10 mb-0 w-full flex-1 min-h-0 overflow-visible">
           {activeSceneId ? (
-            <div className="col-span-3 w-full h-[140px] xs:h-[180px] sm:h-[280px] md:h-[320px] lg:h-[350px]">
+            <div className="pointer-events-auto h-full w-full">
               <SceneCharacters sceneId={activeSceneId} />
             </div>
           ) : (
@@ -960,27 +1087,26 @@ export default function App() {
               const currentLine = storyLines[currentDialogueIndex];
               const currentLineText = (isSpeaking && currentLine) ? currentLine.text : "";
               
-              let currentEmotion = isSpeaking ? detectEmotion(currentLineText, char.id) : "happy";
+              const defaultPortrait = gameConfig.characterDefaultPortraits?.[char.id as "claire" | "ethan" | "leo"] || "dialog";
+              const portraitEmotion = (portrait: typeof defaultPortrait): EmotionType =>
+                portrait === "normal" ? "sad"
+                  : portrait === "think" ? "serious"
+                  : portrait === "surprise" ? "excited"
+                  : portrait === "dialog" || portrait === "happy" ? portrait
+                  : "dialog";
+              let currentEmotion: EmotionType = isSpeaking
+                ? currentLine?.portrait ? portraitEmotion(currentLine.portrait) : portraitEmotion(defaultPortrait)
+                : portraitEmotion(defaultPortrait);
               
               // Dynamic Overrides based on system variables
-              if (dialogueState === "success") {
-                currentEmotion = "happy";
-              } else if (dialogueState === "failure") {
-                currentEmotion = "sad";
-              } else if (dialogueState === "thinking") {
-                currentEmotion = "serious";
-              } else if (characterMood === "happy") {
-                currentEmotion = "happy";
-              } else if (characterMood === "sad") {
-                currentEmotion = "sad";
-              } else if (characterMood === "think") {
-                currentEmotion = "serious";
-              } else if (selectedChoice === "good") {
-                currentEmotion = "happy";
-              } else if (selectedChoice === "bad") {
-                currentEmotion = "sad";
-              } else if (currentStep > 5) {
-                currentEmotion = "happy";
+              if (!currentLine?.portrait && isSpeaking) {
+                if (dialogueState === "success") currentEmotion = "happy";
+                else if (dialogueState === "failure") currentEmotion = "sad";
+                else if (dialogueState === "thinking") currentEmotion = "serious";
+                else if (characterMood === "happy") currentEmotion = "happy";
+                else if (characterMood === "sad") currentEmotion = "sad";
+                else if (characterMood === "think") currentEmotion = "serious";
+                else currentEmotion = portraitEmotion(defaultPortrait);
               }
 
               const customImagesObj = char.id === "claire" ? customClaire : char.id === "ethan" ? customEthan : customLeo;
@@ -995,6 +1121,7 @@ export default function App() {
                   onInteraction={() => handleCharacterInteraction(char.id)}
                   customImages={customImagesObj}
                   emotion={currentEmotion}
+                  layout={gameConfig.characterLayouts?.[char.id as "claire" | "ethan" | "leo"]?.[characterBreakpoint]}
                 />
               );
             })
@@ -1130,6 +1257,7 @@ export default function App() {
           setCoins={setCoins}
           purchasedUpgrades={purchasedUpgrades}
           setPurchasedUpgrades={setPurchasedUpgrades}
+          onVideoPlaybackChange={setIsSupplyVideoOpen}
         />
       )}
 
@@ -1258,6 +1386,10 @@ export default function App() {
         textSpeed={textSpeed}
         onSpeedChange={handleSpeedChange}
         onResetData={handleResetData}
+        onReplayPrologue={() => {
+          setIsSettingsOpen(false);
+          setIsPrologueReplayOpen(true);
+        }}
         customClaire={customClaire}
         customEthan={customEthan}
         customLeo={customLeo}
@@ -1269,6 +1401,7 @@ export default function App() {
           onClose={() => {
             setPendingBossChapter(null);
             setMissionEntrySource("adventure");
+            setCurrentScene("ops");
             handleMissionOpenChange(false);
           }}
           onReturnToLab={(chapter) => {
@@ -1303,11 +1436,11 @@ export default function App() {
         />
       )}
 
-      {appPhase === "main" && !isGameOpen && !isTransitioning && eventSystem.pendingEvent && (
-        <EventPopup event={eventSystem.pendingEvent} playSound={playSound} />
-      )}
+      {testEndingSummary && <StageEnding summary={testEndingSummary} onReturnToBase={() => setTestEndingSummary(null)} />}
 
-      <EventDebugPanel />
+      {appPhase === "main" && !isGameOpen && !isTransitioning && eventSystem.pendingReward && (
+        <EventPopup reward={eventSystem.pendingReward} playSound={playSound} />
+      )}
 
       {/* --- REALISTIC PHYSICAL WALKING SCENE TRANSITION OVERLAY --- */}
       {isTransitioning && (
@@ -1415,6 +1548,24 @@ export default function App() {
 
 
 
+      {(appPhase === "prologue" || isPrologueReplayOpen) && (
+        <Prologue onComplete={(skipped) => {
+          void emitGameEvent("player_action", { action: skipped ? "special.prologueSkipped" : "special.prologueCompleted" });
+          markPrologueSeen();
+          if (appPhase === "prologue") {
+            if (!hasCompletedTutorial()) setIsTutorialActive(true);
+            setAppPhase("main");
+          }
+          else setIsPrologueReplayOpen(false);
+        }} />
+      )}
+
+      {appPhase === "main" && isTutorialActive && (
+        <TutorialOverlay characterLayouts={gameConfig.characterLayouts} characterBreakpoint={characterBreakpoint} onComplete={() => {
+          markTutorialCompleted();
+          setIsTutorialActive(false);
+        }} />
+      )}
     </div>
   );
 }

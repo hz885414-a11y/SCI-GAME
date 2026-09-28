@@ -3,11 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preload" as="image" href="/src/assets/main-title.webp" type="image/webp" fetchpriority="high" />
     <title>My Google AI Studio App</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      document.addEventListener("click", (event) => {
+        const link = event.target.closest("a");
+        if (location.pathname === "/admin" && link?.textContent?.trim() === "返回遊戲") {
+          event.preventDefault();
+          window.open(link.href, "_blank", "noopener");
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

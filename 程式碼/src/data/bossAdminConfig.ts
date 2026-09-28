@@ -1,0 +1,20 @@
+import type { BossBehaviorProfile } from "./bossBehaviorConfig";
+
+export interface BossAdminDefinition {
+  id: string;
+  chapter: number;
+  exhibition: string;
+  name: string;
+  description: string;
+  hp: number;
+  behavior: BossBehaviorProfile;
+}
+
+export const BOSS_ADMIN_DEFAULTS: BossAdminDefinition[] = [
+  { id: "ampa", chapter: 1, exhibition: "AMPA", name: "停電核心 (Blackout Core)", description: "以能量彈幕與突進壓迫小隊。", hp: 4000, behavior: { radius: 65, moveSpeed: 1.1, prefersMelee: false, meleeStopDistance: 150, attackInterval: 110, attackPatternWeights: [0, 1, 2, 3], defenseDuration: 0, defenseDamageMultiplier: 1, dashTimer: 70, dashExecutionThreshold: 30, dashSpeed: 4, usesRockProjectiles: false, usesDiveAmbush: false, usesTentacleArea: false, usesChainDash: false, usesKnockbackRoar: false, usesHardwareSummons: false, usesToolBarrage: false, usesBombingRun: false, usesAimedLaser: false, usesStrafingBurst: false } },
+  { id: "frankfurt", chapter: 2, exhibition: "Automechanika Frankfurt", name: "黑暗工程機甲 (Dark Mech)", description: "轟炸機型 Boss，擅長掃射與瞄準雷射。", hp: 5200, behavior: { radius: 68, moveSpeed: 1.35, prefersMelee: false, meleeStopDistance: 170, attackInterval: 98, attackPatternWeights: [0, 1, 9, 9, 10, 10, 11, 11], defenseDuration: 0, defenseDamageMultiplier: 1, dashTimer: 70, dashExecutionThreshold: 30, dashSpeed: 4.5, usesRockProjectiles: false, usesDiveAmbush: false, usesTentacleArea: false, usesChainDash: false, usesKnockbackRoar: false, usesHardwareSummons: false, usesToolBarrage: false, usesBombingRun: true, usesAimedLaser: true, usesStrafingBurst: true } },
+  { id: "tite", chapter: 3, exhibition: "TITE × IHT", name: "深海黑影 (Ocean Shadow)", description: "召喚硬體支援單位並投擲磁力工具。", hp: 6400, behavior: { radius: 70, moveSpeed: 1.15, prefersMelee: false, meleeStopDistance: 150, attackInterval: 106, attackPatternWeights: [1, 3, 7, 7, 8, 8], defenseDuration: 0, defenseDamageMultiplier: 1, dashTimer: 70, dashExecutionThreshold: 30, dashSpeed: 4, usesRockProjectiles: false, usesDiveAmbush: false, usesTentacleArea: false, usesChainDash: false, usesKnockbackRoar: false, usesHardwareSummons: true, usesToolBarrage: true, usesBombingRun: false, usesAimedLaser: false, usesStrafingBurst: false } },
+  { id: "aapex", chapter: 4, exhibition: "AAPEX", name: "山神黑獸 (Mountain Deity)", description: "連鎖衝刺並以怒吼擊退近身玩家。", hp: 7600, behavior: { radius: 72, moveSpeed: 1.5, prefersMelee: true, meleeStopDistance: 145, attackInterval: 102, attackPatternWeights: [1, 2, 2, 2, 3, 6, 6], defenseDuration: 0, defenseDamageMultiplier: 1, dashTimer: 64, dashExecutionThreshold: 34, dashSpeed: 8.4, usesRockProjectiles: false, usesDiveAmbush: false, usesTentacleArea: false, usesChainDash: true, usesKnockbackRoar: true, usesHardwareSummons: false, usesToolBarrage: false, usesBombingRun: false, usesAimedLaser: false, usesStrafingBurst: false } },
+  { id: "metstrade", chapter: 5, exhibition: "METSTRADE", name: "暗影列車 (Shadow Train)", description: "潛行伏擊，並以觸手控制地面區域。", hp: 8800, behavior: { radius: 72, moveSpeed: 1.2, prefersMelee: false, meleeStopDistance: 150, attackInterval: 104, attackPatternWeights: [1, 3, 4, 4, 5, 5], defenseDuration: 0, defenseDamageMultiplier: 1, dashTimer: 70, dashExecutionThreshold: 30, dashSpeed: 4, usesRockProjectiles: false, usesDiveAmbush: true, usesTentacleArea: true, usesChainDash: false, usesKnockbackRoar: false, usesHardwareSummons: false, usesToolBarrage: false, usesBombingRun: false, usesAimedLaser: false, usesStrafingBurst: false } },
+  { id: "bauma", chapter: 6, exhibition: "bauma CHINA", name: "終極黑暗核心 (Dark Core)", description: "重型近戰 Boss，可架設礦業裝甲與岩塊彈幕。", hp: 10000, behavior: { radius: 84, moveSpeed: 1.65, prefersMelee: true, meleeStopDistance: 118, attackInterval: 96, attackPatternWeights: [0, 0, 1, 2, 2, 2, 3], defenseDuration: 110, defenseDamageMultiplier: 0.35, dashTimer: 62, dashExecutionThreshold: 38, dashSpeed: 7.2, usesRockProjectiles: true, usesDiveAmbush: false, usesTentacleArea: false, usesChainDash: false, usesKnockbackRoar: false, usesHardwareSummons: false, usesToolBarrage: false, usesBombingRun: false, usesAimedLaser: false, usesStrafingBurst: false } },
+];

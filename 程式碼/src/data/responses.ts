@@ -95,6 +95,7 @@ export const SCENARIOS: Scenario[] = [
 export interface DialogueLine {
   speakerId: "claire" | "ethan" | "leo" | "player" | "narrator";
   text: string;
+  portrait?: "normal" | "dialog" | "happy" | "think" | "surprise";
 }
 
 export const RESPONSE_DATABASE: Record<

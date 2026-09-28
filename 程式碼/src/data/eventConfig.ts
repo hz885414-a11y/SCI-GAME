@@ -1,4 +1,5 @@
 import type { PlayerAction } from "../systems/playerStats";
+import { getRuntimeConfig } from "../config/runtimeStore";
 
 export interface GameEventDefinition {
   id: string;
@@ -10,6 +11,9 @@ export interface GameEventDefinition {
   requiredCount: number;
   rewardCard: string;
   once: boolean;
+  priority?: number;
+  specialCondition?: "prologueCompleted" | "prologueSkipped" | "dialogueScenarioFirst" | "exhibitionClicked" | "coinTotal" | "dialogueTotal";
+  specialValue?: string | number;
 }
 
 const EXHIBITION_BOSS_EVENTS: GameEventDefinition[] = [
@@ -144,7 +148,8 @@ export function getCustomEventDefinitions(): GameEventDefinition[] {
 
 export function getAllEventDefinitions(): GameEventDefinition[] {
   const deleted = new Set(getDeletedEventIds());
-  const events = new Map(EVENT_CONFIG.map((event) => [event.id, event]));
+  const baseEvents = getRuntimeConfig()?.events || EVENT_CONFIG;
+  const events = new Map(baseEvents.map((event) => [event.id, event]));
   getCustomEventDefinitions().forEach((event) => events.set(event.id, event));
   return [...events.values()].filter((event) => !deleted.has(event.id));
 }

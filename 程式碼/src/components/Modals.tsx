@@ -630,6 +630,7 @@ interface SettingsModalProps extends ModalProps {
   textSpeed: "slow" | "normal" | "instant";
   onSpeedChange: (speed: "slow" | "normal" | "instant") => void;
   onResetData: () => void;
+  onReplayPrologue: () => void;
   customClaire: Record<string, string | null>;
   customEthan: Record<string, string | null>;
   customLeo: Record<string, string | null>;
@@ -648,6 +649,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   textSpeed,
   onSpeedChange,
   onResetData,
+  onReplayPrologue,
 }) => {
   const [confirmReset, setConfirmReset] = React.useState<boolean>(false);
 
@@ -744,11 +746,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
 
+          <button
+            type="button"
+            onClick={() => { playSound("click"); onReplayPrologue(); }}
+            className="w-full min-h-11 border border-amber-600/50 bg-amber-500/10 px-4 py-3 text-left text-xs font-bold text-amber-300 transition hover:bg-amber-500/20 cursor-pointer"
+          >
+            重新觀看前情提要
+          </button>
+
           {/* Reset progress */}
           <div className="bg-zinc-900/30 border border-zinc-800/50 p-3.5 rounded-none space-y-3">
             <div className="space-y-0.5">
-              <span className="font-sans font-bold text-xs text-zinc-400 block">⚠️ 重置任務進度與金幣資源</span>
-              <span className="text-[10px] text-zinc-500 font-mono">RESET MISSIONS, COINS & UPGRADES</span>
+              <span className="font-sans font-bold text-xs text-zinc-400 block">⚠️ 重置任務、金幣、前情提要、事件與卡片收藏</span>
+              <span className="text-[10px] text-zinc-500 font-mono">RESET MISSIONS, COINS, PROLOGUE, EVENTS & CARDS</span>
             </div>
             {!confirmReset ? (
               <button
@@ -758,7 +768,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }}
                 className="w-full py-2.5 text-xs font-bold text-red-400 bg-red-950/20 hover:bg-red-950/40 border border-red-500/20 hover:border-red-500/40 rounded-none transition active:scale-95 cursor-pointer"
               >
-                🔥 重置任務與金幣資源 (RESET)
+                🔥 重置所有遊戲進度 (RESET)
               </button>
             ) : (
               <div className="flex gap-2 animate-fade-in">

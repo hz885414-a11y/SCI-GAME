@@ -6,6 +6,7 @@ import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, UI_IMAGE_ASSETS } from "./game
 import { gameCharacterSprites, walkSprites } from "./gameCharacterSprites";
 import { BOSS_ARENA_CONFIG, MISSION_MAP_CONFIG } from "./missionMapConfig";
 import { ROBOT_CONFIG } from "./robotConfig";
+import { prologuePages } from "./prologue";
 
 export interface CoreAssetItem {
   label: string;
@@ -49,6 +50,8 @@ const bossArtwork = Object.entries(BOSS_VISUALS_BY_CHAPTER).flatMap(([chapter, v
 const manifest: CoreAssetItem[] = [
   { label: "MAIN TITLE", url: UI_IMAGE_ASSETS.mainTitle },
   { label: "MISSION TITLE", url: UI_IMAGE_ASSETS.missionTitle },
+  { label: "EVENT CARD BACK", url: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Back.png" },
+  { label: "EVENT CARD FRONT", url: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Front.png" },
   { label: "LAB BACKGROUND", url: BACKGROUND_ASSETS.lab },
   { label: "R&D BACKGROUND", url: BACKGROUND_ASSETS.tech },
   { label: "OPS BACKGROUND", url: BACKGROUND_ASSETS.business },
@@ -72,3 +75,30 @@ const manifest: CoreAssetItem[] = [
 export const CORE_ASSET_MANIFEST = manifest.filter(
   (asset, index, assets) => assets.findIndex((candidate) => candidate.url === asset.url) === index,
 );
+
+const prologueArtwork = prologuePages
+  .filter((page): page is typeof page & { backgroundImage: string } => Boolean(page.backgroundImage))
+  .map((page) => ({ label: `PROLOGUE CHAPTER ${page.id}`, url: page.backgroundImage }));
+
+// Only assets needed immediately after the boot screen block entry. Keeping
+// this list short prevents the cold-cache boot from competing with later art.
+export const BOOT_CRITICAL_ASSETS: CoreAssetItem[] = [
+  { label: "MAIN TITLE", url: UI_IMAGE_ASSETS.mainTitle },
+  { label: "PROLOGUE CHAPTER 1", url: prologueArtwork[0]?.url ?? "" },
+  { label: "OPS BACKGROUND", url: BACKGROUND_ASSETS.business },
+  { label: "CLAIRE NORMAL", url: characterImages.claire.normal },
+  { label: "CLAIRE HAPPY", url: characterImages.claire.happy },
+  { label: "ETHAN NORMAL", url: characterImages.ethan.normal },
+  { label: "ETHAN HAPPY", url: characterImages.ethan.happy },
+  { label: "LEO NORMAL", url: characterImages.leo.normal },
+  { label: "LEO HAPPY", url: characterImages.leo.happy },
+].filter((asset) => asset.url);
+
+const criticalUrls = new Set(BOOT_CRITICAL_ASSETS.map((asset) => asset.url));
+
+// Chapter 2 and 3 come first in this queue. Remaining game art continues in
+// the background with limited concurrency after the first screen is ready.
+export const DEFERRED_ASSET_MANIFEST: CoreAssetItem[] = [
+  ...prologueArtwork.slice(1),
+  ...CORE_ASSET_MANIFEST.filter((asset) => !criticalUrls.has(asset.url)),
+];

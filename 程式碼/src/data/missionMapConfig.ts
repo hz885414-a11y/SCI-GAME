@@ -16,6 +16,7 @@ export const BOSS_ARENA_CONFIG = {
     "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/3.%20background/Climactic%20battle%20scene-01.png",
   maskUrl:
     "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/3.%20background/Climactic%20battle%20scene-01-mask.png",
+  worldSize: { width: 1800, height: 1200 },
   playerSpawn: { xRatio: 0.5, yRatio: 0.82 },
   bossSpawn: { xRatio: 0.5, yRatio: 0.2 },
   walkableColor: { r: 255, g: 255, b: 255 },

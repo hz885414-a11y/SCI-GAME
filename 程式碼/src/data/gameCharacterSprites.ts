@@ -12,13 +12,16 @@ const WALK_BASE_URL =
 
 export const walkSprites = {
   claire: {
-    src: `${WALK_BASE_URL}Claire.png`
+    src: `${WALK_BASE_URL}Claire.png`,
+    frameXOffsets: [0, -22, -1, 1, 26, -4]
   },
   ethan: {
-    src: `${WALK_BASE_URL}Ethan.png`
+    src: `${WALK_BASE_URL}Ethan.png`,
+    frameXOffsets: [0, 6, 12, -35, 14, 4]
   },
   leo: {
-    src: `${WALK_BASE_URL}Leo.png`
+    src: `${WALK_BASE_URL}Leo.png`,
+    frameXOffsets: [0, -22, -8, -2, 24, 8]
   }
 } as const;
 

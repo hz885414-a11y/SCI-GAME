@@ -11,6 +11,8 @@ export interface SpriteAnimatorProps {
   className?: string;
   width?: number;
   height?: number;
+  /** Per-frame horizontal correction in source pixels, used to keep the subject centered. */
+  frameXOffsets?: readonly number[];
 }
 
 export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
@@ -24,6 +26,7 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
   className = "",
   width,
   height,
+  frameXOffsets,
 }) => {
   const [currentAnimationIndex, setCurrentAnimationIndex] = useState(0);
   const [dimensions, setDimensions] = useState<{ width: number; height: number; originalWidth: number; originalHeight: number } | null>(null);
@@ -125,7 +128,7 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
     height: `${displayHeight}px`,
     backgroundImage: `url(${src})`,
     backgroundRepeat: "no-repeat",
-    backgroundPositionX: `${bgPosX}px`,
+    backgroundPositionX: `${bgPosX + (frameXOffsets?.[activeFrame] ?? 0) * (displayWidth / dimensions.width)}px`,
     backgroundPositionY: "0px",
     backgroundSize: `${bgWidth}px ${bgHeight}px`,
     imageRendering: "pixelated",

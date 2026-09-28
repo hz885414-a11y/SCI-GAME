@@ -1,28 +1,37 @@
 const BASE_URL =
   "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/";
 
-const IMAGE_VERSION = "v1";
+const IMAGE_VERSION = "expression-v2";
+
+const expression = (fileName: string) =>
+  `${BASE_URL}10.expression/${encodeURIComponent(fileName)}?version=${IMAGE_VERSION}`;
 
 export const characterImages = {
   claire: {
-    normal: `${BASE_URL}claire.png?version=${IMAGE_VERSION}`,
-    happy: `${BASE_URL}claire-HAPPY.png?version=${IMAGE_VERSION}`,
-    sad: `${BASE_URL}claire-SAD.png?version=${IMAGE_VERSION}`,
-    think: `${BASE_URL}claire-think.png?version=${IMAGE_VERSION}`
+    normal: expression("EXP-_C-COMMON01.png"),
+    happy: expression("EXP-_C-happy01.png"),
+    sad: expression("EXP-_C-COMMON01.png"),
+    think: expression("EXP-_C-Suspect01.png"),
+    dialog: expression("EXP-_C-dialog01.png"),
+    surprise: expression("EXP-_C-surprise01.png"),
   },
 
   ethan: {
-    normal: `${BASE_URL}ethan.png?version=${IMAGE_VERSION}`,
-    happy: `${BASE_URL}ethan-HAPPY.png?version=${IMAGE_VERSION}`,
-    sad: `${BASE_URL}ethan-SAD.png?version=${IMAGE_VERSION}`,
-    think: `${BASE_URL}ethan-think.png?version=${IMAGE_VERSION}`
+    normal: expression("EXP-_E-COMMON01.png"),
+    happy: expression("EXP-_E- happy01.png"),
+    sad: expression("EXP-_E-COMMON01.png"),
+    think: expression("EXP-_E-Suspect01.png"),
+    dialog: expression("EXP-_E-dialog01.png"),
+    surprise: expression("EXP-_E-surprise01.png"),
   },
 
   leo: {
-    normal: `${BASE_URL}leo.png?version=${IMAGE_VERSION}`,
-    happy: `${BASE_URL}leo-HAPPY.png?version=${IMAGE_VERSION}`,
-    sad: `${BASE_URL}leo-SAD.png?version=${IMAGE_VERSION}`,
-    think: `${BASE_URL}leo-think.png?version=${IMAGE_VERSION}`
+    normal: expression("EXP-_L -COMMON01.png"),
+    happy: expression("EXP-_L-happy01.png"),
+    sad: expression("EXP-_L -COMMON01.png"),
+    think: expression("EXP-_L-Suspect01.png"),
+    dialog: expression("EXP-_L -dialog01.png"),
+    surprise: expression("EXP-_L-surprise01.png"),
   }
 } as const;
 

@@ -1,3 +1,5 @@
+import { getRuntimeConfig } from "../config/runtimeStore";
+
 export type KnowledgeCardCategory = "lighting" | "energy" | "materials" | "maintenance" | "marine" | "safety";
 
 export interface BossWeakeningEffect {
@@ -185,7 +187,8 @@ export function getCustomCardDefinitions(): KnowledgeCardDefinition[] {
 }
 
 export function getAllCardDefinitions(): KnowledgeCardDefinition[] {
-  const cards = new Map(CARD_DATABASE.map((card) => [card.id, card]));
+  const baseCards = getRuntimeConfig()?.cards || CARD_DATABASE;
+  const cards = new Map(baseCards.map((card) => [card.id, card]));
   getCustomCardDefinitions().forEach((card) => cards.set(card.id, card));
   return [...cards.values()];
 }

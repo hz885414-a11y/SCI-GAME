@@ -387,14 +387,14 @@ export function OpsDivision({
       </div>
 
       {/* Sleek Tactical Work-Items Taskbar (工作任務列) */}
-      <div className="bg-zinc-950 border border-zinc-800 p-2 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-2.5 relative z-30 shadow-[0_-5px_15px_rgba(0,0,0,0.5)]">
+      <div className="relative z-30 mb-3 flex flex-col items-center justify-between gap-3 border border-zinc-800 bg-zinc-950 p-3 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] backdrop-blur-md sm:mb-0 sm:flex-row sm:gap-2.5 sm:p-2">
         <div className="flex items-center gap-2">
           <span className="p-1 bg-orange-500/10 border border-orange-500/20 text-orange-500 hidden sm:block">
             <FolderOpen className="w-4 h-4" />
           </span>
           <div>
-            <span className="text-[9px] font-mono text-zinc-500 block leading-none">MOB_OPS_DOCK // 任務工作列</span>
-            <span className="text-[11px] font-bold text-zinc-300 font-sans">請點擊按鈕以展開對應功能視窗</span>
+            <span className="block text-[10px] font-mono leading-none text-zinc-500 sm:text-[9px]">MOB_OPS_DOCK // 任務工作列</span>
+            <span className="font-sans text-xs font-bold text-zinc-300 sm:text-[11px]">請點擊按鈕以展開對應功能視窗</span>
           </div>
         </div>
 
@@ -404,7 +404,7 @@ export function OpsDivision({
           <div className="w-full sm:w-auto">
             <button
               onClick={toggleSectors}
-              className={`w-full sm:w-auto px-4 py-2 sm:px-4 sm:py-1.5 border text-xs sm:text-[10px] font-sans font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
+              className={`min-h-12 w-full border px-4 py-3 font-sans text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none sm:min-h-0 sm:w-auto sm:px-4 sm:py-1.5 sm:text-[10px]
                 ${isGameOpen 
                   ? "bg-orange-500 text-black border-orange-500 shadow-[0_0_10px_rgba(245,158,11,0.25)]" 
                   : pendingBossChapter !== null
@@ -431,7 +431,7 @@ export function OpsDivision({
           <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
             <button
               onClick={togglePortal}
-              className={`px-2 py-1.5 sm:px-3 sm:py-1.5 border text-[10px] font-sans font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
+              className={`min-h-11 border px-2 py-2 text-xs font-sans font-bold flex items-center justify-center gap-1 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-[10px] sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
                 ${isOpenPortal 
                   ? "bg-orange-500 text-black border-orange-500" 
                   : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
@@ -445,7 +445,7 @@ export function OpsDivision({
 
             <button
               onClick={toggleLogs}
-              className={`px-2 py-1.5 sm:px-3 sm:py-1.5 border text-[10px] font-sans font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
+              className={`min-h-11 border px-2 py-2 text-xs font-sans font-bold flex items-center justify-center gap-1 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-[10px] sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
                 ${isOpenLogs 
                   ? "bg-orange-500 text-black border-orange-500" 
                   : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"

@@ -3,6 +3,7 @@ export const EVENT_STORAGE_KEYS = {
   triggeredEvents: "sci_knowledge_triggered_events",
   ownedCards: "sci_knowledge_owned_cards",
   pendingEvents: "sci_knowledge_pending_events",
+  pendingCardRewards: "sci_card_reward_queue",
 } as const;
 
 export const EVENT_SYSTEM_CHANGED = "sci:event-system-changed";
@@ -31,4 +32,3 @@ export function notifyEventSystemChanged(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(EVENT_SYSTEM_CHANGED));
 }
-

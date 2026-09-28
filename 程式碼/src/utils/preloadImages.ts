@@ -80,6 +80,7 @@ export async function preloadAssetManifest(
   assets: PreloadAsset[],
   onProgress?: (progress: AssetPreloadProgress) => void,
   timeoutMs = 10000,
+  concurrency = 4,
 ): Promise<AssetPreloadResult> {
   const uniqueAssets = assets.filter(
     (asset, index) => asset.url && assets.findIndex((candidate) => candidate.url === asset.url) === index,
@@ -91,8 +92,13 @@ export async function preloadAssetManifest(
 
   onProgress?.({ completed, total, percent: total ? 0 : 100, currentLabel: "建立素材清單", failed });
 
-  await Promise.all(
-    uniqueAssets.map(async (asset) => {
+  let nextAssetIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), total || 1);
+
+  const loadNext = async (): Promise<void> => {
+    while (nextAssetIndex < total) {
+      const asset = uniqueAssets[nextAssetIndex];
+      nextAssetIndex += 1;
       const loaded = await loadImageAsset(asset, timeoutMs);
       completed += 1;
       if (!loaded) {
@@ -106,8 +112,10 @@ export async function preloadAssetManifest(
         currentLabel: asset.label,
         failed,
       });
-    }),
-  );
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => loadNext()));
 
   return { loaded: total - failed, failed, failedAssets };
 }

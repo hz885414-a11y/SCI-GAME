@@ -1,82 +1,87 @@
-import { getAllEventDefinitions, getEventDefinition } from "../data/eventConfig";
-import { getPlayerStats } from "./playerStats";
+import type { CardReward } from "./gameEvents";
 import {
   EVENT_STORAGE_KEYS,
-  PLAYER_ACTION_RECORDED,
   notifyEventSystemChanged,
   readStoredValue,
   writeStoredValue,
 } from "./eventStorage";
 
-let initialized = false;
-
 export function getTriggeredEvents(): string[] {
   return readStoredValue<string[]>(EVENT_STORAGE_KEYS.triggeredEvents, []);
 }
 
+export function getPendingCardRewards(): CardReward[] {
+  return readStoredValue<CardReward[]>(EVENT_STORAGE_KEYS.pendingCardRewards, []);
+}
+
 export function getPendingEvents(): string[] {
-  return readStoredValue<string[]>(EVENT_STORAGE_KEYS.pendingEvents, []);
+  return getPendingCardRewards().map((reward) => reward.event.id);
 }
 
-function saveQueue(queue: string[]): void {
-  writeStoredValue(EVENT_STORAGE_KEYS.pendingEvents, queue);
-}
-
-export function evaluateEvents(): string[] {
-  const stats = getPlayerStats();
+export function enqueueCardRewards(rewards: CardReward[]): void {
+  if (rewards.length === 0) return;
+  const queue = getPendingCardRewards();
   const triggered = getTriggeredEvents();
-  const pending = getPendingEvents();
-  const newEvents = getAllEventDefinitions().filter((event) => {
-    if (event.once && triggered.includes(event.id)) return false;
-    if (pending.includes(event.id)) return false;
-    return event.triggerType === "actionCount" && stats[event.action] >= event.requiredCount;
-  });
+  const queuedRewardIds = new Set(queue.map((reward) => reward.rewardId));
+  const triggeredEventIds = new Set(triggered);
+  const additions = rewards.filter((reward) => (
+    !queuedRewardIds.has(reward.rewardId) && !triggeredEventIds.has(reward.event.id)
+  ));
+  if (additions.length === 0) return;
 
-  if (newEvents.length > 0) {
-    saveQueue([...pending, ...newEvents.map((event) => event.id)]);
-    writeStoredValue(EVENT_STORAGE_KEYS.triggeredEvents, [...triggered, ...newEvents.map((event) => event.id)]);
-    notifyEventSystemChanged();
-  }
-  return newEvents.map((event) => event.id);
-}
-
-export function triggerEvent(eventId: string): boolean {
-  if (!getEventDefinition(eventId)) return false;
-  const pending = getPendingEvents();
-  if (!pending.includes(eventId)) saveQueue([...pending, eventId]);
-  const triggered = getTriggeredEvents();
-  if (!triggered.includes(eventId)) {
-    writeStoredValue(EVENT_STORAGE_KEYS.triggeredEvents, [...triggered, eventId]);
-  }
+  writeStoredValue(EVENT_STORAGE_KEYS.pendingCardRewards, [...queue, ...additions]);
+  writeStoredValue(EVENT_STORAGE_KEYS.triggeredEvents, [
+    ...triggered,
+    ...additions.map((reward) => reward.event.id),
+  ]);
   notifyEventSystemChanged();
-  return true;
+}
+
+export function completePendingReward(rewardId: string): void {
+  writeStoredValue(
+    EVENT_STORAGE_KEYS.pendingCardRewards,
+    getPendingCardRewards().filter((reward) => reward.rewardId !== rewardId),
+  );
+  notifyEventSystemChanged();
 }
 
 export function completePendingEvent(eventId: string): void {
-  saveQueue(getPendingEvents().filter((id) => id !== eventId));
-  notifyEventSystemChanged();
+  const reward = getPendingCardRewards().find((item) => item.event.id === eventId);
+  if (reward) completePendingReward(reward.rewardId);
+}
+
+export function triggerEvent(eventId: string): boolean {
+  void import("./gameEvents").then(({ emitGameEvent }) => (
+    emitGameEvent("debug_trigger", { eventId })
+  ));
+  return Boolean(eventId);
+}
+
+// Compatibility hook for the retired local rule evaluator. Reward decisions
+// now happen only in POST /api/game-events.
+export function evaluateEvents(): string[] {
+  return [];
 }
 
 export function clearEventRecords(): void {
   writeStoredValue(EVENT_STORAGE_KEYS.triggeredEvents, []);
-  saveQueue([]);
+  writeStoredValue(EVENT_STORAGE_KEYS.pendingEvents, []);
+  writeStoredValue(EVENT_STORAGE_KEYS.pendingCardRewards, []);
   notifyEventSystemChanged();
 }
 
 export function removeEventRuntimeState(eventId: string): void {
-  writeStoredValue(EVENT_STORAGE_KEYS.triggeredEvents, getTriggeredEvents().filter((id) => id !== eventId));
-  saveQueue(getPendingEvents().filter((id) => id !== eventId));
+  writeStoredValue(
+    EVENT_STORAGE_KEYS.triggeredEvents,
+    getTriggeredEvents().filter((id) => id !== eventId),
+  );
+  writeStoredValue(
+    EVENT_STORAGE_KEYS.pendingCardRewards,
+    getPendingCardRewards().filter((reward) => reward.event.id !== eventId),
+  );
   notifyEventSystemChanged();
 }
 
 export function initializeEventManager(): () => void {
-  if (typeof window === "undefined" || initialized) return () => undefined;
-  initialized = true;
-  const handler = () => evaluateEvents();
-  window.addEventListener(PLAYER_ACTION_RECORDED, handler);
-  evaluateEvents();
-  return () => {
-    window.removeEventListener(PLAYER_ACTION_RECORDED, handler);
-    initialized = false;
-  };
+  return () => undefined;
 }

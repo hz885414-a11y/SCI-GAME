@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Sliders } from "lucide-react";
 import { recordAction } from "../systems/playerStats";
+import { useGameConfig } from "../config/GameConfigContext";
+import { formatSupplyEffect, getSupplyCategory } from "../data/supplyShopConfig";
+import type { SupplyShopItem } from "../data/supplyShopConfig";
 
 interface SupplyDivisionProps {
   playSound: (soundName: string) => void;
@@ -8,6 +11,7 @@ interface SupplyDivisionProps {
   setCoins: React.Dispatch<React.SetStateAction<number>>;
   purchasedUpgrades: Record<string, number>;
   setPurchasedUpgrades: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  onVideoPlaybackChange: (isPlaying: boolean) => void;
 }
 
 export function SupplyDivision({ 
@@ -15,8 +19,10 @@ export function SupplyDivision({
   coins,
   setCoins,
   purchasedUpgrades,
-  setPurchasedUpgrades
+  setPurchasedUpgrades,
+  onVideoPlaybackChange
 }: SupplyDivisionProps) {
+  const { config } = useGameConfig();
   const [confirmItem, setConfirmItem] = useState<{
     id: string;
     name: string;
@@ -27,6 +33,12 @@ export function SupplyDivision({
   } | null>(null);
   const [recentlyUpgraded, setRecentlyUpgraded] = useState<string | null>(null);
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
+  const [pendingVideoRewards, setPendingVideoRewards] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("sci_pending_video_rewards") || "{}"); } catch { return {}; }
+  });
+  const [videoItem, setVideoItem] = useState<SupplyShopItem | null>(null);
+  const [watchedSeconds, setWatchedSeconds] = useState(0);
+  const [codeItem, setCodeItem] = useState<SupplyShopItem | null>(null);
 
   useEffect(() => {
     if (!recentlyUpgraded) return;
@@ -37,48 +49,21 @@ export function SupplyDivision({
     return () => window.clearTimeout(timer);
   }, [recentlyUpgraded]);
 
-  const upgradeItems = [
-    {
-      id: "start_battery",
-      code: "SCI-BATT-01",
-      name: "起點高能蓄電池",
-      icon: "🔋",
-      desc: "為特工初始機動工作燈注入超高容量。升級可提升關卡初始電量與總上限。",
-      effect: "初始與最大電量 +20 (最大 +100)",
-      baseCost: 80,
-      costMultiplier: 1.5,
-    },
-    {
-      id: "shield_boost",
-      code: "SCI-SHLD-02",
-      name: "SCI 複合裝甲盾",
-      icon: "🛡️",
-      desc: "強化小隊冒險用的複合防護裝備，提高面對陰影怪物時的容錯率。",
-      effect: "冒險初始生命值 +1",
-      baseCost: 100,
-      costMultiplier: 1.6,
-    },
-    {
-      id: "damage_boost",
-      code: "SCI-DMG-03",
-      name: "光子折射聚焦鏡",
-      icon: "🔥",
-      desc: "通過折射聚焦鏡片使光束能量翻倍，特工所有光能武器的燃燒與淨化傷害大幅提升。",
-      effect: "冒險光能武器淨化傷害 +15%",
-      baseCost: 120,
-      costMultiplier: 1.5,
-    },
-    {
-      id: "speed_boost",
-      code: "SCI-ENG-04",
-      name: "超導微型引擎",
-      icon: "⚡",
-      desc: "裝配高頻率磁懸浮微型發動引擎，使特工走位更加敏捷靈活，完美避開魔球。",
-      effect: "冒險小隊移動速度 +10%",
-      baseCost: 80,
-      costMultiplier: 1.4,
-    }
-  ];
+  useEffect(() => {
+    if (!videoItem) return;
+    setWatchedSeconds(0);
+    const required = Math.max(1, videoItem.requiredWatchSeconds || 30);
+    const timer = window.setInterval(() => setWatchedSeconds((seconds) => Math.min(required, seconds + 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [videoItem]);
+
+  useEffect(() => {
+    onVideoPlaybackChange(Boolean(videoItem));
+  }, [videoItem, onVideoPlaybackChange]);
+
+  useEffect(() => () => onVideoPlaybackChange(false), [onVideoPlaybackChange]);
+
+  const upgradeItems = config.supplyShopItems.filter((item) => item.enabled);
 
   const getUpgradeCost = (id: string, level: number) => {
     const item = upgradeItems.find(i => i.id === id);
@@ -87,9 +72,13 @@ export function SupplyDivision({
   };
 
   const handleBuyUpgradeClick = (id: string) => {
+    const item = upgradeItems.find(i => i.id === id);
+    if (!item) return;
+    if (pendingVideoRewards[id]) { setVideoItem(item); return; }
     const currentLvl = purchasedUpgrades[id] || 0;
-    const maxLvl = 5;
+    const maxLvl = item.maxLevel;
     if (currentLvl >= maxLvl) {
+      if ((item.productType || "ability") === "discountCode") setCodeItem(item);
       playSound("click");
       return;
     }
@@ -101,17 +90,32 @@ export function SupplyDivision({
     }
 
     playSound("click");
-    const item = upgradeItems.find(i => i.id === id);
-    if (item) {
-      setConfirmItem({
-        id: item.id,
-        name: item.name,
-        icon: item.icon,
-        code: item.code,
-        cost,
-        currentLvl
-      });
-    }
+    setConfirmItem({ id: item.id, name: item.name, icon: item.icon, code: item.code, cost, currentLvl });
+  };
+
+  const applyPurchasedLevel = (item: SupplyShopItem, targetLevel: number) => {
+    setPurchasedUpgrades((previous) => ({ ...previous, [item.id]: Math.max(previous[item.id] || 0, targetLevel) }));
+    setRecentlyUpgraded(item.id);
+    recordAction("purchaseHumanUpgrade");
+  };
+
+  const completeVideoReward = () => {
+    if (!videoItem) return;
+    const targetLevel = pendingVideoRewards[videoItem.id];
+    if (!targetLevel) return;
+    applyPurchasedLevel(videoItem, targetLevel);
+    const next = { ...pendingVideoRewards };
+    delete next[videoItem.id];
+    setPendingVideoRewards(next);
+    localStorage.setItem("sci_pending_video_rewards", JSON.stringify(next));
+    setUpgradeNotice(`${videoItem.icon} 影片觀看完成，能力已解鎖！`);
+    playSound("upgradeSuccess");
+    setVideoItem(null);
+  };
+
+  const toEmbedUrl = (url: string) => {
+    const youtubeMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]+)/);
+    return youtubeMatch ? `https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1` : url;
   };
 
   return (
@@ -129,7 +133,7 @@ export function SupplyDivision({
       <div className="w-full flex-1 min-h-0 overflow-y-auto pb-4 animate-fade-in flex flex-col space-y-3">
         
         {/* Header / Intro Card */}
-        <div className="bg-zinc-900/40 border border-zinc-850 px-3.5 py-2.5 rounded relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
+        <div className="bg-black border border-zinc-700 px-3.5 py-2.5 rounded relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.55)]">
           <div className="space-y-1">
             <h3 className="text-[18px] leading-tight font-bold text-white flex items-center gap-2">
               <Sliders className="w-[18px] h-[18px] text-amber-500" />
@@ -152,14 +156,17 @@ export function SupplyDivision({
 
         {/* Upgrades Items Catalog */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {upgradeItems.map((upgrade) => {
+          {upgradeItems.map((upgrade, displayIndex) => {
             const currentLvl = purchasedUpgrades[upgrade.id] || 0;
             const cost = getUpgradeCost(upgrade.id, currentLvl);
-            const isMax = currentLvl >= 5;
+            const isMax = currentLvl >= upgrade.maxLevel;
+            const category = getSupplyCategory(upgrade);
+            const showCategory = displayIndex === 0 || getSupplyCategory(upgradeItems[displayIndex - 1]) !== category;
 
             return (
+              <React.Fragment key={upgrade.id}>
+              {showCategory && <div className="sm:col-span-2 mt-1 flex items-center gap-3 border-b border-amber-500/25 pb-2"><span className="text-xs font-black tracking-widest text-amber-400">{category}</span><span className="h-px flex-1 bg-zinc-900" /></div>}
               <div 
-                key={upgrade.id}
                 className={`bg-zinc-950 border px-3.5 py-3 rounded flex flex-col justify-between gap-2 transition-all duration-300 relative group animate-fade-in ${
                   recentlyUpgraded === upgrade.id
                     ? "scale-[1.025] border-emerald-300 bg-emerald-950/35 shadow-[0_0_28px_rgba(52,211,153,0.45)]"
@@ -176,22 +183,22 @@ export function SupplyDivision({
                     <span className="text-xl p-1.5 bg-zinc-900 border border-zinc-850 rounded leading-none select-none">{upgrade.icon}</span>
                     <div>
                       <h4 className="text-[15px] font-bold text-white leading-tight">{upgrade.name}</h4>
-                      <span className="text-[11px] text-zinc-500 font-mono font-bold">LEVEL {currentLvl} / 5</span>
+                      <span className="text-[11px] text-zinc-500 font-mono font-bold">LEVEL {currentLvl} / {upgrade.maxLevel}</span>
                     </div>
                   </div>
 
                   <p className="text-[12px] text-zinc-400 font-sans leading-snug min-h-[32px]">
-                    {upgrade.desc}
+                    {upgrade.description}
                   </p>
 
                   {/* Attribute bar indicator */}
                   <div className="space-y-1">
                     <div className="text-[11px] text-zinc-500 flex justify-between gap-2 font-mono font-bold">
                       <span>設備加成效益:</span>
-                      <span className="text-amber-500">{upgrade.effect}</span>
+                      <span className="text-amber-500">{(upgrade.productType || "ability") === "discountCode" ? "購買後取得專屬優惠代碼" : (upgrade.productType === "videoReward" ? `觀看影片後｜${formatSupplyEffect(upgrade)}` : formatSupplyEffect(upgrade))}</span>
                     </div>
                     <div className="flex gap-1 h-1.5">
-                      {Array.from({ length: 5 }).map((_, idx) => (
+                      {Array.from({ length: upgrade.maxLevel }).map((_, idx) => (
                         <div 
                           key={idx}
                           className={`flex-1 rounded-sm border ${
@@ -206,7 +213,7 @@ export function SupplyDivision({
                 </div>
 
                 <button
-                  disabled={isMax}
+                  disabled={isMax && (upgrade.productType || "ability") !== "discountCode"}
                   onClick={() => handleBuyUpgradeClick(upgrade.id)}
                   className={`w-full py-2 border font-extrabold text-[12px] leading-tight tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer rounded ${
                     isMax 
@@ -216,8 +223,8 @@ export function SupplyDivision({
                         : "bg-zinc-950 hover:bg-zinc-900 border-zinc-850 text-zinc-400"
                   }`}
                 >
-                  {isMax ? (
-                    <span>⚔️ 已達最高強化 (MAX LEVEL)</span>
+                  {pendingVideoRewards[upgrade.id] ? <span>▶ 繼續觀看影片並解鎖</span> : isMax ? (
+                    <span>{upgrade.productType === "discountCode" ? "📋 查看並複製優惠代碼" : "⚔️ 已達最高強化 (MAX LEVEL)"}</span>
                   ) : (
                     <>
                       <span>🪙 採買升級 (-{cost} 金幣)</span>
@@ -225,6 +232,7 @@ export function SupplyDivision({
                   )}
                 </button>
               </div>
+              </React.Fragment>
             );
           })}
         </div>
@@ -274,20 +282,22 @@ export function SupplyDivision({
               </button>
               <button
                 onClick={() => {
-                  // Execute purchase!
+                  const purchasedItem = upgradeItems.find((item) => item.id === confirmItem.id);
+                  if (!purchasedItem) { setConfirmItem(null); return; }
                   setCoins(prev => prev - confirmItem.cost);
-                  setPurchasedUpgrades(prev => {
-                    const updated = {
-                      ...prev,
-                      [confirmItem.id]: confirmItem.currentLvl + 1
-                    };
-                    localStorage.setItem("light_crew_upgrades", JSON.stringify(updated));
-                    return updated;
-                  });
-                  setRecentlyUpgraded(confirmItem.id);
-                  recordAction("purchaseHumanUpgrade");
-                  setUpgradeNotice(`${confirmItem.icon} ${confirmItem.name} 升級成功！ LEVEL ${confirmItem.currentLvl + 1}`);
-                  playSound("upgradeSuccess");
+                  const targetLevel = confirmItem.currentLvl + 1;
+                  if (purchasedItem.productType === "videoReward") {
+                    const pending = { ...pendingVideoRewards, [purchasedItem.id]: targetLevel };
+                    setPendingVideoRewards(pending);
+                    localStorage.setItem("sci_pending_video_rewards", JSON.stringify(pending));
+                    setVideoItem(purchasedItem);
+                    setUpgradeNotice(`${confirmItem.icon} 已購買，觀看完成後才會獲得能力。`);
+                  } else {
+                    applyPurchasedLevel(purchasedItem, targetLevel);
+                    if (purchasedItem.productType === "discountCode") setCodeItem(purchasedItem);
+                    setUpgradeNotice(`${confirmItem.icon} ${confirmItem.name} 購買成功！`);
+                    playSound("upgradeSuccess");
+                  }
                   setConfirmItem(null);
                 }}
                 className="flex-1 py-2 text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 border border-amber-400 hover:text-black rounded transition active:scale-90 active:brightness-125 cursor-pointer"
@@ -308,6 +318,10 @@ export function SupplyDivision({
           ✓ {upgradeNotice}
         </div>
       )}
+
+      {videoItem && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-4"><div className="w-full max-w-3xl space-y-3 border border-cyan-500/50 bg-zinc-950 p-4"><div className="flex items-center justify-between"><div><b className="text-cyan-300">觀看影片解鎖｜{videoItem.name}</b><p className="text-xs text-zinc-400">觀看完成後才會套用能力。</p></div><button type="button" onClick={() => setVideoItem(null)} className="border border-zinc-700 px-3 py-2 text-xs">稍後再看</button></div><div className="aspect-video overflow-hidden bg-black">{videoItem.videoUrl && /\.(mp4|webm)(\?|$)/i.test(videoItem.videoUrl) ? <video src={videoItem.videoUrl} controls autoPlay className="h-full w-full" onEnded={completeVideoReward} /> : videoItem.videoUrl ? <iframe src={toEmbedUrl(videoItem.videoUrl)} title={videoItem.name} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen className="h-full w-full border-0" /> : <div className="grid h-full place-items-center text-zinc-500">尚未設定影片連結</div>}</div><div><div className="mb-1 flex justify-between text-xs"><span>觀看進度</span><span>{watchedSeconds} / {Math.max(1, videoItem.requiredWatchSeconds || 30)} 秒</span></div><div className="h-2 overflow-hidden bg-zinc-800"><div className="h-full bg-cyan-400 transition-all" style={{ width: `${Math.min(100, watchedSeconds / Math.max(1, videoItem.requiredWatchSeconds || 30) * 100)}%` }} /></div></div><button type="button" disabled={watchedSeconds < Math.max(1, videoItem.requiredWatchSeconds || 30)} onClick={completeVideoReward} className="w-full bg-cyan-400 py-3 font-black text-black disabled:bg-zinc-800 disabled:text-zinc-500">{watchedSeconds >= Math.max(1, videoItem.requiredWatchSeconds || 30) ? "領取能力" : "請看完影片"}</button></div></div>}
+
+      {codeItem && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-4"><div className="w-full max-w-md border border-amber-500/50 bg-zinc-950 p-6 text-center"><div className="text-4xl">🎟️</div><h3 className="mt-3 text-xl font-black text-white">{codeItem.name}</h3><p className="mt-2 text-sm text-zinc-400">請複製下方代碼，未來可在指定賣場使用。</p><div className="my-5 border-2 border-dashed border-amber-500 bg-amber-500/10 p-4 font-mono text-2xl font-black tracking-widest text-amber-300">{codeItem.discountCode || "尚未設定"}</div><div className="flex gap-2"><button type="button" onClick={() => setCodeItem(null)} className="flex-1 border border-zinc-700 py-3">關閉</button><button type="button" disabled={!codeItem.discountCode} onClick={async () => { await navigator.clipboard.writeText(codeItem.discountCode || ""); setUpgradeNotice("優惠代碼已複製！"); playSound("click"); }} className="flex-1 bg-amber-500 py-3 font-black text-black disabled:bg-zinc-800">複製代碼</button></div></div></div>}
 
     </div>
   );

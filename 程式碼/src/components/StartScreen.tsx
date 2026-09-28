@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
-import { playSound, startBackgroundMusic, stopBackgroundMusic } from "../utils/audio";
-import { CORE_ASSET_MANIFEST } from "../data/coreAssetManifest";
+import React, { useState, useEffect } from "react";
+import { playSound, startBackgroundMusic, stopBackgroundMusic, waitForBackgroundMusicReady } from "../utils/audio";
+import { BOOT_CRITICAL_ASSETS, DEFERRED_ASSET_MANIFEST } from "../data/coreAssetManifest";
 import { UI_IMAGE_ASSETS } from "../data/gameAssetUrls";
 import { preloadAssetManifest } from "../utils/preloadImages";
 import { 
@@ -35,7 +35,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 }) => {
   const [glitchTitle, setGlitchTitle] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState("");
 
   // Periodic random titles glitched state
   useEffect(() => {
@@ -81,16 +82,21 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     }
   };
 
-  const handleStartClick = (e: React.MouseEvent) => {
+  const handleStartClick = async (e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering container click again
+    if (isStarting) return;
     playSound("click");
-    startBackgroundMusic("normal");
+    setUserInteracted(true);
+    setIsStarting(true);
+    setStartError("");
+    const musicReady = await waitForBackgroundMusicReady("theme");
+    if (!musicReady) {
+      setStartError("主題曲載入失敗，請確認網路後再試一次");
+      setIsStarting(false);
+      return;
+    }
     onStart();
   };
-
-  const videoId = "E2BTGGxrOx8";
-  // Always initialize muted to ensure reliable browser autoplay
-  const iframeUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&playsinline=1&rel=0&showinfo=0&iv_load_policy=3&enablejsapi=1`;
 
   return (
     <div 
@@ -99,17 +105,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     >
       {/* Ambient Background Wrapper */}
       <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0 bg-zinc-950">
-        {/* YouTube Background Video */}
-        <iframe
-          ref={iframeRef}
-          src={iframeUrl}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[177.77vh] h-[56.25vw] min-w-full min-h-full pointer-events-none z-0 opacity-65 border-none"
-          allow="autoplay; encrypted-media"
-          title="Background Video"
-        />
-
         {/* Cinematic translucent dark gradient & scanline filter overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black/90 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(245,158,11,0.12),transparent_42%),linear-gradient(to_bottom,#09090b,#000)]" />
         
         {/* Subtle retro horizontal scanlines */}
         <div 
@@ -189,6 +186,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         <div className="pt-2">
           <button
             onClick={handleStartClick}
+            disabled={isStarting}
             className="group relative inline-flex items-center gap-3 px-8 py-3.5 bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs uppercase tracking-[0.25em] transition-all duration-300 rounded-none active:scale-95 cursor-pointer shadow-[0_0_30px_rgba(245,158,11,0.25)] overflow-hidden"
           >
             {/* Hover overlay sheen */}
@@ -196,11 +194,12 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             
             <Play className="w-4 h-4 text-black group-hover:scale-125 transition-transform duration-300" />
             <span className="flex flex-col sm:flex-row items-center sm:gap-1.5 text-center leading-tight">
-              <span>BOOT UP SYSTEM</span>
+              <span>{isStarting ? "LOADING THEME" : "BOOT UP SYSTEM"}</span>
               <span className="hidden sm:inline">//</span>
-              <span>啟動診斷系統</span>
+              <span>{isStarting ? "主題曲載入中…" : "啟動診斷系統"}</span>
             </span>
           </button>
+          {startError && <p className="mt-3 text-xs font-bold text-red-400">{startError}</p>}
         </div>
 
         {/* Friendly Interaction Hint */}
@@ -253,7 +252,11 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
     // Staggered log typewriter generator
     const logInterval = setInterval(() => {
       if (logIndex < diagnosticLogs.length) {
-        setLogs(prev => [...prev, diagnosticLogs[logIndex]]);
+        // Capture the entry before incrementing. React may evaluate a state
+        // updater after this interval callback has finished, so reading the
+        // mutable index inside the updater could append `undefined`.
+        const nextLog = diagnosticLogs[logIndex];
+        if (nextLog) setLogs(prev => [...prev, nextLog]);
         playSound("typewriter");
         logIndex++;
       } else {
@@ -262,7 +265,7 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
     }, 320);
 
     const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 1800));
-    const assetLoad = preloadAssetManifest(CORE_ASSET_MANIFEST, (status) => {
+    const assetLoad = preloadAssetManifest(BOOT_CRITICAL_ASSETS, (status) => {
       if (cancelled) return;
       setProgress(status.percent);
       setCurrentAsset(status.currentLabel);
@@ -273,6 +276,9 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
       if (cancelled) return;
       setProgress(100);
       setCurrentAsset(result.failed > 0 ? "部分遠端素材將於背景重試" : "核心素材載入完成");
+      // Start the rest in a small background queue. Prologue chapters 2 and 3
+      // are ordered first so they are normally ready before the player turns the page.
+      void preloadAssetManifest(DEFERRED_ASSET_MANIFEST, undefined, 10000, 3);
       window.setTimeout(() => {
         if (cancelled) return;
         playSound("success");
@@ -305,7 +311,7 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
 
       {/* Terminal Log Console */}
       <div className="flex-1 my-6 overflow-y-auto max-h-[60vh] bg-black/60 border border-zinc-900 p-4 space-y-1.5 scrollbar-thin text-[11px] md:text-xs">
-        {logs.map((log, index) => (
+        {logs.filter((log): log is string => typeof log === "string").map((log, index) => (
           <div key={index} className={`flex items-start gap-2 ${log.includes("ONLINE") || log.includes("[OK]") ? "text-emerald-400" : log.includes("READY") ? "text-amber-400 font-bold" : "text-zinc-400"}`}>
             <span className="text-zinc-600 select-none">[{index.toString().padStart(2, "0")}]</span>
             <p className="whitespace-pre-wrap">{log}</p>
@@ -347,8 +353,8 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
         </div>
 
         <div className="flex justify-between text-[9px] text-zinc-600">
-          <span>影像與碰撞遮罩會在進入基地前完成快取</span>
-          <span>{CORE_ASSET_MANIFEST.length} ASSETS</span>
+          <span>首要畫面完成後，其餘素材會在背景依序快取</span>
+          <span>{BOOT_CRITICAL_ASSETS.length} CRITICAL ASSETS</span>
         </div>
       </div>
     </div>

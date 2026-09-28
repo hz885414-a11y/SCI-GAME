@@ -5,6 +5,7 @@ import {
   readStoredValue,
   writeStoredValue,
 } from "./eventStorage";
+import { emitGameEvent, type GameEventType } from "./gameEvents";
 
 export const PLAYER_ACTIONS = [
   "startMission",
@@ -121,9 +122,25 @@ export function recordAction(action: PlayerAction, amount = 1): PlayerStats {
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(PLAYER_ACTION_RECORDED, { detail: { action, amount: safeAmount } }));
+    void emitGameEvent(getGameEventType(action), {
+      action,
+      amount: safeAmount,
+      total: next[action],
+      ...(action === "openShop" ? { area: "supply" } : {}),
+    });
   }
   notifyEventSystemChanged();
   return next;
+}
+
+function getGameEventType(action: PlayerAction): GameEventType {
+  if (action === "openShop") return "enter_area";
+  if (action === "collectCoin" || action === "collectBattery" || action === "collectMaterial") return "item_collected";
+  if (action === "bossDefeated" || action.endsWith("BossVictory")) return "boss_defeated";
+  if (action.endsWith("BossFailure")) return "boss_failed";
+  if (action === "stagesCleared") return "mission_completed";
+  if (action === "gameOver") return "mission_failed";
+  return "player_action";
 }
 
 const ENEMY_DEFEAT_ACTIONS = {

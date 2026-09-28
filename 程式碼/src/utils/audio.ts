@@ -197,9 +197,13 @@ export function playSound(type: string) {
         break;
       }
 
-      case "typewriter": {
-        // Very soft white-noise like tick
-        const bufferSize = ctx.sampleRate * 0.02; // 20ms
+      case "typewriter":
+      case "prologueTypewriter": {
+        const isPrologueTyping = type === "prologueTypewriter";
+        // Prologue narration needs a more audible mechanical key tick because
+        // it plays underneath the theme song. Regular UI typing stays subtle.
+        const duration = isPrologueTyping ? 0.032 : 0.02;
+        const bufferSize = ctx.sampleRate * duration;
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
@@ -211,19 +215,19 @@ export function playSound(type: string) {
 
         const filter = ctx.createBiquadFilter();
         filter.type = "bandpass";
-        filter.frequency.setValueAtTime(1000, now);
-        filter.Q.setValueAtTime(5, now);
+        filter.frequency.setValueAtTime(isPrologueTyping ? 1650 : 1000, now);
+        filter.Q.setValueAtTime(isPrologueTyping ? 3.5 : 5, now);
 
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.02, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+        gain.gain.setValueAtTime(isPrologueTyping ? 1 : 0.02, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
         noise.connect(filter);
         filter.connect(gain);
         gain.connect(ctx.destination);
 
         noise.start(now);
-        noise.stop(now + 0.02);
+        noise.stop(now + duration);
         break;
       }
 
@@ -548,11 +552,7 @@ export function startBackgroundMusic(track: MusicTrack = requestedMusicTrack) {
     bgmAudio.preload = "auto";
     bgmAudio.volume = 0;
     bgmAudio.onerror = () => {
-      if (requestedMusicTrack !== "normal") {
-        console.warn("Theme music failed to load; returning to the normal music fallback.");
-        currentMusicTrack = null;
-        startBackgroundMusic("normal");
-      }
+      console.warn(`Background music failed to load: ${requestedMusicTrack}`);
     };
   }
 
@@ -587,6 +587,45 @@ export function startBackgroundMusic(track: MusicTrack = requestedMusicTrack) {
   } else {
     switchTrack();
   }
+}
+
+/**
+ * Starts a track during the current user gesture and waits until the browser
+ * reports that it can play through. The entry screen uses this before moving
+ * to the boot phase so the theme does not change or begin late.
+ */
+export function waitForBackgroundMusicReady(track: MusicTrack, timeoutMs = 15000): Promise<boolean> {
+  if (isBgmMuted) return Promise.resolve(true);
+  startBackgroundMusic(track);
+
+  return new Promise((resolve) => {
+    const audio = bgmAudio;
+    if (!audio) {
+      resolve(false);
+      return;
+    }
+
+    if (currentMusicTrack === track && audio.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+      resolve(true);
+      return;
+    }
+
+    let settled = false;
+    const finish = (ready: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      audio.removeEventListener("canplaythrough", handleReady);
+      audio.removeEventListener("error", handleError);
+      resolve(ready);
+    };
+    const handleReady = () => finish(currentMusicTrack === track);
+    const handleError = () => finish(false);
+    const timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+
+    audio.addEventListener("canplaythrough", handleReady);
+    audio.addEventListener("error", handleError);
+  });
 }
 
 export function stopBackgroundMusic() {

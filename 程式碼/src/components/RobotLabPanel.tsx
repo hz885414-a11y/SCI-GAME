@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Activity, Crosshair, Cpu, Gauge, Shield, Sparkles, Wrench } from "lucide-react";
+import { Activity, ChevronDown, Crosshair, Gauge, Shield, Sparkles } from "lucide-react";
 import {
   MATERIAL_CONFIG,
   MATERIAL_IDS,
@@ -42,9 +42,8 @@ const UPGRADE_CATEGORIES: Array<{
 
 export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound }: RobotLabPanelProps) {
   const [activeCategory, setActiveCategory] = useState<UpgradeCategory>("attack");
+  const [isMaterialPanelOpen, setIsMaterialPanelOpen] = useState(false);
   const category = UPGRADE_CATEGORIES.find((item) => item.id === activeCategory) ?? UPGRADE_CATEGORIES[0];
-  const installedLevels = Object.values(upgrades).reduce((total, level) => total + level, 0);
-  const totalLevels = Object.keys(upgrades).length * MAX_LEVEL;
 
   const upgrade = (id: RobotUpgradeId) => {
     const currentLevel = upgrades[id] || 0;
@@ -69,52 +68,59 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
 
   return (
     <section className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden border border-zinc-700 bg-[#070b0e]/95 font-sans shadow-[0_0_50px_rgba(0,0,0,0.75)]">
-      <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-zinc-700 bg-gradient-to-r from-[#111820] via-[#080d11] to-[#111820] px-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center border border-red-500/50 bg-red-950/30 text-red-400 shadow-[inset_0_0_15px_rgba(239,68,68,0.15)]">
-            <Wrench className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-base font-black tracking-wider text-zinc-100 sm:text-xl">機器人改裝中心</p>
-            <p className="hidden text-[9px] font-bold tracking-[0.24em] text-zinc-500 sm:block">TECHNOLOGY R&amp;D DIVISION // MODIFICATION DECK</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-6">
-          <div className="hidden min-w-32 sm:block">
-            <div className="mb-1 flex justify-between text-[9px] font-mono text-zinc-500">
-              <span>改裝完成度</span><span>{installedLevels}/{totalLevels}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden bg-zinc-800">
-              <div className="h-full bg-gradient-to-r from-red-600 to-orange-400 transition-all" style={{ width: `${(installedLevels / totalLevels) * 100}%` }} />
-            </div>
-          </div>
-        </div>
-      </header>
-
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[250px_minmax(320px,1fr)_470px] xl:overflow-hidden">
-        <aside className="border-b border-zinc-700 bg-[#0a0f13]/95 p-3 xl:overflow-y-auto xl:border-b-0 xl:border-r">
-          <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <h3 className="text-sm font-black tracking-widest text-zinc-200">改裝素材庫</h3>
-            <span className="h-1.5 w-1.5 animate-pulse bg-red-500" />
+        <aside className="order-2 border-b border-zinc-700 bg-[#0a0f13]/95 p-3 xl:order-1 xl:overflow-y-auto xl:border-b-0 xl:border-r">
+          <button
+            type="button"
+            onClick={() => { setIsMaterialPanelOpen((open) => !open); playSound("click"); }}
+            className="flex min-h-12 w-full items-center justify-between bg-zinc-950 px-3 text-left xl:hidden"
+            aria-expanded={isMaterialPanelOpen}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex shrink-0 -space-x-1">
+                {MATERIAL_IDS.slice(0, 4).map((id) => (
+                  <span key={id} className="grid h-7 w-7 place-items-center border border-zinc-700 bg-black text-sm" style={{ color: MATERIAL_CONFIG[id].color }}>
+                    {MATERIAL_CONFIG[id].icon}
+                  </span>
+                ))}
+              </span>
+              <span>
+                <b className="block text-xs tracking-wider text-zinc-200">改裝素材庫</b>
+                <small className="block text-[9px] text-zinc-500">點擊查看完整素材與缺少項目</small>
+              </span>
+            </span>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-red-400 transition-transform ${isMaterialPanelOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          <div className={`${isMaterialPanelOpen ? "mt-3 block" : "hidden"} xl:mt-0 xl:block`}>
+            <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
+              <h3 className="text-sm font-black tracking-widest text-zinc-200">改裝素材庫</h3>
+              <span className="h-1.5 w-1.5 animate-pulse bg-red-500" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-1">
+              {MATERIAL_IDS.map((id) => (
+                <div key={id} className="group flex min-h-12 items-center gap-2 border border-zinc-800 bg-gradient-to-r from-zinc-900/90 to-zinc-950 px-2.5 transition-colors hover:border-zinc-600">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center border border-zinc-700 bg-black/50 text-base" style={{ color: MATERIAL_CONFIG[id].color }}>
+                    {MATERIAL_CONFIG[id].icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11px] font-bold text-zinc-300">{MATERIAL_CONFIG[id].name}</span>
+                    <span className={`block text-[8px] font-bold ${materials[id] > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {materials[id] > 0 ? `持有 ${materials[id]}` : "目前缺少"}
+                    </span>
+                  </span>
+                  <b className="font-mono text-sm text-white">{materials[id]}</b>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 border-t border-zinc-800 pt-3 text-[9px] leading-relaxed text-zinc-600">
+              素材可透過任務與探索取得。升級會立即套用至 C2-932，並保留於下一次 Boss 戰。
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-1">
-            {MATERIAL_IDS.map((id) => (
-              <div key={id} className="group flex min-h-12 items-center gap-2 border border-zinc-800 bg-gradient-to-r from-zinc-900/90 to-zinc-950 px-2.5 transition-colors hover:border-zinc-600">
-                <span className="grid h-7 w-7 shrink-0 place-items-center border border-zinc-700 bg-black/50 text-base" style={{ color: MATERIAL_CONFIG[id].color }}>
-                  {MATERIAL_CONFIG[id].icon}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[11px] font-bold text-zinc-300">{MATERIAL_CONFIG[id].name}</span>
-                <b className="font-mono text-sm text-white">{materials[id]}</b>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 border-t border-zinc-800 pt-3 text-[9px] leading-relaxed text-zinc-600">
-            素材可透過任務與探索取得。升級會立即套用至 C2-932，並保留於下一次 Boss 戰。
-          </p>
         </aside>
 
         <div
-          className="relative flex min-h-[380px] flex-col overflow-hidden border-b border-zinc-700 bg-cover bg-center bg-no-repeat xl:min-h-0 xl:border-b-0 xl:border-r"
+          className="relative order-1 flex min-h-[480px] flex-col overflow-hidden border-b border-zinc-700 bg-cover bg-center bg-no-repeat xl:order-2 xl:min-h-0 xl:border-b-0 xl:border-r"
           style={{ backgroundImage: `url(${BACKGROUND_ASSETS.tech})` }}
         >
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/5 to-black/20" />
@@ -134,7 +140,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
                 <img
                   src={ROBOT_CONFIG.c2_932.portrait}
                   alt="C2-932 戰鬥機器人"
-                  className="h-full w-full translate-y-[8%] object-contain [image-rendering:pixelated] drop-shadow-[0_16px_25px_rgba(0,0,0,0.9)] xl:translate-y-[2%]"
+                  className="h-full w-full origin-bottom translate-y-[4%] scale-[1.2] object-contain [image-rendering:pixelated] drop-shadow-[0_20px_28px_rgba(0,0,0,0.95)] min-[520px]:translate-y-[3%] min-[520px]:scale-[0.88] xl:translate-y-[2%] xl:scale-100"
                 />
               </div>
               <div className="pointer-events-none absolute left-[34%] top-[29%] z-20" aria-hidden="true">
@@ -146,13 +152,9 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
             </div>
           </div>
 
-          <div className="relative z-10 mx-4 mb-3 border border-zinc-700 bg-black/70 px-4 py-2 text-center">
-            <p className="text-lg font-black tracking-[0.16em] text-zinc-200">勇敢的燈燈機器人</p>
-            <p className="text-[9px] tracking-widest text-red-500">LIGHT COMBAT FRAME // READY</p>
-          </div>
         </div>
 
-        <aside className="flex min-h-[440px] flex-col bg-[#0a0f13]/95 xl:min-h-0">
+        <aside className="order-3 flex min-h-[440px] flex-col bg-[#0a0f13]/95 xl:min-h-0">
           <div className="grid shrink-0 grid-cols-4 border-b border-zinc-700 bg-black/40">
             {UPGRADE_CATEGORIES.map((item) => {
               const Icon = item.icon;
@@ -162,21 +164,15 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
                   key={item.id}
                   type="button"
                   onClick={() => { setActiveCategory(item.id); playSound("click"); }}
+                  aria-label={item.name}
+                  title={item.name}
                   className={`flex min-h-16 flex-col items-center justify-center gap-1 border-r border-zinc-800 text-[11px] font-black transition-all last:border-r-0 ${active ? "bg-red-950/60 text-red-300 shadow-[inset_0_-3px_0_#ef4444]" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"}`}
                 >
                   <Icon className={`h-5 w-5 ${active ? "text-red-400" : "text-zinc-600"}`} />
-                  {item.shortName}
+                  <span className="hidden sm:inline">{item.shortName}</span>
                 </button>
               );
             })}
-          </div>
-
-          <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-            <div>
-              <p className="text-base font-black tracking-widest text-zinc-200">{category.name}</p>
-              <p className="text-[9px] tracking-wider text-zinc-600">SELECT MODULE TO UPGRADE</p>
-            </div>
-            <Cpu className="h-5 w-5 text-red-500/70" />
           </div>
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">

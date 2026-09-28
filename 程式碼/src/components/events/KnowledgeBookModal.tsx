@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, ChevronLeft, ChevronRight, LockKeyhole, X, ZoomIn } from "lucide-react";
 import { getAllCardDefinitions, type KnowledgeCardDefinition } from "../../data/cardDatabase";
+import { CardFlip } from "../cards/CardFlip";
 
 interface KnowledgeBookModalProps {
   isOpen: boolean;
@@ -115,18 +116,24 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
 
       {selectedCard && ownedCards.includes(selectedCard.id) && (
         <div className="absolute inset-0 z-20 grid place-items-center bg-black/75 p-4" onClick={() => setSelectedCard(null)}>
-          <article className="knowledge-card-reveal relative w-full max-w-md border border-amber-500/70 bg-gradient-to-br from-[#f4e8c9] via-[#e9d5a8] to-[#cda66c] p-5 text-stone-900 shadow-[0_0_70px_rgba(245,158,11,.25)] sm:p-7" onClick={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setSelectedCard(null)} className="absolute right-3 top-3 z-10 border border-stone-700/30 bg-stone-950/10 p-1.5 hover:bg-stone-950/20" aria-label="關閉卡片內容"><X className="h-4 w-4" /></button>
-            <div className="relative mb-5 grid h-52 place-items-center overflow-hidden border-4 border-double border-amber-900/45 bg-stone-950 text-7xl">
-              <span>{selectedCard.icon}</span>
-              {selectedCard.image && <img src={selectedCard.image} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} className="absolute inset-0 h-full w-full object-cover" />}
-            </div>
-            <p className="font-mono text-[9px] font-bold uppercase tracking-[0.24em] text-amber-900/70">{selectedCard.category} // KNOWLEDGE CARD</p>
-            <h3 className="mt-1 text-2xl font-black tracking-wider">{selectedCard.title}</h3>
-            <p className="mt-4 border-y border-amber-900/25 py-4 text-sm font-bold leading-relaxed">{selectedCard.description}</p>
-            <p className="mt-4 text-sm leading-relaxed text-stone-700">{selectedCard.industryNote}</p>
-            {selectedCard.bossEffect && <p className="mt-4 border border-rose-900/35 bg-rose-950/10 p-3 text-sm font-black leading-relaxed text-rose-900">⚔ 知識應用：{selectedCard.bossEffect.label}</p>}
-          </article>
+          <div className="relative flex w-full max-w-md flex-col items-center gap-3" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setSelectedCard(null)} className="absolute right-0 top-0 z-10 grid h-8 w-8 place-items-center border border-red-500/60 bg-black/75 text-zinc-200 hover:bg-red-950" aria-label="關閉卡片內容"><X className="h-4 w-4" /></button>
+            <CardFlip
+              data={{
+                eventTitle: "已收藏的產業知識",
+                eventContent: selectedCard.description,
+                cardTitle: selectedCard.title,
+                category: selectedCard.category.toUpperCase(),
+                description: selectedCard.industryNote,
+                extraText: selectedCard.bossEffect ? `知識應用：${selectedCard.bossEffect.label}` : "已收錄至燈燈小隊知識卡圖鑑。",
+                cardId: selectedCard.id,
+                imageUrl: selectedCard.image,
+              }}
+              resetKey={`knowledge-book-${selectedCard.id}`}
+              initialFlipped
+            />
+            <p className="font-mono text-[10px] tracking-[0.16em] text-zinc-400">CARD DATA ARCHIVED</p>
+          </div>
         </div>
       )}
     </div>

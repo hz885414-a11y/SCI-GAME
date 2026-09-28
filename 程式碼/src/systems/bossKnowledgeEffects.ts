@@ -1,6 +1,8 @@
 import { getAllCardDefinitions } from "../data/cardDatabase";
 import { getBossBehaviorProfile, type BossBehaviorProfile } from "../data/bossBehaviorConfig";
 import { getOwnedCards } from "./playerCollection";
+import { getRuntimeConfig } from "../config/runtimeStore";
+import { BOSS_ADMIN_DEFAULTS } from "../data/bossAdminConfig";
 
 export interface ActiveBossKnowledgeModifiers {
   bossHpMultiplier: number;
@@ -31,7 +33,8 @@ export function getBossKnowledgeModifiers(chapter: number): ActiveBossKnowledgeM
 }
 
 export function getEffectiveBossBehaviorProfile(chapter: number): BossBehaviorProfile {
-  const base = getBossBehaviorProfile(chapter);
+  const runtimeBoss = (getRuntimeConfig()?.bosses || BOSS_ADMIN_DEFAULTS).find((boss) => boss.chapter === chapter);
+  const base = runtimeBoss?.behavior || getBossBehaviorProfile(chapter);
   const modifiers = getBossKnowledgeModifiers(chapter);
   return {
     ...base,
@@ -39,4 +42,8 @@ export function getEffectiveBossBehaviorProfile(chapter: number): BossBehaviorPr
     dashSpeed: base.dashSpeed * modifiers.dashSpeedMultiplier,
     attackInterval: Math.round(base.attackInterval * modifiers.attackIntervalMultiplier),
   };
+}
+
+export function getEffectiveBossDefinition(chapter: number) {
+  return (getRuntimeConfig()?.bosses || BOSS_ADMIN_DEFAULTS).find((boss) => boss.chapter === chapter) || BOSS_ADMIN_DEFAULTS[0];
 }

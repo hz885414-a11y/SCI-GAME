@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { getEventDefinition } from "../data/eventConfig";
 import { getOwnedCards } from "./playerCollection";
-import { getPendingEvents, getTriggeredEvents, initializeEventManager } from "./eventManager";
+import { getPendingCardRewards, getTriggeredEvents, initializeEventManager } from "./eventManager";
 import { EVENT_SYSTEM_CHANGED } from "./eventStorage";
 import { getPlayerStats } from "./playerStats";
 
 export function getEventSystemSnapshot() {
-  const pendingEventIds = getPendingEvents();
+  const pendingRewards = getPendingCardRewards();
   return {
     stats: getPlayerStats(),
     triggeredEvents: getTriggeredEvents(),
-    pendingEventIds,
-    pendingEvent: pendingEventIds.length > 0 ? getEventDefinition(pendingEventIds[0]) : undefined,
+    pendingEventIds: pendingRewards.map((reward) => reward.event.id),
+    pendingReward: pendingRewards[0],
+    pendingEvent: pendingRewards[0]?.event,
     ownedCards: getOwnedCards(),
   };
 }
@@ -23,9 +23,11 @@ export function useEventSystem() {
   useEffect(() => {
     const disposeManager = initializeEventManager();
     window.addEventListener(EVENT_SYSTEM_CHANGED, refresh);
+    window.addEventListener("game-config-updated", refresh);
     refresh();
     return () => {
       window.removeEventListener(EVENT_SYSTEM_CHANGED, refresh);
+      window.removeEventListener("game-config-updated", refresh);
       disposeManager();
     };
   }, [refresh]);
