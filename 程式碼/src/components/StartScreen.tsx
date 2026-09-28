@@ -264,7 +264,10 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
       }
     }, 320);
 
-    const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 1800));
+    // The diagnostic sequence contains 12 entries at 320 ms each. Keep the
+    // boot screen alive long enough for every entry to appear, even when all
+    // images are already cached and finish loading immediately.
+    const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 4200));
     const assetLoad = preloadAssetManifest(BOOT_CRITICAL_ASSETS, (status) => {
       if (cancelled) return;
       setProgress(status.percent);
