@@ -1531,7 +1531,10 @@ export function MissionGame({
     triggerSound("bossImpact");
   };
 
-  // Main game loop (delta physics and rendering)
+  // Main game loop. Gameplay is simulated at a fixed 60 Hz so all of the
+  // existing per-frame tuning keeps exactly the same feel it had at 60 FPS.
+  // requestAnimationFrame is only the display clock: slower displays can run
+  // multiple simulation steps, while faster displays may reuse the last frame.
   useEffect(() => {
     if (stage !== "PLAYING" && stage !== "BOSSBATTLE") return;
     if (showUpgradeChoice) return; // Pause game during level-up popup
@@ -1542,6 +1545,11 @@ export function MissionGame({
     if (!ctx) return;
 
     let animId: number;
+    const FIXED_STEP_SECONDS = 1 / 60;
+    const MAX_DELTA_SECONDS = 0.05;
+    const MAX_STEPS_PER_FRAME = 3;
+    let lastTimestamp: number | null = null;
+    let accumulatedSeconds = FIXED_STEP_SECONDS;
     const activeChapter = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
     const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
 
@@ -1558,7 +1566,7 @@ export function MissionGame({
       }
     };
 
-    const gameLoop = () => {
+    const simulateAndRender = (shouldRender: boolean) => {
       const state = engineRef.current as any;
       const player = state.player;
       
@@ -4234,6 +4242,7 @@ export function MissionGame({
       // ==========================================
       // 10. RENDERING TO CANVAS
       // ==========================================
+      if (shouldRender) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // A. Draw Background Terrain / Grid
@@ -4925,6 +4934,7 @@ export function MissionGame({
         ctx.restore();
         ctx.restore();
       }
+      }
 
       // F. Draw Player Character / Assembled Robot Mecha
       ctx.save();
@@ -5445,8 +5455,9 @@ export function MissionGame({
         ctx.restore();
       }
 
-      // Sync Score and Session Coins to React State at a controlled rate (throttled to avoid 60fps re-renders)
-      if (state.ticks % 10 === 0) {
+      // Sync HUD values at most once per 100 ms of simulated time. Gameplay
+      // remains in refs and never waits for React rendering.
+      if (state.ticks % 6 === 0) {
         if (state.lastScoreSynced !== state.score) {
           state.lastScoreSynced = state.score;
           setScore(state.score);
@@ -5457,11 +5468,47 @@ export function MissionGame({
         }
       }
 
+    };
+
+    const gameLoop = (timestamp: number) => {
+      if (lastTimestamp === null) lastTimestamp = timestamp;
+      const deltaSeconds = Math.min(
+        Math.max(0, (timestamp - lastTimestamp) / 1000),
+        MAX_DELTA_SECONDS,
+      );
+      lastTimestamp = timestamp;
+      accumulatedSeconds += deltaSeconds;
+
+      const stepsToRun = Math.min(
+        Math.floor(accumulatedSeconds / FIXED_STEP_SECONDS),
+        MAX_STEPS_PER_FRAME,
+      );
+      let completedSteps = 0;
+      while (completedSteps < stepsToRun) {
+        simulateAndRender(completedSteps === stepsToRun - 1);
+        accumulatedSeconds -= FIXED_STEP_SECONDS;
+        completedSteps++;
+      }
+
+      // Discard only an impossible backlog (for example after a suspended tab)
+      // instead of letting the game fast-forward for several seconds at once.
+      if (completedSteps === MAX_STEPS_PER_FRAME && accumulatedSeconds >= FIXED_STEP_SECONDS) {
+        accumulatedSeconds %= FIXED_STEP_SECONDS;
+      }
+
       animId = requestAnimationFrame(gameLoop);
     };
 
+    const resetFrameClock = () => {
+      lastTimestamp = null;
+      accumulatedSeconds = Math.min(accumulatedSeconds, FIXED_STEP_SECONDS);
+    };
+    document.addEventListener("visibilitychange", resetFrameClock);
     animId = requestAnimationFrame(gameLoop);
-    return () => cancelAnimationFrame(animId);
+    return () => {
+      document.removeEventListener("visibilitychange", resetFrameClock);
+      cancelAnimationFrame(animId);
+    };
   }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused]);
 
   // Handle Level-up/Success actions
