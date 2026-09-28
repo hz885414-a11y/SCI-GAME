@@ -32,6 +32,11 @@ jobs:
 
       - name: Build static game
         working-directory: 程式碼
+        env:
+          # The Realtime Database URL is a public client-side endpoint, not a
+          # credential. Firebase Database Rules remain the access boundary.
+          VITE_FIREBASE_DATABASE_URL: https://deng-deng-squad-default-rtdb.asia-southeast1.firebasedatabase.app
+          VITE_FIREBASE_CONFIG_PATH: gameConfig/v1
         run: npm run build
 
       - name: Configure GitHub Pages
