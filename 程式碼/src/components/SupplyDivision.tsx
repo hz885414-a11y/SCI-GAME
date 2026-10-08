@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Sliders } from "lucide-react";
+import { ChevronDown, ChevronRight, Sliders } from "lucide-react";
 import { recordAction } from "../systems/playerStats";
 import { useGameConfig } from "../config/GameConfigContext";
 import { formatSupplyEffect, getSupplyCategory } from "../data/supplyShopConfig";
@@ -39,6 +39,7 @@ export function SupplyDivision({
   const [videoItem, setVideoItem] = useState<SupplyShopItem | null>(null);
   const [watchedSeconds, setWatchedSeconds] = useState(0);
   const [codeItem, setCodeItem] = useState<SupplyShopItem | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!recentlyUpgraded) return;
@@ -64,6 +65,18 @@ export function SupplyDivision({
   useEffect(() => () => onVideoPlaybackChange(false), [onVideoPlaybackChange]);
 
   const upgradeItems = config.supplyShopItems.filter((item) => item.enabled);
+  const categoryOrder = ["影片任務", "能力強化", "優惠與兌換"];
+  const groupedUpgradeItems = categoryOrder
+    .map((category) => ({
+      category,
+      items: upgradeItems.filter((item) => getSupplyCategory(item) === category),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const toggleCategory = (category: string) => {
+    playSound("click");
+    setCollapsedCategories((previous) => ({ ...previous, [category]: !previous[category] }));
+  };
 
   const getUpgradeCost = (id: string, level: number) => {
     const item = upgradeItems.find(i => i.id === id);
@@ -134,14 +147,11 @@ export function SupplyDivision({
         
         {/* Header / Intro Card */}
         <div className="bg-black border border-zinc-700 px-3.5 py-2.5 rounded relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.55)]">
-          <div className="space-y-1">
+          <div>
             <h3 className="text-[18px] leading-tight font-bold text-white flex items-center gap-2">
               <Sliders className="w-[18px] h-[18px] text-amber-500" />
               <span>特工機甲戰備物資強化</span>
             </h3>
-            <p className="text-[13px] text-zinc-400 font-sans leading-snug">
-              消耗收集的 <b>金幣 🪙</b> 升級特工核心硬體。升級項目將直接在「任務遊戲」中生效，幫助小隊突破更深層的黑暗戰區！
-            </p>
           </div>
 
           {/* Coins Balance Indicator */}
@@ -154,19 +164,33 @@ export function SupplyDivision({
           </div>
         </div>
 
-        {/* Upgrades Items Catalog */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {upgradeItems.map((upgrade, displayIndex) => {
+        {/* Categorized, collapsible items catalog */}
+        <div className="space-y-3">
+          {groupedUpgradeItems.map(({ category, items }) => {
+            const isCollapsed = Boolean(collapsedCategories[category]);
+            return (
+              <section key={category} className="border border-zinc-800/80 bg-black/55">
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category)}
+                  aria-expanded={!isCollapsed}
+                  className="flex w-full items-center gap-2.5 border-b border-amber-500/25 bg-zinc-950/90 px-3.5 py-2.5 text-left transition hover:bg-zinc-900"
+                >
+                  {isCollapsed ? <ChevronRight className="h-4 w-4 text-amber-400" /> : <ChevronDown className="h-4 w-4 text-amber-400" />}
+                  <span className="text-xs font-black tracking-widest text-amber-400">{category}</span>
+                  <span className="ml-auto rounded border border-zinc-800 bg-black px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">{items.length}</span>
+                </button>
+
+                {!isCollapsed && (
+                  <div className="grid grid-cols-1 gap-2.5 p-2.5 sm:grid-cols-2">
+          {items.map((upgrade) => {
             const currentLvl = purchasedUpgrades[upgrade.id] || 0;
             const cost = getUpgradeCost(upgrade.id, currentLvl);
             const isMax = currentLvl >= upgrade.maxLevel;
-            const category = getSupplyCategory(upgrade);
-            const showCategory = displayIndex === 0 || getSupplyCategory(upgradeItems[displayIndex - 1]) !== category;
 
             return (
-              <React.Fragment key={upgrade.id}>
-              {showCategory && <div className="sm:col-span-2 mt-1 flex items-center gap-3 border-b border-amber-500/25 pb-2"><span className="text-xs font-black tracking-widest text-amber-400">{category}</span><span className="h-px flex-1 bg-zinc-900" /></div>}
               <div 
+                key={upgrade.id}
                 className={`bg-zinc-950 border px-3.5 py-3 rounded flex flex-col justify-between gap-2 transition-all duration-300 relative group animate-fade-in ${
                   recentlyUpgraded === upgrade.id
                     ? "scale-[1.025] border-emerald-300 bg-emerald-950/35 shadow-[0_0_28px_rgba(52,211,153,0.45)]"
@@ -232,7 +256,11 @@ export function SupplyDivision({
                   )}
                 </button>
               </div>
-              </React.Fragment>
+            );
+          })}
+                  </div>
+                )}
+              </section>
             );
           })}
         </div>

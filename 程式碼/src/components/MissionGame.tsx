@@ -414,6 +414,7 @@ export function MissionGame({
   const [missionMapReady, setMissionMapReady] = useState(false);
 
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
+  const playerWalkFrameRefs = useRef<HTMLImageElement[]>([]);
   const [spriteLoaded, setSpriteLoaded] = useState<boolean>(false);
   const playerFacingLeftRef = useRef<boolean>(false);
   const enemySpriteImagesRef = useRef<Partial<Record<EnemyType, HTMLImageElement>>>({});
@@ -758,20 +759,43 @@ export function MissionGame({
   }, []);
 
   useEffect(() => {
-    const spriteUrl = walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"]?.src;
-    if (!spriteUrl) return;
+    const sprite = walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"];
+    if (!sprite?.src) return;
+    let cancelled = false;
+    const loadImages = (urls: readonly string[]) => Promise.all(urls.map((url) => new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Unable to load player sprite: ${url}`));
+      image.src = url;
+    })));
 
     setSpriteLoaded(false);
-    const img = new Image();
-    img.src = spriteUrl;
-    img.onload = () => {
-      playerSpriteImgRef.current = img;
-      setSpriteLoaded(true);
-    };
-    img.onerror = () => {
-      playerSpriteImgRef.current = null;
-      setSpriteLoaded(false);
-    };
+    playerSpriteImgRef.current = null;
+    playerWalkFrameRefs.current = [];
+    const frameUrls = "individualFrames" in sprite ? sprite.individualFrames : undefined;
+    const preferredUrls = frameUrls?.length ? frameUrls : [sprite.src];
+    void loadImages(preferredUrls)
+      .then((images) => {
+        if (cancelled) return;
+        playerSpriteImgRef.current = images[0] || null;
+        playerWalkFrameRefs.current = frameUrls?.length ? images : [];
+        setSpriteLoaded(images.length > 0);
+      })
+      // Keep the legacy sprite sheet as a visual fallback if an authored
+      // remote frame is briefly unavailable.
+      .catch(() => loadImages([sprite.src]).then((images) => {
+        if (cancelled) return;
+        playerSpriteImgRef.current = images[0] || null;
+        playerWalkFrameRefs.current = [];
+        setSpriteLoaded(images.length > 0);
+      }).catch(() => {
+        if (cancelled) return;
+        playerSpriteImgRef.current = null;
+        playerWalkFrameRefs.current = [];
+        setSpriteLoaded(false);
+      }));
+
+    return () => { cancelled = true; };
   }, [selectedAgent.id]);
 
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1024);
@@ -820,7 +844,7 @@ export function MissionGame({
     enemies: [] as EnemyEntity[],
     enemyDeathEffects: [] as EnemyDeathEffect[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
-    particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string }>,
+    particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
     lightZones: [] as Array<{ x: number; y: number; radius: number; damage: number; duration: number; maxDuration: number; highMode: boolean }>,
     bombingZones: [] as BombingZone[],
@@ -1566,6 +1590,30 @@ export function MissionGame({
       }
     };
 
+    // Damage labels are a visual-only effect. Keep them throttled per target
+    // so continuous beams/zones remain readable instead of filling the screen.
+    const spawnDamageNumber = (st: any, target: { x: number; y: number; radius?: number; lastDamageNumberTick?: number }, damage: number) => {
+      if (damage <= 0) return;
+      const lastTick = target.lastDamageNumberTick ?? -999;
+      if (st.ticks - lastTick < 6) return;
+
+      target.lastDamageNumberTick = st.ticks;
+      const radius = target.radius ?? 16;
+      spawnParticle(st, {
+        x: target.x + (Math.random() - 0.5) * Math.min(18, radius * 0.25),
+        y: target.y - radius - 14,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: -0.7,
+        radius: 0,
+        color: "#ffffff",
+        life: 0,
+        maxLife: 34,
+        alpha: 1,
+        text: `${Math.max(1, Math.round(damage))}`,
+        textStyle: "damage" as const,
+      });
+    };
+
     const simulateAndRender = (shouldRender: boolean) => {
       const state = engineRef.current as any;
       const player = state.player;
@@ -1871,7 +1919,9 @@ export function MissionGame({
           
           if (state.boss && !state.boss.submerged && distanceToBoss <= punchRange + state.boss.radius) {
             const punchDamage = gameplayConfig.mechaPunchDamage;
-            state.boss.hp -= punchDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            const appliedPunchDamage = punchDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            state.boss.hp -= appliedPunchDamage;
+            spawnDamageNumber(state, state.boss, appliedPunchDamage);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
               strength: 5,
@@ -2022,7 +2072,9 @@ export function MissionGame({
             
             if (targetBoss) {
               const laserDmg = 9; // Good continuous damage
-              targetBoss.hp -= laserDmg * ((targetBoss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              const appliedLaserDamage = laserDmg * ((targetBoss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              targetBoss.hp -= appliedLaserDamage;
+              spawnDamageNumber(state, targetBoss, appliedLaserDamage);
               setBossHp(Math.max(0, Math.ceil(targetBoss.hp)));
               applyHitFeedback(state, targetBoss, triggerSound, {
                 strength: 0.7,
@@ -2124,7 +2176,9 @@ export function MissionGame({
           // Deal colossal damage to Boss
           if (state.boss && !state.boss.submerged) {
             const ultDamage = gameplayConfig.mechaUltimateDamage;
-            state.boss.hp -= ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            const appliedUltDamage = ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            state.boss.hp -= appliedUltDamage;
+            spawnDamageNumber(state, state.boss, appliedUltDamage);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             applyHitFeedback(state, state.boss, triggerSound, {
               strength: 8,
@@ -2247,6 +2301,7 @@ export function MissionGame({
               if (diff > Math.PI) diff = Math.PI * 2 - diff;
               if (diff <= fanSize / 2) {
                 enemy.hp -= damage;
+                spawnDamageNumber(state, enemy, damage);
                 applyHitFeedback(state, enemy, triggerSound, {
                   strength: isHigh ? 2.2 : 1,
                   angle: eAngle,
@@ -2283,7 +2338,9 @@ export function MissionGame({
             const bdy = state.boss.y - srcY;
             const bDist = Math.hypot(bdx, bdy);
             if (bDist <= dist) {
-              state.boss.hp -= damage * 0.5 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              const appliedRangeDamage = damage * 0.5 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+              state.boss.hp -= appliedRangeDamage;
+              spawnDamageNumber(state, state.boss, appliedRangeDamage);
               setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
               applyHitFeedback(state, state.boss, triggerSound, {
                 strength: isHigh ? 2.8 : 1.4,
@@ -2408,6 +2465,7 @@ export function MissionGame({
                 : (isHigh ? gameplayConfig.trackingHighDamage : gameplayConfig.trackingLowDamage);
               const dmg = trackingBaseDamage * (1 + weaponLevels["tracking_weapon"] * 0.25) * bonusDamageMult;
               t.hp -= dmg;
+              spawnDamageNumber(state, t, dmg);
               applyHitFeedback(state, t as any, triggerSound, {
                 strength: isHigh ? 1.4 : 0.7,
                 angle: Math.atan2(t.y - srcY, t.x - srcX),
@@ -2505,6 +2563,7 @@ export function MissionGame({
             
             // Deal damage
             target.hp -= dmg;
+            spawnDamageNumber(state, target, dmg);
             applyHitFeedback(state, target as any, triggerSound, {
               strength: isHigh ? 4 : 2,
               angle,
@@ -2537,6 +2596,7 @@ export function MissionGame({
               state.enemies.forEach((e) => {
                 if (e !== target && Math.hypot(e.x - target!.x, e.y - target!.y) < blastRadius) {
                   e.hp -= dmg * 0.4;
+                  spawnDamageNumber(state, e, dmg * 0.4);
                 }
               });
 
@@ -2618,6 +2678,7 @@ export function MissionGame({
           const d = Math.hypot(enemy.x - zone.x, enemy.y - zone.y);
           if (d <= zone.radius + enemy.radius) {
             enemy.hp -= zone.damage;
+            spawnDamageNumber(state, enemy, zone.damage);
             if (state.ticks % 12 === 0) {
               applyHitFeedback(state, enemy, triggerSound, {
                 strength: 0.5,
@@ -2640,7 +2701,9 @@ export function MissionGame({
         if (state.boss && !state.boss.submerged) {
           const d = Math.hypot(state.boss.x - zone.x, state.boss.y - zone.y);
           if (d <= zone.radius + state.boss.radius) {
-            state.boss.hp -= zone.damage * 0.4 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            const appliedZoneDamage = zone.damage * 0.4 * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            state.boss.hp -= appliedZoneDamage;
+            spawnDamageNumber(state, state.boss, appliedZoneDamage);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             if (state.ticks % 12 === 0) {
               applyHitFeedback(state, state.boss, triggerSound, {
@@ -2980,6 +3043,7 @@ export function MissionGame({
           state.enemies.forEach((enemy) => {
             if (!hit && Math.hypot(enemy.x - b.x, enemy.y - b.y) <= enemy.radius + b.radius) {
               enemy.hp -= b.damage;
+              spawnDamageNumber(state, enemy, b.damage);
               hit = true;
               applyHitFeedback(state, enemy, triggerSound, {
                 strength: 1.2,
@@ -3005,7 +3069,9 @@ export function MissionGame({
 
           // Collision with Boss
           if (state.boss && !state.boss.submerged && !hit && Math.hypot(state.boss.x - b.x, state.boss.y - b.y) <= state.boss.radius + b.radius) {
-            state.boss.hp -= b.damage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            const appliedBulletDamage = b.damage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            state.boss.hp -= appliedBulletDamage;
+            spawnDamageNumber(state, state.boss, appliedBulletDamage);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
             hit = true;
             applyHitFeedback(state, state.boss, triggerSound, {
@@ -4950,19 +5016,26 @@ export function MissionGame({
       }
 
       if (stage === "PLAYING") {
+        const individualWalkFrames = playerWalkFrameRefs.current;
+        const usesIndividualWalkFrames = individualWalkFrames.length === 5;
         const spriteImg = playerSpriteImgRef.current;
         if (spriteImg && spriteLoaded) {
-          const fw = spriteImg.width / 6;
-          const fh = spriteImg.height;
-          
           // Decide animation frame based on movement
           const isMoving = dx !== 0 || dy !== 0;
           let frameIndex = 0; // idle frame (index 0)
           if (isMoving) {
-            // 7 fps walking animation cycling through frames 1 to 5 (index 1 to 5)
-            const walkIndex = Math.floor(state.ticks / 8.57) % 5;
+            // Authored individual sprites use walk 01–04; legacy sprite
+            // sheets retain their existing five-frame cycle.
+            const frameCount = usesIndividualWalkFrames ? 4 : 5;
+            const walkIndex = Math.floor(state.ticks / 8.57) % frameCount;
             frameIndex = 1 + walkIndex;
           }
+          const activeSprite = usesIndividualWalkFrames
+            ? individualWalkFrames[frameIndex] || spriteImg
+            : spriteImg;
+          const fw = usesIndividualWalkFrames ? activeSprite.width : activeSprite.width / 6;
+          const fh = activeSprite.height;
+          const sourceX = usesIndividualWalkFrames ? 0 : frameIndex * fw;
           
           ctx.save();
           ctx.translate(player.x, player.y);
@@ -4970,11 +5043,17 @@ export function MissionGame({
             ctx.scale(-1, 1);
           }
           
-          const drawWidth = windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76;
+          const baseDrawWidth = windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76;
+          // Claire's authored full-frame walk PNGs have extra transparent
+          // padding. Enlarge only her visual sprite to match the apparent
+          // size of the legacy Ethan/Leo sheet sprites; gameplay bounds stay
+          // entirely unchanged.
+          const visualScale = usesIndividualWalkFrames && selectedAgent.id === "claire" ? 1.4 : 1;
+          const drawWidth = baseDrawWidth * visualScale;
           const drawHeight = drawWidth * (fh / fw);
           ctx.drawImage(
-            spriteImg,
-            frameIndex * fw,
+            activeSprite,
+            sourceX,
             0,
             fw,
             fh,
@@ -5320,13 +5399,18 @@ export function MissionGame({
       state.particles.forEach((p) => {
         ctx.globalAlpha = p.alpha;
         if (p.text) {
-          ctx.fillStyle = p.color;
-          ctx.font = "bold 13px system-ui, sans-serif";
+          const isDamageNumber = p.textStyle === "damage";
+          ctx.fillStyle = isDamageNumber ? "#ffffff" : p.color;
+          // Monospace at a crisp integer size keeps the combat text visually
+          // aligned with the game's pixel-art presentation.
+          ctx.font = isDamageNumber ? "bold 16px monospace" : "bold 13px system-ui, sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          // High contrast dark stroke outline for flawless visibility against light/dark floors
-          ctx.strokeStyle = "rgba(7, 8, 12, 0.9)";
-          ctx.lineWidth = 3;
+          // High contrast black outline stays readable over enemies, lights,
+          // and the darkest parts of the mission map.
+          ctx.strokeStyle = "#050505";
+          ctx.lineWidth = isDamageNumber ? 4 : 3;
+          ctx.lineJoin = "round";
           ctx.strokeText(p.text, p.x, p.y);
           ctx.fillText(p.text, p.x, p.y);
         } else {
@@ -5715,13 +5799,24 @@ export function MissionGame({
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-4">
                           <SpriteAnimator
                             src={walkSprites[agent.id as "claire" | "ethan" | "leo"].src}
+                            individualFrames={walkSprites[agent.id as "claire" | "ethan" | "leo"].individualFrames}
                             totalFrames={6}
                             idleFrame={0}
-                            animationFrames={[1, 2, 3, 4, 5]}
+                            // Claire has an authored idle image at index 0 and
+                            // four separate walking images at indices 1–4. The
+                            // agent chooser is a walking preview, so never
+                            // include the idle frame (or non-existent index 5).
+                            animationFrames={agent.id === "claire" ? [1, 2, 3, 4] : [1, 2, 3, 4, 5]}
                             frameXOffsets={walkSprites[agent.id as "claire" | "ethan" | "leo"].frameXOffsets}
                             fps={3}
                             playing={true}
-                            width={windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76}
+                            // Claire's new authored PNGs include more transparent
+                            // canvas around the sprite. Compensate only in this
+                            // chooser preview so her visible figure matches the
+                            // other two agents, without changing mission scale.
+                            width={agent.id === "claire"
+                              ? (windowWidth >= 640 ? 154 : windowWidth >= 480 ? 126 : 106)
+                              : (windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76)}
                           />
                         </div>
                       </button>

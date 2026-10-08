@@ -13,6 +13,11 @@ export interface SpriteAnimatorProps {
   height?: number;
   /** Per-frame horizontal correction in source pixels, used to keep the subject centered. */
   frameXOffsets?: readonly number[];
+  /**
+   * Optional authored image sequence.  Unlike a sprite sheet, each entry is a
+   * complete PNG for that pose (for example: idle + four walking poses).
+   */
+  individualFrames?: readonly string[];
 }
 
 export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
@@ -27,6 +32,7 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
   width,
   height,
   frameXOffsets,
+  individualFrames,
 }) => {
   const [currentAnimationIndex, setCurrentAnimationIndex] = useState(0);
   const [dimensions, setDimensions] = useState<{ width: number; height: number; originalWidth: number; originalHeight: number } | null>(null);
@@ -37,7 +43,9 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
     setImageLoaded(false);
     setImageError(false);
     const img = new Image();
-    img.src = src;
+    // A full-frame sequence is sized from its idle pose. This keeps the
+    // component's layout stable while the walking pose changes.
+    img.src = individualFrames?.[idleFrame] ?? src;
     img.onload = () => {
       setDimensions({
         width: img.naturalWidth / totalFrames,
@@ -50,7 +58,7 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
     img.onerror = () => {
       setImageError(true);
     };
-  }, [src, totalFrames]);
+  }, [src, totalFrames, idleFrame, individualFrames]);
 
   useEffect(() => {
     if (!playing) {
@@ -69,6 +77,36 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
   const activeFrame = playing
     ? animationFrames[currentAnimationIndex]
     : idleFrame;
+  const isIndividualSequence = Boolean(individualFrames?.length);
+  const activeImageSrc = isIndividualSequence
+    ? (individualFrames?.[activeFrame] ?? individualFrames?.[idleFrame] ?? src)
+    : src;
+
+  // Full-frame animation PNGs should be rendered as real images instead of
+  // CSS backgrounds. This avoids relying on a sprite-sheet crop and lets
+  // browsers load each authored walking pose independently.
+  if (isIndividualSequence) {
+    const individualStyle: React.CSSProperties = {
+      width: width !== undefined ? `${width}px` : undefined,
+      height: height !== undefined ? `${height}px` : undefined,
+      maxWidth: "none",
+      objectFit: "contain",
+      imageRendering: "pixelated",
+      transform: facing === "left" ? "scaleX(-1)" : "none",
+      transition: "transform 0.1s ease-out",
+    };
+
+    return (
+      <img
+        src={activeImageSrc}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className={`inline-block select-none ${className}`}
+        style={individualStyle}
+      />
+    );
+  }
 
   if (imageError) {
     return (
@@ -97,7 +135,7 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
   let displayHeight = dimensions.height;
   let bgWidth = dimensions.originalWidth;
   let bgHeight = dimensions.originalHeight;
-  let bgPosX = -(activeFrame * displayWidth);
+  let bgPosX = isIndividualSequence ? 0 : -(activeFrame * displayWidth);
 
   if (width !== undefined && height !== undefined) {
     displayWidth = width;
@@ -106,29 +144,29 @@ export const SpriteAnimator: React.FC<SpriteAnimatorProps> = ({
     const scaleY = height / dimensions.height;
     bgWidth = dimensions.originalWidth * scaleX;
     bgHeight = dimensions.originalHeight * scaleY;
-    bgPosX = -(activeFrame * width);
+    bgPosX = isIndividualSequence ? 0 : -(activeFrame * width);
   } else if (width !== undefined) {
     const scale = width / dimensions.width;
     displayWidth = width;
     displayHeight = dimensions.height * scale;
     bgWidth = dimensions.originalWidth * scale;
     bgHeight = dimensions.originalHeight * scale;
-    bgPosX = -(activeFrame * width);
+    bgPosX = isIndividualSequence ? 0 : -(activeFrame * width);
   } else if (height !== undefined) {
     const scale = height / dimensions.height;
     displayWidth = dimensions.width * scale;
     displayHeight = height;
     bgWidth = dimensions.originalWidth * scale;
     bgHeight = dimensions.originalHeight * scale;
-    bgPosX = -(activeFrame * displayWidth);
+    bgPosX = isIndividualSequence ? 0 : -(activeFrame * displayWidth);
   }
 
   const style: React.CSSProperties = {
     width: `${displayWidth}px`,
     height: `${displayHeight}px`,
-    backgroundImage: `url(${src})`,
+    backgroundImage: `url(${activeImageSrc})`,
     backgroundRepeat: "no-repeat",
-    backgroundPositionX: `${bgPosX + (frameXOffsets?.[activeFrame] ?? 0) * (displayWidth / dimensions.width)}px`,
+    backgroundPositionX: `${bgPosX + (isIndividualSequence ? 0 : (frameXOffsets?.[activeFrame] ?? 0) * (displayWidth / dimensions.width))}px`,
     backgroundPositionY: "0px",
     backgroundSize: `${bgWidth}px ${bgHeight}px`,
     imageRendering: "pixelated",

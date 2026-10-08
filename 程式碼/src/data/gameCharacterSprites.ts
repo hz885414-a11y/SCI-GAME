@@ -13,15 +13,26 @@ const WALK_BASE_URL =
 export const walkSprites = {
   claire: {
     src: `${WALK_BASE_URL}Claire.png`,
-    frameXOffsets: [0, -22, -1, 1, 26, -4]
+    frameXOffsets: [0, -22, -1, 1, 26, -4],
+    // Adventure gameplay uses authored full-frame images so Claire can have
+    // a dedicated idle pose plus a four-step walking cycle.
+    individualFrames: [
+      `${WALK_BASE_URL}Claire/C_Stand.png`,
+      `${WALK_BASE_URL}Claire/C_walk-01.png`,
+      `${WALK_BASE_URL}Claire/C_walk-02.png`,
+      `${WALK_BASE_URL}Claire/C_walk-03.png`,
+      `${WALK_BASE_URL}Claire/C_walk-04.png`,
+    ],
   },
   ethan: {
     src: `${WALK_BASE_URL}Ethan.png`,
-    frameXOffsets: [0, 6, 12, -35, 14, 4]
+    frameXOffsets: [0, 6, 12, -35, 14, 4],
+    individualFrames: undefined,
   },
   leo: {
     src: `${WALK_BASE_URL}Leo.png`,
-    frameXOffsets: [0, -22, -8, -2, 24, 8]
+    frameXOffsets: [0, -22, -8, -2, 24, 8],
+    individualFrames: undefined,
   }
 } as const;
 

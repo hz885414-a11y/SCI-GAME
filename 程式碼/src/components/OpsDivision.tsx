@@ -401,10 +401,10 @@ export function OpsDivision({
         {/* Taskbar Buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
           {/* Main big button for Outbound Mission */}
-          <div className="w-full sm:w-auto">
+          <div className="w-full sm:w-[148px]">
             <button
               onClick={toggleSectors}
-              className={`min-h-12 w-full border px-4 py-3 font-sans text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none sm:min-h-0 sm:w-auto sm:px-4 sm:py-1.5 sm:text-[10px]
+              className={`min-h-12 w-full border px-4 py-3 font-sans text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none sm:min-h-[34px] sm:w-full sm:px-3 sm:py-1.5 sm:text-[10px]
                 ${isGameOpen 
                   ? "bg-orange-500 text-black border-orange-500 shadow-[0_0_10px_rgba(245,158,11,0.25)]" 
                   : pendingBossChapter !== null
@@ -427,11 +427,11 @@ export function OpsDivision({
             </button>
           </div>
 
-          {/* Secondary task buttons below it on mobile, inline on sm+ */}
-          <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
+          {/* Secondary task button below it on mobile, inline on sm+ */}
+          <div className="w-full sm:w-[148px]">
             <button
               onClick={togglePortal}
-              className={`min-h-11 border px-2 py-2 text-xs font-sans font-bold flex items-center justify-center gap-1 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-[10px] sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
+              className={`min-h-11 w-full border px-2 py-2 text-xs font-sans font-bold flex items-center justify-center gap-1 sm:min-h-[34px] sm:w-full sm:px-3 sm:py-1.5 sm:text-[10px] sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
                 ${isOpenPortal 
                   ? "bg-orange-500 text-black border-orange-500" 
                   : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
@@ -443,19 +443,6 @@ export function OpsDivision({
               {isOpenPortal && <span className="w-1.5 h-1.5 bg-black rounded-full animate-ping" />}
             </button>
 
-            <button
-              onClick={toggleLogs}
-              className={`min-h-11 border px-2 py-2 text-xs font-sans font-bold flex items-center justify-center gap-1 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-[10px] sm:gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none
-                ${isOpenLogs 
-                  ? "bg-orange-500 text-black border-orange-500" 
-                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                }
-              `}
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span className="truncate">通訊日誌</span>
-              {isOpenLogs && <span className="w-1.5 h-1.5 bg-black rounded-full animate-ping" />}
-            </button>
           </div>
         </div>
       </div>
