@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { playSound, startBackgroundMusic, stopBackgroundMusic, waitForBackgroundMusicReady } from "../utils/audio";
 import { BOOT_CRITICAL_ASSETS } from "../data/coreAssetManifest";
 import { UI_IMAGE_ASSETS } from "../data/gameAssetUrls";
-import { preloadAssetManifest } from "../utils/preloadImages";
+import { preloadAssetManifest, type PreloadAsset } from "../utils/preloadImages";
 import { 
   Zap, 
   Settings, 
@@ -222,13 +222,19 @@ export const StartScreen: React.FC<StartScreenProps> = ({
 
 interface BootingScreenProps {
   onComplete: () => void;
+  /** First-run story and tutorial artwork supplied from the active game config. */
+  preloadAssets?: PreloadAsset[];
 }
 
-export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
+export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete, preloadAssets = [] }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [currentAsset, setCurrentAsset] = useState("建立素材清單");
   const [failedAssets, setFailedAssets] = useState(0);
+  const bootAssetsRef = useRef<PreloadAsset[]>([
+    ...BOOT_CRITICAL_ASSETS,
+    ...preloadAssets,
+  ].filter((asset, index, assets) => asset.url && assets.findIndex((candidate) => candidate.url === asset.url) === index));
 
   const diagnosticLogs = [
     ">> INITIALIZING NEURAL LINK PROTOCOL...",
@@ -268,7 +274,7 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
     // boot screen alive long enough for every entry to appear, even when all
     // images are already cached and finish loading immediately.
     const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 4200));
-    const assetLoad = preloadAssetManifest(BOOT_CRITICAL_ASSETS, (status) => {
+    const assetLoad = preloadAssetManifest(bootAssetsRef.current, (status) => {
       if (cancelled) return;
       setProgress(status.percent);
       setCurrentAsset(status.currentLabel);
@@ -353,8 +359,8 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete }) => {
         </div>
 
         <div className="flex justify-between text-[9px] text-zinc-600">
-          <span>首要畫面完成後，其餘素材會在背景依序快取</span>
-          <span>{BOOT_CRITICAL_ASSETS.length} CRITICAL ASSETS</span>
+          <span>前情提要與新手導覽素材完成後才會進入系統</span>
+          <span>{bootAssetsRef.current.length} CRITICAL ASSETS</span>
         </div>
       </div>
     </div>

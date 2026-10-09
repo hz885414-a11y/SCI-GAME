@@ -82,7 +82,7 @@ export const Prologue: React.FC<PrologueProps> = ({ onComplete }) => {
           className="flex min-h-0 flex-1 flex-col animate-fade-in"
           onClick={hasMoreSegments ? showNextSegment : undefined}
         >
-          <div className="relative h-[500px] min-h-[500px] w-full shrink-0 overflow-hidden border-b border-amber-800/50 bg-[linear-gradient(135deg,#18181b_25%,#27272a_25%,#27272a_50%,#18181b_50%,#18181b_75%,#27272a_75%)] bg-[length:24px_24px]">
+          <div className="relative h-[400px] min-h-[400px] w-full shrink-0 overflow-hidden border-b border-amber-800/50 bg-[linear-gradient(135deg,#18181b_25%,#27272a_25%,#27272a_50%,#18181b_50%,#18181b_75%,#27272a_75%)] bg-[length:24px_24px] sm:h-[500px] sm:min-h-[500px]">
             {page.backgroundImage && (
               <img
                 src={page.backgroundImage}

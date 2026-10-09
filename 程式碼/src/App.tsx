@@ -11,7 +11,7 @@ import { CharacterStandee, CustomSpeechBubble, detectEmotion, EmotionType } from
 import { characterImages } from "./data/characterImages";
 import { SceneCharacters } from "./components/SceneCharacters";
 import { scenes } from "./data/scenes";
-import { preloadImages } from "./utils/preloadImages";
+import { preloadAssetManifest, type PreloadAsset } from "./utils/preloadImages";
 import { FortuneModal, InstructionsModal, SettingsModal } from "./components/Modals";
 import { StartScreen, BootingScreen } from "./components/StartScreen";
 import { Prologue } from "./components/Prologue";
@@ -34,6 +34,7 @@ import { clearEventRecords, getTriggeredEvents } from "./systems/eventManager";
 import { clearCardCollection, getOwnedCards } from "./systems/playerCollection";
 import { getAllCardDefinitions } from "./data/cardDatabase";
 import { createDefaultRobotUpgrades, createEmptyMaterialInventory, ROBOT_UPGRADE_IDS, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
+import { ROBOT_CONFIG } from "./data/robotConfig";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import { useGameConfig } from "./config/GameConfigContext";
 import {
@@ -91,6 +92,22 @@ const loadSavedImages = (id: string) => {
 
 export default function App() {
   const { config: gameConfig } = useGameConfig();
+  // The cold-boot progress bar must finish the opening sequence artwork before
+  // the prologue/tutorial can appear. These URLs come from the live Firebase
+  // config, so edited prologue images are included automatically.
+  const shouldPreloadOpeningSequence = !hasSeenPrologue() || !hasCompletedTutorial();
+  const openingSequenceAssets = shouldPreloadOpeningSequence ? [
+    ...gameConfig.prologue.flatMap((page, index) => [
+      page.backgroundImage ? { label: `前情提要故事圖 ${index + 1}`, url: page.backgroundImage } : null,
+      page.characterImage ? { label: `前情提要角色圖 ${index + 1}`, url: page.characterImage } : null,
+    ].filter((asset): asset is { label: string; url: string } => Boolean(asset))),
+    { label: "新手教學 Claire 一般立繪", url: characterImages.claire.normal },
+    { label: "新手教學 Claire 開心立繪", url: characterImages.claire.happy },
+    { label: "新手教學 Ethan 一般立繪", url: characterImages.ethan.normal },
+    { label: "新手教學 Ethan 開心立繪", url: characterImages.ethan.happy },
+    { label: "新手教學 Leo 一般立繪", url: characterImages.leo.normal },
+    { label: "新手教學 Leo 開心立繪", url: characterImages.leo.happy },
+  ] : [];
   const eventSystem = useEventSystem();
   // Input and General State
   const [inputText, setInputText] = useState("");
@@ -262,6 +279,8 @@ export default function App() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [pendingScene, setPendingScene] = useState<AppScene | null>(null);
   const [transitionStep, setTransitionStep] = useState(0);
+  const [transitionAssetProgress, setTransitionAssetProgress] = useState({ loaded: 0, total: 0, currentLabel: "建立區域素材清單" });
+  const visitedSceneAssetsRef = useRef<Set<AppScene>>(new Set(["ops"]));
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
@@ -275,31 +294,30 @@ export default function App() {
     setIsTransitioning(true);
     setTransitionStep(1);
 
-    // Preload character images for the target scene before transitioning
-    const imagesToPreload: string[] = [];
+    // First arrival to a division waits for its actual scene art. Later
+    // visits use the browser/preloader cache and keep the walk transition fast.
+    const targetAssets: PreloadAsset[] = [];
     if (targetScene === "lab") {
-      imagesToPreload.push(
-        characterImages.claire.normal,
-        characterImages.claire.happy,
-        characterImages.claire.sad,
-        characterImages.claire.think,
-        characterImages.claire.dialog,
-        characterImages.claire.surprise,
-        characterImages.ethan.normal,
-        characterImages.ethan.happy,
-        characterImages.ethan.sad,
-        characterImages.ethan.think,
-        characterImages.ethan.dialog,
-        characterImages.ethan.surprise,
-        characterImages.leo.normal,
-        characterImages.leo.happy,
-        characterImages.leo.sad,
-        characterImages.leo.think,
-        characterImages.leo.dialog,
-        characterImages.leo.surprise
+      targetAssets.push(
+        { label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab },
+        ...Object.entries(characterImages).flatMap(([character, moods]) =>
+          Object.entries(moods).map(([mood, url]) => ({ label: `${character.toUpperCase()} ${mood.toUpperCase()} 立繪`, url })),
+        ),
       );
+    } else if (targetScene === "tech") {
+      targetAssets.push(
+        { label: "技術研發部背景", url: BACKGROUND_ASSETS.tech },
+        { label: "C2-932 機器人立繪", url: ROBOT_CONFIG.c2_932.portrait },
+      );
+    } else if (targetScene === "supply") {
+      targetAssets.push({ label: "後勤補給部背景", url: BACKGROUND_ASSETS.purchase });
     }
-    preloadImages(imagesToPreload);
+    const isFirstVisit = !visitedSceneAssetsRef.current.has(targetScene);
+    setTransitionAssetProgress({
+      loaded: 0,
+      total: isFirstVisit ? targetAssets.length : 0,
+      currentLabel: isFirstVisit ? "建立區域素材清單" : "區域素材快取就緒",
+    });
 
     // Sequence of soft footstep sounds (typewriter clicks spaced out)
     let step = 1;
@@ -312,17 +330,32 @@ export default function App() {
       }
     }, 280);
 
-    // Swap the scene behind the dark curtain
-    setTimeout(() => {
-      setCurrentScene(targetScene);
-    }, 1200);
+    const startedAt = Date.now();
+    void (async () => {
+      if (isFirstVisit && targetAssets.length > 0) {
+        await preloadAssetManifest(targetAssets, (status) => {
+          setTransitionAssetProgress({
+            loaded: status.completed,
+            total: status.total,
+            currentLabel: status.currentLabel,
+          });
+        }, 8000, 4);
+        visitedSceneAssetsRef.current.add(targetScene);
+      }
 
-    // Fade out transition completely
-    setTimeout(() => {
-      setIsTransitioning(false);
-      setPendingScene(null);
-      setTransitionStep(0);
-    }, 1800);
+      // Retain a short walk sequence even when everything was instant from
+      // cache, but never reveal the target division before its art is ready.
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 1200) await new Promise<void>((resolve) => window.setTimeout(resolve, 1200 - elapsed));
+      clearInterval(interval);
+      setTransitionStep(6);
+      setCurrentScene(targetScene);
+      window.setTimeout(() => {
+        setIsTransitioning(false);
+        setPendingScene(null);
+        setTransitionStep(0);
+      }, 350);
+    })();
   };
 
   // Waveform meter simulation (for lab aesthetic)
@@ -944,6 +977,7 @@ export default function App() {
 
       {appPhase === "booting" && (
         <BootingScreen
+          preloadAssets={openingSequenceAssets}
           onComplete={() => {
             if (!hasSeenPrologue()) {
               setAppPhase("prologue");
@@ -1534,6 +1568,19 @@ export default function App() {
                   />
                   {/* Scanning scanline in transition bar */}
                   <div className="absolute inset-y-0 w-8 bg-white/20 skew-x-12 animate-pulse" />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-zinc-900 space-y-1.5">
+                <div className="flex justify-between gap-3 text-[10px] font-mono">
+                  <span className="min-w-0 truncate text-zinc-500">載入：{transitionAssetProgress.currentLabel}</span>
+                  <span className="shrink-0 text-amber-400">{transitionAssetProgress.loaded} / {transitionAssetProgress.total}</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden bg-zinc-900">
+                  <div
+                    className="h-full bg-amber-500 transition-[width] duration-200"
+                    style={{ width: `${transitionAssetProgress.total ? (transitionAssetProgress.loaded / transitionAssetProgress.total) * 100 : 100}%` }}
+                  />
                 </div>
               </div>
             </div>
