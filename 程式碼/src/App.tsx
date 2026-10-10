@@ -58,6 +58,13 @@ import {
 
 type AppScene = "lab" | "tech" | "ops" | "supply";
 
+type PortraitKey = "normal" | "dialog" | "happy" | "think" | "surprise";
+
+const portraitKeyForPreload = (portrait: string | undefined): PortraitKey => {
+  if (portrait === "normal" || portrait === "happy" || portrait === "think" || portrait === "surprise") return portrait;
+  return "dialog";
+};
+
 const APP_LAST_SCENE_KEY = "light_crew_last_scene";
 
 const loadLastScene = (): AppScene => {
@@ -298,11 +305,22 @@ export default function App() {
     // visits use the browser/preloader cache and keep the walk transition fast.
     const targetAssets: PreloadAsset[] = [];
     if (targetScene === "lab") {
+      // Only block the doorway on the three portraits that are visible on the
+      // first lab screen. Loading every expression here meant a first visit
+      // could wait on 16 large remote PNGs, making the public site appear to
+      // have fallen back to the base. Other expressions still load normally
+      // when their dialogue is first shown.
+      const visiblePortraits = (Object.keys(characterImages) as Array<keyof typeof characterImages>).map((character) => {
+        const configuredPortrait = gameConfig.characterDefaultPortraits?.[character] ?? "dialog";
+        const portraitKey = portraitKeyForPreload(configuredPortrait);
+        return {
+          label: `${character.toUpperCase()} 初始立繪`,
+          url: characterImages[character][portraitKey],
+        };
+      });
       targetAssets.push(
         { label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab },
-        ...Object.entries(characterImages).flatMap(([character, moods]) =>
-          Object.entries(moods).map(([mood, url]) => ({ label: `${character.toUpperCase()} ${mood.toUpperCase()} 立繪`, url })),
-        ),
+        ...visiblePortraits,
       );
     } else if (targetScene === "tech") {
       targetAssets.push(
