@@ -89,12 +89,10 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     setUserInteracted(true);
     setIsStarting(true);
     setStartError("");
-    const musicReady = await waitForBackgroundMusicReady("theme");
-    if (!musicReady) {
-      setStartError("主題曲載入失敗，請確認網路後再試一次");
-      setIsStarting(false);
-      return;
-    }
+    // Audio availability must never block the game. Public browsers may delay
+    // or reject remote media despite a valid user click; the boot screen owns
+    // the actual image loading progress and will continue independently.
+    void waitForBackgroundMusicReady("theme");
     onStart();
   };
 
