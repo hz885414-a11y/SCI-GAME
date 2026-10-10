@@ -272,17 +272,27 @@ export const BootingScreen: React.FC<BootingScreenProps> = ({ onComplete, preloa
     // boot screen alive long enough for every entry to appear, even when all
     // images are already cached and finish loading immediately.
     const minimumBootTime = new Promise<void>((resolve) => window.setTimeout(resolve, 4200));
+    const isMobileBoot = window.innerWidth < 640;
     const assetLoad = preloadAssetManifest(bootAssetsRef.current, (status) => {
       if (cancelled) return;
       setProgress(status.percent);
       setCurrentAsset(status.currentLabel);
       setFailedAssets(status.failed);
-    });
+    }, isMobileBoot ? 6_000 : 10_000, isMobileBoot ? 1 : 4);
 
-    Promise.all([minimumBootTime, assetLoad]).then(([, result]) => {
+    // A missing remote image must not strand a player on the boot screen.
+    // On narrow devices this also prevents long-lived image decodes from
+    // triggering an OS-level tab reload. The remaining artwork is retried by
+    // the prologue/tutorial when it becomes visible.
+    const assetLoadWithSafetyLimit = Promise.race([
+      assetLoad,
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), isMobileBoot ? 14_000 : 30_000)),
+    ]);
+
+    Promise.all([minimumBootTime, assetLoadWithSafetyLimit]).then(([, result]) => {
       if (cancelled) return;
       setProgress(100);
-      setCurrentAsset(result.failed > 0 ? "部分遠端素材將於背景重試" : "核心素材載入完成");
+      setCurrentAsset(result === null || result.failed > 0 ? "部分遠端素材將於背景重試" : "核心素材載入完成");
       window.setTimeout(() => {
         if (cancelled) return;
         playSound("success");

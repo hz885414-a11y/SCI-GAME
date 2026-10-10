@@ -103,17 +103,24 @@ export default function App() {
   // the prologue/tutorial can appear. These URLs come from the live Firebase
   // config, so edited prologue images are included automatically.
   const shouldPreloadOpeningSequence = !hasSeenPrologue() || !hasCompletedTutorial();
+  // Decoding several large remote PNGs at once can make mobile browsers reload
+  // the tab. Mobile starts with the first page the player will actually see
+  // plus the three tutorial portraits; later pages load on demand.
+  const isMobileOpeningBoot = typeof window !== "undefined" && window.innerWidth < 640;
+  const prologuePagesToPreload = isMobileOpeningBoot ? gameConfig.prologue.slice(0, 1) : gameConfig.prologue;
   const openingSequenceAssets = shouldPreloadOpeningSequence ? [
-    ...gameConfig.prologue.flatMap((page, index) => [
+    ...prologuePagesToPreload.flatMap((page, index) => [
       page.backgroundImage ? { label: `前情提要故事圖 ${index + 1}`, url: page.backgroundImage } : null,
       page.characterImage ? { label: `前情提要角色圖 ${index + 1}`, url: page.characterImage } : null,
     ].filter((asset): asset is { label: string; url: string } => Boolean(asset))),
     { label: "新手教學 Claire 一般立繪", url: characterImages.claire.normal },
-    { label: "新手教學 Claire 開心立繪", url: characterImages.claire.happy },
     { label: "新手教學 Ethan 一般立繪", url: characterImages.ethan.normal },
-    { label: "新手教學 Ethan 開心立繪", url: characterImages.ethan.happy },
     { label: "新手教學 Leo 一般立繪", url: characterImages.leo.normal },
-    { label: "新手教學 Leo 開心立繪", url: characterImages.leo.happy },
+    ...(!isMobileOpeningBoot ? [
+      { label: "新手教學 Claire 開心立繪", url: characterImages.claire.happy },
+      { label: "新手教學 Ethan 開心立繪", url: characterImages.ethan.happy },
+      { label: "新手教學 Leo 開心立繪", url: characterImages.leo.happy },
+    ] : []),
   ] : [];
   const eventSystem = useEventSystem();
   // Input and General State
