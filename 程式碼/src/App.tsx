@@ -33,7 +33,7 @@ import { emitGameEvent, resetCardEventPlayer } from "./systems/gameEvents";
 import { clearEventRecords, getTriggeredEvents } from "./systems/eventManager";
 import { clearCardCollection, getOwnedCards } from "./systems/playerCollection";
 import { getAllCardDefinitions } from "./data/cardDatabase";
-import { createDefaultRobotUpgrades, createEmptyMaterialInventory, ROBOT_UPGRADE_IDS, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
+import { canAffordUpgrade, createDefaultRobotUpgrades, createEmptyMaterialInventory, getUpgradeCost, ROBOT_UPGRADE_IDS, type MaterialInventory, type RobotUpgradeLevels } from "./data/modificationSystem";
 import { ROBOT_CONFIG } from "./data/robotConfig";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import { useGameConfig } from "./config/GameConfigContext";
@@ -222,6 +222,10 @@ export default function App() {
       return defaults;
     }
   });
+  const affordableRobotUpgradeCount = ROBOT_UPGRADE_IDS.filter((id) => {
+    const level = robotUpgrades[id] || 0;
+    return level < 5 && canAffordUpgrade(modificationMaterials, getUpgradeCost(id, level));
+  }).length;
   const [unlockedChapters, setUnlockedChapters] = useState<number[]>(() => {
     try {
       const saved = localStorage.getItem("squad_unlocked_chapters");
@@ -1091,7 +1095,7 @@ export default function App() {
           <button
             data-tutorial-target="robotAssembly"
             onClick={() => handleSceneChange("tech")}
-            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
+            className={`relative min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "tech"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
@@ -1100,6 +1104,15 @@ export default function App() {
           >
             <Wrench className="hidden h-4 w-4 text-orange-500 sm:block" />
             <span className="whitespace-nowrap">技術研發部</span>
+            {affordableRobotUpgradeCount > 0 && (
+              <span
+                aria-label={`${affordableRobotUpgradeCount} 個部件可改裝`}
+                className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-amber-100 bg-amber-400 text-[10px] font-black leading-none text-black shadow-[0_0_12px_rgba(251,191,36,.9)]"
+                title={`${affordableRobotUpgradeCount} 個部件可改裝`}
+              >
+                !
+              </span>
+            )}
           </button>
           <button
             data-tutorial-target="adventure"

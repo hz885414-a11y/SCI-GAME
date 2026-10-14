@@ -464,6 +464,9 @@ let bgmAudio: HTMLAudioElement | null = null;
 let bgmVolume = 50; // 0 to 100, default 50
 let isBgmPlaying = false;
 let isBgmMuted = false;
+// Temporary playback ownership (for example the rhythm soldering overlay).
+// This is intentionally separate from the player's mute preference.
+let isBgmTemporarilyPaused = false;
 let currentMusicTrack: MusicTrack | null = null;
 let requestedMusicTrack: MusicTrack = "normal";
 let musicFadeTimer: ReturnType<typeof setInterval> | null = null;
@@ -544,7 +547,7 @@ export function setMusicMuteState(muted: boolean) {
 export function startBackgroundMusic(track: MusicTrack = requestedMusicTrack) {
   isBgmPlaying = true;
   requestedMusicTrack = track;
-  if (isBgmMuted) return;
+  if (isBgmMuted || isBgmTemporarilyPaused) return;
 
   if (!bgmAudio) {
     bgmAudio = new Audio();
@@ -586,6 +589,21 @@ export function startBackgroundMusic(track: MusicTrack = requestedMusicTrack) {
     fadeMusicTo(0, switchTrack);
   } else {
     switchTrack();
+  }
+}
+
+/** Pauses the base BGM while a full-screen activity owns the music channel. */
+export function pauseBackgroundMusicForActivity() {
+  isBgmTemporarilyPaused = true;
+  cancelMusicFade();
+  bgmAudio?.pause();
+}
+
+/** Gives the music channel back to the current scene without changing mute settings. */
+export function resumeBackgroundMusicAfterActivity() {
+  isBgmTemporarilyPaused = false;
+  if (isBgmPlaying && !isBgmMuted) {
+    startBackgroundMusic(requestedMusicTrack);
   }
 }
 
