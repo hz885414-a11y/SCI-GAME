@@ -1,6 +1,14 @@
 export const RHYTHM_LANES = ["A", "B", "C", "D"] as const;
 
 export type RhythmLane = (typeof RHYTHM_LANES)[number];
+
+/** Physical keyboard labels for the four chart lanes. Chart data remains A-D. */
+export const RHYTHM_KEY_LABELS: Record<RhythmLane, string> = {
+  A: "Z",
+  B: "X",
+  C: "C",
+  D: "V",
+};
 export type RhythmNoteType = "tap" | "hold" | "double";
 export type RhythmDifficulty = "easy" | "normal" | "hard";
 export type RhythmJudgement = "perfect" | "great" | "good" | "miss";

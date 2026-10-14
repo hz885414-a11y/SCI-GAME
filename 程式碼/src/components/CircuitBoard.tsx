@@ -1,5 +1,5 @@
 import React from "react";
-import { RHYTHM_LANES, type RhythmLane, type RhythmNote } from "../rhythm/types";
+import { RHYTHM_KEY_LABELS, RHYTHM_LANES, type RhythmLane, type RhythmNote } from "../rhythm/types";
 
 interface CircuitBoardProps {
   now: number;
@@ -21,7 +21,7 @@ export function CircuitBoard({ now, notes, litLanes, unstable }: CircuitBoardPro
     <div className="absolute left-1/2 top-[14%] h-[22%] w-32 -translate-x-1/2 border border-cyan-300/50 bg-[#071b20] shadow-[0_0_25px_rgba(34,211,238,.18)]"><span className="absolute inset-0 grid place-items-center font-mono text-[11px] tracking-[.35em] text-cyan-300">C2-932</span></div>
     {RHYTHM_LANES.map((lane) => <React.Fragment key={lane}>
       <div className={`absolute ${lanePosition[lane]} top-[36%] h-[43%] w-px bg-cyan-500/30`} />
-      <div className={`absolute ${lanePosition[lane]} bottom-[14%] grid h-16 w-16 -translate-x-1/2 place-items-center rounded-full border-4 transition-all ${litLanes.has(lane) ? "border-amber-200 bg-amber-400 text-black shadow-[0_0_35px_#fbbf24]" : "border-cyan-700 bg-[#0b2428] text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,.3)]"}`}><b className="font-mono text-2xl">{lane}</b></div>
+      <div className={`absolute ${lanePosition[lane]} bottom-[14%] flex h-16 w-16 -translate-x-1/2 flex-col items-center justify-center rounded-full border-4 transition-all ${litLanes.has(lane) ? "border-amber-200 bg-amber-400 text-black shadow-[0_0_35px_#fbbf24]" : "border-cyan-700 bg-[#0b2428] text-cyan-300 shadow-[0_0_12px_rgba(34,211,238,.3)]"}`}><b className="font-mono text-2xl">{RHYTHM_KEY_LABELS[lane]}</b><span className="font-mono text-[8px] opacity-70">L{lane}</span></div>
     </React.Fragment>)}
     {notes.map((entry) => {
       const target = entry.type === "hold" ? entry.time + (entry.duration ?? 0) / 2 : entry.time;
