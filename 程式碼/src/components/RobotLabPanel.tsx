@@ -14,6 +14,7 @@ import {
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
 import { recordAction } from "../systems/playerStats";
+import { RhythmSolderingGame } from "./RhythmSolderingGame";
 
 interface RobotLabPanelProps {
   materials: MaterialInventory;
@@ -43,14 +44,30 @@ const UPGRADE_CATEGORIES: Array<{
 export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound }: RobotLabPanelProps) {
   const [activeCategory, setActiveCategory] = useState<UpgradeCategory>("attack");
   const [isMaterialPanelOpen, setIsMaterialPanelOpen] = useState(false);
+  const [pendingUpgradeId, setPendingUpgradeId] = useState<RobotUpgradeId | null>(null);
   const category = UPGRADE_CATEGORIES.find((item) => item.id === activeCategory) ?? UPGRADE_CATEGORIES[0];
 
-  const upgrade = (id: RobotUpgradeId) => {
+  const beginUpgrade = (id: RobotUpgradeId) => {
     const currentLevel = upgrades[id] || 0;
     if (currentLevel >= MAX_LEVEL) return;
     const cost = getUpgradeCost(id, currentLevel);
     if (!canAffordUpgrade(materials, cost)) {
       playSound("click");
+      return;
+    }
+    setPendingUpgradeId(id);
+    playSound("click");
+  };
+
+  const completeUpgrade = () => {
+    const id = pendingUpgradeId;
+    if (!id) return;
+    const currentLevel = upgrades[id] || 0;
+    const cost = getUpgradeCost(id, currentLevel);
+    // Nothing has been deducted at the start. This single transaction-like
+    // block is the only place materials and permanent levels are changed.
+    if (currentLevel >= MAX_LEVEL || !canAffordUpgrade(materials, cost)) {
+      setPendingUpgradeId(null);
       return;
     }
     setMaterials((previous) => {
@@ -64,6 +81,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
     recordAction("repairRobot");
     recordAction("upgradeRobotModule");
     playSound("success");
+    setPendingUpgradeId(null);
   };
 
   return (
@@ -206,10 +224,10 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
                     <button
                       type="button"
                       disabled={maxed || !affordable}
-                      onClick={() => upgrade(id)}
+                      onClick={() => beginUpgrade(id)}
                       className="ml-auto min-h-9 min-w-24 border border-red-500/70 bg-red-950/55 px-4 text-xs font-black tracking-widest text-red-200 shadow-[inset_0_0_12px_rgba(239,68,68,0.18)] transition-all hover:bg-red-900/70 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-black/40 disabled:text-zinc-600"
                     >
-                      {maxed ? "已完成" : affordable ? "升級" : "素材不足"}
+                      {maxed ? "已完成" : affordable ? "開始改裝" : "素材不足"}
                     </button>
                   </div>
                 </article>
@@ -225,6 +243,13 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
           </div>
         </aside>
       </div>
+      {pendingUpgradeId && (
+        <RhythmSolderingGame
+          equipmentName={ROBOT_UPGRADE_CONFIG[pendingUpgradeId].name}
+          onCompleted={completeUpgrade}
+          onCancel={() => setPendingUpgradeId(null)}
+        />
+      )}
     </section>
   );
 }
