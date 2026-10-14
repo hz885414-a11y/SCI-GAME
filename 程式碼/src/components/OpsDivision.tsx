@@ -13,6 +13,7 @@ import {
   Flame,
   X,
   Terminal,
+  ChevronDown,
   ChevronUp,
   FolderOpen,
   Gamepad2
@@ -44,12 +45,14 @@ export function OpsDivision({
   // Taskbar windows open/close states - all closed by default
   const [isOpenPortal, setIsOpenPortal] = useState<boolean>(false);
   const [isOpenLogs, setIsOpenLogs] = useState<boolean>(false);
+  const [isTaskbarCollapsed, setIsTaskbarCollapsed] = useState<boolean>(false);
 
   useEffect(() => {
     if (openMissionCenterToken <= 0) return;
     setIsOpenPortal(true);
     setIsOpenLogs(false);
     setIsGameOpen(false);
+    setIsTaskbarCollapsed(false);
   }, [openMissionCenterToken]);
 
   // Laboratory Dashboard states
@@ -387,19 +390,31 @@ export function OpsDivision({
       </div>
 
       {/* Sleek Tactical Work-Items Taskbar (工作任務列) */}
-      <div className="relative z-30 mb-3 flex flex-col items-center justify-between gap-3 border border-zinc-800 bg-zinc-950 p-3 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] backdrop-blur-md sm:mb-0 sm:flex-row sm:gap-2.5 sm:p-2">
-        <div className="flex items-center gap-2">
+      <div className={`relative z-30 mb-3 flex flex-col items-center justify-between border border-zinc-800 bg-zinc-950 p-3 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] backdrop-blur-md sm:mb-0 sm:flex-row sm:gap-2.5 sm:p-2 ${isTaskbarCollapsed ? "gap-0" : "gap-3"}`}>
+        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
+          <div className="flex min-w-0 items-center gap-2">
           <span className="p-1 bg-orange-500/10 border border-orange-500/20 text-orange-500 hidden sm:block">
             <FolderOpen className="w-4 h-4" />
           </span>
           <div>
             <span className="block text-[10px] font-mono leading-none text-zinc-500 sm:text-[9px]">MOB_OPS_DOCK // 任務工作列</span>
-            <span className="font-sans text-xs font-bold text-zinc-300 sm:text-[11px]">請點擊按鈕以展開對應功能視窗</span>
+            <span className={`font-sans text-xs font-bold text-zinc-300 sm:text-[11px] ${isTaskbarCollapsed ? "hidden sm:block" : "block"}`}>請點擊按鈕以展開對應功能視窗</span>
           </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setIsTaskbarCollapsed((collapsed) => !collapsed); playSound("click"); }}
+            className="flex min-h-9 shrink-0 items-center gap-1 border border-zinc-700 bg-black px-2 text-[10px] font-bold text-zinc-300 active:scale-95 sm:hidden"
+            aria-expanded={!isTaskbarCollapsed}
+            aria-label={isTaskbarCollapsed ? "展開任務工作列" : "收合任務工作列"}
+          >
+            {isTaskbarCollapsed ? "展開" : "收合"}
+            {isTaskbarCollapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
         </div>
 
         {/* Taskbar Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+        <div className={`${isTaskbarCollapsed ? "hidden" : "flex"} w-full flex-col items-center gap-2 sm:flex sm:w-auto sm:flex-row`}>
           {/* Main big button for Outbound Mission */}
           <div className="w-full sm:w-[148px]">
             <button
