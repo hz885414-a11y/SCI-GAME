@@ -21,7 +21,17 @@ export interface RhythmChart {
   bpm: number;
   duration: number;
   difficulty: RhythmDifficulty;
+  /** Source-grid offset from the imported chart. Never applied to note timing. */
+  sourceOffsetMs?: number;
+  /** Per-chart windows supplied by the source data, in milliseconds. */
+  timing?: { perfectMs: number; greatMs: number; goodMs: number };
   notes: RhythmNote[];
+}
+
+export interface RhythmNoteAdjustment {
+  timeMs?: number;
+  lane?: RhythmLane;
+  lanes?: RhythmLane[];
 }
 
 export interface RhythmScore {

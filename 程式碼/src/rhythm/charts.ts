@@ -1,54 +1,79 @@
-import { type RhythmChart, type RhythmDifficulty, type RhythmLane, type RhythmNote } from "./types";
+import easySource from "./charts/DDDD_easy.json";
+import normalSource from "./charts/DDDD_normal.json";
+import hardSource from "./charts/DDDD_hard.json";
+import { RHYTHM_LANES, type RhythmChart, type RhythmDifficulty, type RhythmLane, type RhythmNote, type RhythmNoteAdjustment } from "./types";
 
-const lanes: RhythmLane[] = ["A", "B", "C", "D"];
+type SourceNote = { id: string; timeMs: number; type: RhythmNote["type"]; lane?: RhythmLane; lanes?: RhythmLane[]; durationMs?: number };
+type SourceChart = {
+  schemaVersion: number; title: string; durationMs: number; bpm: number; offsetMs: number;
+  difficulty: RhythmDifficulty; timing: { perfectMs: number; greatMs: number; goodMs: number }; notes: SourceNote[];
+};
 
-const note = (id: string, time: number, lane: RhythmLane): RhythmNote => ({ id, time, lane, type: "tap" });
-const hold = (id: string, time: number, lane: RhythmLane, duration: number): RhythmNote => ({ id, time, lane, type: "hold", duration });
-const double = (id: string, time: number, first: RhythmLane, second: RhythmLane): RhythmNote => ({ id, time, lane: first, lanes: [first, second], type: "double" });
+const sources: Record<RhythmDifficulty, SourceChart> = {
+  easy: easySource as SourceChart,
+  normal: normalSource as SourceChart,
+  hard: hardSource as SourceChart,
+};
+const STORAGE_KEY = "c2_932_rhythm_note_adjustments_v1";
+type AdjustmentStore = Partial<Record<RhythmDifficulty, Record<string, RhythmNoteAdjustment>>>;
+
+function isLane(value: unknown): value is RhythmLane {
+  return typeof value === "string" && RHYTHM_LANES.includes(value as RhythmLane);
+}
+
+function readAdjustments(): AdjustmentStore {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as AdjustmentStore; } catch { return {}; }
+}
+function writeAdjustments(store: AdjustmentStore) { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }
 
 /**
- * First built-in test track. Times are data rather than UI logic so new songs
- * can be added by registering another chart (or eventually loading JSON).
+ * Imported timeMs is absolute from the audio playback origin. source offsetMs
+ * is retained as editor metadata only and is never added to judgement timing.
  */
-const buildChart = (difficulty: RhythmDifficulty): RhythmChart => {
-  const notes: RhythmNote[] = [];
-  const step = difficulty === "easy" ? 0.78 : difficulty === "normal" ? 0.52 : 0.36;
-  const count = difficulty === "easy" ? 22 : difficulty === "normal" ? 34 : 52;
-  for (let index = 0; index < count; index += 1) {
-    const time = 2 + index * step;
-    const lane = lanes[(index * (difficulty === "hard" ? 3 : 1) + Math.floor(index / 5)) % lanes.length];
-    if (difficulty !== "easy" && index > 0 && index % 9 === 0) {
-      notes.push(double(`double-${index}`, time, lane, lanes[(lanes.indexOf(lane) + 2) % lanes.length]));
-    } else if (difficulty !== "easy" && index > 2 && index % 7 === 0) {
-      notes.push(hold(`hold-${index}`, time, lane, difficulty === "hard" ? 0.72 : 0.62));
-    } else {
-      notes.push(note(`tap-${index}`, time, lane));
-    }
-  }
-  const last = notes.at(-1);
-  return {
-    id: `solder-test-${difficulty}`,
-    name: "C2-932 // Circuit Pulse Test",
-    bpm: difficulty === "easy" ? 96 : difficulty === "normal" ? 116 : 138,
-    difficulty,
-    duration: (last?.time ?? 0) + (last?.duration ?? 0) + 2.5,
-    notes,
-  };
-};
+function toChart(source: SourceChart, adjustments: Record<string, RhythmNoteAdjustment> = {}): RhythmChart {
+  const notes = source.notes.map((entry) => {
+    const adjustment = adjustments[entry.id];
+    const lane = isLane(adjustment?.lane) ? adjustment.lane : entry.lane ?? entry.lanes?.[0] ?? "A";
+    const lanes = entry.type === "double"
+      ? (adjustment?.lanes?.every(isLane) && adjustment.lanes.length === 2 ? adjustment.lanes : entry.lanes ?? [lane, lane])
+      : undefined;
+    return {
+      id: entry.id,
+      time: (adjustment?.timeMs ?? entry.timeMs) / 1000,
+      lane,
+      lanes,
+      type: entry.type,
+      duration: entry.durationMs ? entry.durationMs / 1000 : undefined,
+    } satisfies RhythmNote;
+  }).sort((left, right) => left.time - right.time);
+  return { id: `dddd-${source.difficulty}`, name: source.title, bpm: source.bpm, duration: source.durationMs / 1000, difficulty: source.difficulty, sourceOffsetMs: source.offsetMs, timing: source.timing, notes };
+}
 
 export const RHYTHM_CHARTS: Record<RhythmDifficulty, RhythmChart> = {
-  easy: buildChart("easy"),
-  normal: buildChart("normal"),
-  hard: buildChart("hard"),
+  easy: toChart(sources.easy), normal: toChart(sources.normal), hard: toChart(sources.hard),
 };
+
+export function getRhythmChart(difficulty: RhythmDifficulty): RhythmChart {
+  return validateChart(toChart(sources[difficulty], readAdjustments()[difficulty]));
+}
+export function getSourceNoteCount(difficulty: RhythmDifficulty) { return sources[difficulty].notes.length; }
+export function saveNoteAdjustment(difficulty: RhythmDifficulty, noteId: string, adjustment: RhythmNoteAdjustment) {
+  const store = readAdjustments();
+  store[difficulty] = { ...store[difficulty], [noteId]: adjustment };
+  writeAdjustments(store);
+}
+export function clearNoteAdjustments(difficulty: RhythmDifficulty) {
+  const store = readAdjustments(); delete store[difficulty]; writeAdjustments(store);
+}
 
 export function validateChart(chart: RhythmChart): RhythmChart {
   const ids = new Set<string>();
   chart.notes.forEach((entry) => {
     if (ids.has(entry.id)) throw new Error(`Duplicate rhythm note id: ${entry.id}`);
     if (entry.time < 0 || !Number.isFinite(entry.time)) throw new Error(`Invalid rhythm note time: ${entry.id}`);
+    if (!isLane(entry.lane)) throw new Error(`Invalid rhythm lane: ${entry.id}`);
     if (entry.type === "hold" && (!entry.duration || entry.duration <= 0)) throw new Error(`Hold needs duration: ${entry.id}`);
-    if (entry.type === "double" && (!entry.lanes || entry.lanes.length !== 2)) throw new Error(`Double needs two lanes: ${entry.id}`);
+    if (entry.type === "double" && (!entry.lanes || entry.lanes.length !== 2 || !entry.lanes.every(isLane))) throw new Error(`Double needs two lanes: ${entry.id}`);
     ids.add(entry.id);
   });
   return chart;

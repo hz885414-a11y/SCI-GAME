@@ -1,10 +1,17 @@
 import { RHYTHM_RULES, type RhythmJudgement, type RhythmResult, type RhythmScore } from "./types";
 
-export function judgementForDelta(deltaMs: number): RhythmJudgement {
+export function judgementForDelta(
+  deltaMs: number,
+  windows: { perfectMs: number; greatMs: number; goodMs: number } = {
+    perfectMs: RHYTHM_RULES.windowsMs.perfect,
+    greatMs: RHYTHM_RULES.windowsMs.great,
+    goodMs: RHYTHM_RULES.windowsMs.good,
+  },
+): RhythmJudgement {
   const abs = Math.abs(deltaMs);
-  if (abs <= RHYTHM_RULES.windowsMs.perfect) return "perfect";
-  if (abs <= RHYTHM_RULES.windowsMs.great) return "great";
-  if (abs <= RHYTHM_RULES.windowsMs.good) return "good";
+  if (abs <= windows.perfectMs) return "perfect";
+  if (abs <= windows.greatMs) return "great";
+  if (abs <= windows.goodMs) return "good";
   return "miss";
 }
 
