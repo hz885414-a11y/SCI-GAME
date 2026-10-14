@@ -315,6 +315,13 @@ export default function App() {
     // First arrival to a division waits for its actual scene art. Later
     // visits use the browser/preloader cache and keep the walk transition fast.
     const targetAssets: PreloadAsset[] = [];
+    // Remote character PNGs are intentionally large to keep the dialogue art
+    // sharp. Decoding the lab background plus three of them at the same time
+    // can make lower-memory mobile browsers discard the tab, which looks like
+    // a jump back to the base screen. On phones, gate the transition on the
+    // background only; the normal image elements then load portraits with the
+    // browser's own memory scheduling after the Lab is already mounted.
+    const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
     if (targetScene === "lab") {
       // Only block the doorway on the three portraits that are visible on the
       // first lab screen. Loading every expression here meant a first visit
@@ -329,10 +336,8 @@ export default function App() {
           url: characterImages[character][portraitKey],
         };
       });
-      targetAssets.push(
-        { label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab },
-        ...visiblePortraits,
-      );
+      targetAssets.push({ label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab });
+      if (!isMobileViewport) targetAssets.push(...visiblePortraits);
     } else if (targetScene === "tech") {
       targetAssets.push(
         { label: "技術研發部背景", url: BACKGROUND_ASSETS.tech },
@@ -361,29 +366,36 @@ export default function App() {
 
     const startedAt = Date.now();
     void (async () => {
-      if (isFirstVisit && targetAssets.length > 0) {
-        await preloadAssetManifest(targetAssets, (status) => {
-          setTransitionAssetProgress({
-            loaded: status.completed,
-            total: status.total,
-            currentLabel: status.currentLabel,
-          });
-        }, 8000, 4);
-        visitedSceneAssetsRef.current.add(targetScene);
-      }
+      try {
+        if (isFirstVisit && targetAssets.length > 0) {
+          await preloadAssetManifest(targetAssets, (status) => {
+            setTransitionAssetProgress({
+              loaded: status.completed,
+              total: status.total,
+              currentLabel: status.currentLabel,
+            });
+          }, 8000, isMobileViewport ? 1 : 4);
+        }
+      } catch (error) {
+        // Asset preloading is an enhancement, never a navigation requirement.
+        // This protects the public site from a flaky CDN/mobile decode failure.
+        console.warn("Scene asset preload failed; continuing to the requested scene.", error);
+      } finally {
+        if (isFirstVisit) visitedSceneAssetsRef.current.add(targetScene);
 
-      // Retain a short walk sequence even when everything was instant from
-      // cache, but never reveal the target division before its art is ready.
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < 1200) await new Promise<void>((resolve) => window.setTimeout(resolve, 1200 - elapsed));
-      clearInterval(interval);
-      setTransitionStep(6);
-      setCurrentScene(targetScene);
-      window.setTimeout(() => {
-        setIsTransitioning(false);
-        setPendingScene(null);
-        setTransitionStep(0);
-      }, 350);
+        // Retain a short walk sequence even when everything was instant from
+        // cache, but always complete the navigation if a remote asset fails.
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < 1200) await new Promise<void>((resolve) => window.setTimeout(resolve, 1200 - elapsed));
+        clearInterval(interval);
+        setTransitionStep(6);
+        setCurrentScene(targetScene);
+        window.setTimeout(() => {
+          setIsTransitioning(false);
+          setPendingScene(null);
+          setTransitionStep(0);
+        }, 350);
+      }
     })();
   };
 
