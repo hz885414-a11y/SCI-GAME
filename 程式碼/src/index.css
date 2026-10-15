@@ -10,6 +10,19 @@
   text-rendering: geometricPrecision;
 }
 
+/* Keep Traditional Chinese labels complete even when the pixel Latin font is
+   selected for the surrounding rhythm-game HUD. */
+.font-cjk-ui {
+  font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  font-weight: 900;
+}
+
+.rhythm-judgement-pop {
+  -webkit-text-stroke: 2px #020607;
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 #020607, -2px -2px 0 #020607, 0 0 16px currentColor;
+}
+
 @keyframes rhythmJudgementPop {
   0% { opacity: 0; transform: translate(-50%, -20%) scale(0.45); }
   42% { opacity: 1; transform: translate(-50%, 0) scale(1.18); }
