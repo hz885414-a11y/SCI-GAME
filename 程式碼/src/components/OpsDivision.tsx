@@ -436,7 +436,7 @@ export function OpsDivision({
               <span className={pendingBossChapter !== null ? "text-rose-200 font-black" : "text-orange-400 font-black"}>
                 {pendingBossChapter !== null
                   ? `⚠️ 繼續第 ${pendingBossChapter} 章 Boss 任務（C2-932）`
-                  : "🎮 出發任務(遊戲)"}
+                  : "🎮 出發任務"}
               </span>
               {isGameOpen && <span className="w-1.5 h-1.5 bg-black rounded-full animate-ping" />}
             </button>
