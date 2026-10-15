@@ -6347,7 +6347,7 @@ export function MissionGame({
           {startTitleActive && (
             <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none select-none bg-zinc-950/40 backdrop-blur-[1px]">
               <div className="text-center animate-scale-up">
-                <h1 className="text-6xl sm:text-8xl font-black text-orange-500 tracking-widest drop-shadow-[0_0_20px_rgba(249,115,22,0.8)] animate-pulse">
+                <h1 className="font-pixel text-6xl font-black tracking-widest text-orange-500 drop-shadow-[0_0_20px_rgba(249,115,22,0.8)] animate-pulse sm:text-8xl">
                   START!
                 </h1>
                 <p className="text-[10px] sm:text-xs text-zinc-400 tracking-widest uppercase mt-2 font-bold font-mono">
@@ -6529,7 +6529,7 @@ export function MissionGame({
                       </div>
                     ) : (
                       <div className="text-center animate-scale-up">
-                        <h1 className="text-6xl font-black tracking-[0.16em] text-orange-400 drop-shadow-[0_0_26px_rgba(249,115,22,.95)] sm:text-9xl">START!</h1>
+                        <h1 className="font-pixel text-6xl font-black tracking-[0.16em] text-orange-400 drop-shadow-[0_0_26px_rgba(249,115,22,.95)] sm:text-9xl">START!</h1>
                         <p className="mt-2 font-mono text-[10px] font-bold tracking-[0.35em] text-zinc-200 sm:text-sm">BOSS COMBAT PROTOCOL ACTIVE</p>
                       </div>
                     )}
