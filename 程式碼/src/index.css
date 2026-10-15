@@ -30,6 +30,13 @@
   100% { opacity: 0; transform: translate(-50%, -18%) scale(0.88); }
 }
 
+@keyframes rhythmCountdownPop {
+  0% { opacity: 0; transform: scale(0.45); }
+  42% { opacity: 1; transform: scale(1.18); }
+  72% { opacity: 1; transform: translateY(-4px) scale(1); }
+  100% { opacity: 0; transform: translateY(-18px) scale(0.88); }
+}
+
 @layer utilities {
   .bg-grid-pattern {
     background-size: 20px 20px;
