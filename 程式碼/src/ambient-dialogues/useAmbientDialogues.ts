@@ -5,33 +5,153 @@ import { canPlay, getAmbientState, saveAmbientState } from "./storage";
 import type { AmbientDialogue, AmbientDialogueConfig, AmbientDialogueLine } from "./types";
 import { DEFAULT_AMBIENT_DIALOGUES } from "./defaults";
 
+const MANUAL_TAP_GUARD_MS = 180;
+
 export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocked: boolean }) {
   const [config, setConfig] = useState<AmbientDialogueConfig>(DEFAULT_AMBIENT_DIALOGUES);
   const [line, setLine] = useState<AmbientDialogueLine | null>(null);
   const [autoEnabled, setAutoEnabledState] = useState(() => getAmbientState().enabled);
-  const configRef = useRef(config); const busy = useRef(false); const timer = useRef<number | null>(null); const idleTimer = useRef<number | null>(null); const advanceRef = useRef<(() => void) | null>(null);
+  const configRef = useRef(config);
+  const busy = useRef(false);
+  const timer = useRef<number | null>(null);
+  const idleTimer = useRef<number | null>(null);
+  const advanceRef = useRef<(() => void) | null>(null);
+  const playbackId = useRef(0);
+  const lastManualTapAt = useRef(0);
+
   useEffect(() => { configRef.current = config; }, [config]);
-  useEffect(() => { const c = new AbortController(); const t = window.setTimeout(() => c.abort(), 4000); loadAmbientDialogues(c.signal).then(setConfig).catch(() => setConfig(DEFAULT_AMBIENT_DIALOGUES)).finally(() => window.clearTimeout(t)); return () => { c.abort(); window.clearTimeout(t); }; }, []);
-  useEffect(() => { const onStorage = (e: StorageEvent) => { if (e.key === "sci_ambient_dialogues_updated") loadAmbientDialogues().then(setConfig).catch(() => undefined); }; window.addEventListener("storage", onStorage); return () => window.removeEventListener("storage", onStorage); }, []);
-  const stop = useCallback(() => { if (timer.current) window.clearTimeout(timer.current); timer.current = null; advanceRef.current = null; busy.current = false; setLine(null); }, []);
-  const play = useCallback((dialogue: AmbientDialogue) => { if (busy.current || blocked || !inLab) return false; busy.current = true; const state = getAmbientState(); state.played[dialogue.id] = (state.played[dialogue.id] || 0) + 1; state.cooldowns[dialogue.id] = Date.now() + Math.max(0, dialogue.cooldownMs); state.entryPlayed[dialogue.id] = state.entry; if (dialogue.category === "ambient") state.lastAmbientId = dialogue.id; saveAmbientState(state); let index = 0; const show = () => { const current = dialogue.lines[index]; setLine(current); timer.current = window.setTimeout(() => advanceRef.current?.(), Math.max(500, current.durationMs || configRef.current.defaultLineDurationMs)); }; advanceRef.current = () => { if (timer.current) window.clearTimeout(timer.current); index += 1; if (index < dialogue.lines.length && inLab && !blocked) show(); else stop(); }; show(); return true; }, [blocked, inLab, stop]);
-  const choose = useCallback((eventType?: string, eventId?: string, data: Record<string, unknown> = {}) => { const state = getAmbientState(); const candidates = configRef.current.dialogues.filter((d) => { if (!canPlay(d, state)) return false; if (!eventType) return d.category === "ambient" && d.id !== state.lastAmbientId; const c = d.condition; return d.category === "event" && c?.eventType === eventType && (!c.eventId || c.eventId === eventId) && Object.entries(c.required || {}).every(([key, value]) => data[key] === value) && Math.random() <= (c.chance ?? 1); }); if (!candidates.length) return false; const top = Math.max(...candidates.map((d) => d.priority)); const ranked = candidates.filter((d) => d.priority === top); const total = ranked.reduce((sum, d) => sum + Math.max(1, d.weight), 0); let pick = Math.random() * total; return play(ranked.find((d) => (pick -= Math.max(1, d.weight)) <= 0) || ranked[0]); }, [play]);
-  useEffect(() => { const onEvent = (event: Event) => { const detail = (event as CustomEvent<{ eventType: string; eventId?: string; data: Record<string, unknown> }>).detail; if (!detail) return; if (!inLab) { const state = getAmbientState(); state.pending.push(detail); saveAmbientState(state); return; } choose(detail.eventType, detail.eventId, detail.data); }; window.addEventListener(AMBIENT_GAME_EVENT, onEvent); return () => window.removeEventListener(AMBIENT_GAME_EVENT, onEvent); }, [choose, inLab]);
-  useEffect(() => { if (!inLab) { stop(); return; } const state = getAmbientState(); state.entry += 1; saveAmbientState(state); emitAmbientEvent("lab_enter"); const pending = [...state.pending]; state.pending = []; saveAmbientState(state); pending.some((p) => choose(p.eventType, p.eventId, p.data)); return stop; }, [inLab, choose, stop]);
-  useEffect(() => { if (!inLab || blocked || !autoEnabled || busy.current) return; idleTimer.current = window.setTimeout(() => { choose("lab_idle") || choose(); }, config.idleDelayMs); return () => { if (idleTimer.current) window.clearTimeout(idleTimer.current); }; }, [inLab, blocked, autoEnabled, config.idleDelayMs, choose, line]);
-  const setAutoEnabled = (enabled: boolean) => { const state = getAmbientState(); state.enabled = enabled; saveAmbientState(state); setAutoEnabledState(enabled); if (!enabled) stop(); };
-  // Character clicks first look for an editor-defined custom event such as
-  // `character_leo`. Manual interaction intentionally bypasses *cooldown*
-  // for ordinary banter, otherwise a click immediately after auto-play feels
-  // broken; max-trigger and enabled limits still apply.
-  const advance = () => { if (!busy.current || !advanceRef.current) return false; advanceRef.current(); return true; };
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+    loadAmbientDialogues(controller.signal).then(setConfig).catch(() => setConfig(DEFAULT_AMBIENT_DIALOGUES)).finally(() => window.clearTimeout(timeout));
+    return () => { controller.abort(); window.clearTimeout(timeout); };
+  }, []);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "sci_ambient_dialogues_updated") loadAmbientDialogues().then(setConfig).catch(() => undefined);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const stop = useCallback(() => {
+    playbackId.current += 1;
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+    advanceRef.current = null;
+    busy.current = false;
+    setLine(null);
+  }, []);
+
+  const play = useCallback((dialogue: AmbientDialogue) => {
+    if (busy.current || blocked || !inLab || !Array.isArray(dialogue.lines) || dialogue.lines.length === 0) return false;
+    const lines = dialogue.lines.filter((item): item is AmbientDialogueLine => Boolean(item?.speaker && typeof item.text === "string"));
+    if (!lines.length) return false;
+    busy.current = true;
+    const currentPlayback = playbackId.current + 1;
+    playbackId.current = currentPlayback;
+    const state = getAmbientState();
+    state.played[dialogue.id] = (state.played[dialogue.id] || 0) + 1;
+    state.cooldowns[dialogue.id] = Date.now() + Math.max(0, Number(dialogue.cooldownMs) || 0);
+    state.entryPlayed[dialogue.id] = state.entry;
+    if (dialogue.category === "ambient") state.lastAmbientId = dialogue.id;
+    saveAmbientState(state);
+    let index = 0;
+    const finish = () => { if (playbackId.current === currentPlayback) stop(); };
+    const show = () => {
+      if (playbackId.current !== currentPlayback) return;
+      const current = lines[index];
+      if (!current) { finish(); return; }
+      setLine(current);
+      const duration = Math.max(500, Number(current.durationMs) || configRef.current.defaultLineDurationMs || 3000);
+      timer.current = window.setTimeout(() => advanceRef.current?.(), duration);
+    };
+    advanceRef.current = () => {
+      if (playbackId.current !== currentPlayback) return;
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+      index += 1;
+      if (index < lines.length && inLab && !blocked) show(); else finish();
+    };
+    show();
+    return true;
+  }, [blocked, inLab, stop]);
+
+  const choose = useCallback((eventType?: string, eventId?: string, data: Record<string, unknown> = {}) => {
+    const state = getAmbientState();
+    const candidates = configRef.current.dialogues.filter((dialogue) => {
+      if (!canPlay(dialogue, state)) return false;
+      if (!eventType) return dialogue.category === "ambient" && dialogue.id !== state.lastAmbientId;
+      const condition = dialogue.condition;
+      return dialogue.category === "event" && condition?.eventType === eventType && (!condition.eventId || condition.eventId === eventId) && Object.entries(condition.required || {}).every(([key, value]) => data[key] === value) && Math.random() <= (condition.chance ?? 1);
+    });
+    if (!candidates.length) return false;
+    const priority = Math.max(...candidates.map((dialogue) => dialogue.priority));
+    const ranked = candidates.filter((dialogue) => dialogue.priority === priority);
+    const totalWeight = ranked.reduce((sum, dialogue) => sum + Math.max(1, dialogue.weight), 0);
+    let pick = Math.random() * totalWeight;
+    return play(ranked.find((dialogue) => (pick -= Math.max(1, dialogue.weight)) <= 0) || ranked[0]);
+  }, [play]);
+
+  useEffect(() => {
+    const onEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ eventType: string; eventId?: string; data: Record<string, unknown> }>).detail;
+      if (!detail) return;
+      if (!inLab) {
+        const state = getAmbientState();
+        state.pending.push(detail);
+        saveAmbientState(state);
+        return;
+      }
+      choose(detail.eventType, detail.eventId, detail.data);
+    };
+    window.addEventListener(AMBIENT_GAME_EVENT, onEvent);
+    return () => window.removeEventListener(AMBIENT_GAME_EVENT, onEvent);
+  }, [choose, inLab]);
+  useEffect(() => {
+    if (!inLab) { stop(); return; }
+    const state = getAmbientState();
+    state.entry += 1;
+    saveAmbientState(state);
+    emitAmbientEvent("lab_enter");
+    const pending = [...state.pending];
+    state.pending = [];
+    saveAmbientState(state);
+    pending.some((item) => choose(item.eventType, item.eventId, item.data));
+    return stop;
+  }, [inLab, choose, stop]);
+  useEffect(() => {
+    if (!inLab || blocked || !autoEnabled || busy.current) return;
+    idleTimer.current = window.setTimeout(() => { choose("lab_idle") || choose(); }, config.idleDelayMs);
+    return () => { if (idleTimer.current !== null) window.clearTimeout(idleTimer.current); };
+  }, [inLab, blocked, autoEnabled, config.idleDelayMs, choose, line]);
+
+  const setAutoEnabled = (enabled: boolean) => {
+    const state = getAmbientState();
+    state.enabled = enabled;
+    saveAmbientState(state);
+    setAutoEnabledState(enabled);
+    if (!enabled) stop();
+  };
+  const acceptManualTap = () => {
+    const now = Date.now();
+    if (now - lastManualTapAt.current < MANUAL_TAP_GUARD_MS) return false;
+    lastManualTapAt.current = now;
+    return true;
+  };
+  const advance = () => {
+    if (!busy.current || !advanceRef.current || !acceptManualTap()) return false;
+    advanceRef.current();
+    return true;
+  };
   const triggerCharacter = (characterId: string) => {
+    if (!acceptManualTap()) return false;
     if (choose("custom_event", `character_${characterId}`, { characterId })) return true;
     const state = getAmbientState();
     const candidates = configRef.current.dialogues.filter((dialogue) => dialogue.category === "ambient" && dialogue.enabled && dialogue.lines.length > 0 && (!dialogue.maxTriggers || (state.played[dialogue.id] || 0) < dialogue.maxTriggers));
     if (!candidates.length) return false;
-    const top = Math.max(...candidates.map((dialogue) => dialogue.priority));
-    const ranked = candidates.filter((dialogue) => dialogue.priority === top);
+    const priority = Math.max(...candidates.map((dialogue) => dialogue.priority));
+    const ranked = candidates.filter((dialogue) => dialogue.priority === priority);
     return play(ranked[Math.floor(Math.random() * ranked.length)]);
   };
   return { line, autoEnabled, setAutoEnabled, stop, advance, triggerCharacter };
