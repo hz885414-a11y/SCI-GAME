@@ -182,7 +182,15 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   };
 
   const fallbackLayout = CHARACTER_LAYOUT[character.id as keyof typeof CHARACTER_LAYOUT] || CHARACTER_LAYOUT.ethan;
-  const layout = configuredLayout ? { ...configuredLayout, imageWidth: character.id === "claire" ? "clamp(720px, 76vw, 1080px)" : "auto" } : fallbackLayout;
+  const layout = configuredLayout ?? fallbackLayout;
+  // Firebase layout values use offsetX / offsetY. The original static layout
+  // used imageOffsetX / imageOffsetY, so reading only the latter produced an
+  // invalid `calc(... undefinedpx)` declaration on mobile. Browsers then fell
+  // back to their static image placement and cropped each portrait into a
+  // narrow column. Support both field names for legacy local layouts.
+  const imageOffsetX = configuredLayout?.offsetX ?? fallbackLayout.imageOffsetX ?? 0;
+  const imageOffsetY = configuredLayout?.offsetY ?? fallbackLayout.imageOffsetY ?? 0;
+  const imageWidth = configuredLayout ? "auto" : fallbackLayout.imageWidth;
   const speakingScale = isSpeaking ? 1.045 : 1;
   const translateY = isSpeaking ? -12 : 0;
   const visualOpacity = isAnySpeaking && !isSpeaking ? 0.72 : 1;
@@ -238,11 +246,11 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
               alt={`${character.name} (${emotion})`}
               className="absolute max-w-none"
               style={{
-                width: layout.imageWidth,
+                width: imageWidth,
                 height: `${layout.imageScale * 100}%`,
                 maxWidth: "none",
-                left: `calc(50% + ${layout.imageOffsetX}px)`,
-                bottom: typeof layout.imageOffsetY === "number" ? `${layout.imageOffsetY}px` : layout.imageOffsetY,
+                left: `calc(50% + ${imageOffsetX}px)`,
+                bottom: `${imageOffsetY}px`,
                 objectFit: "contain",
                 objectPosition: "center bottom",
                 transform: "translateX(-50%)",
