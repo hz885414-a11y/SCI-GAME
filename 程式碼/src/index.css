@@ -10,6 +10,13 @@
   text-rendering: geometricPrecision;
 }
 
+@keyframes rhythmJudgementPop {
+  0% { opacity: 0; transform: translate(-50%, -20%) scale(0.45); }
+  42% { opacity: 1; transform: translate(-50%, 0) scale(1.18); }
+  72% { opacity: 1; transform: translate(-50%, -4%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -18%) scale(0.88); }
+}
+
 @layer utilities {
   .bg-grid-pattern {
     background-size: 20px 20px;

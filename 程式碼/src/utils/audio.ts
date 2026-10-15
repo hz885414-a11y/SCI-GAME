@@ -103,6 +103,18 @@ export function playSound(type: string) {
         break;
       }
 
+      case "countdown": {
+        // Clear arcade metronome used by the rhythm-soldering 3 / 2 / 1 cue.
+        tone(660, 0.09, 0.04, "square", 510);
+        break;
+      }
+      case "countdownGo": {
+        // A brighter two-tone confirmation separates GO from the count-in.
+        tone(880, 0.12, 0.045, "square", 1160);
+        tone(1320, 0.16, 0.028, "triangle", 980);
+        break;
+      }
+
       case "hit":
       case "hit1": {
         tone(180, 0.055, 0.035, "square", 85);
