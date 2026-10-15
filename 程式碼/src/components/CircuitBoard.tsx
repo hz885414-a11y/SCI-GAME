@@ -32,8 +32,8 @@ export function CircuitBoard({ now, notes, litLanes, unstable, lastJudgement }: 
 
     {RHYTHM_LANES.map((lane) => <React.Fragment key={lane}>
       <div className={`pointer-events-none absolute bottom-[12.1%] top-[31%] w-[3px] -translate-x-1/2 bg-cyan-300/15 ${litLanes.has(lane) ? "bg-cyan-200/70 shadow-[0_0_16px_#2dd4bf]" : ""}`} style={{ left: `${lanePosition[lane]}%` }} />
-      <div className={`pointer-events-none absolute bottom-[8.1%] h-[8%] w-[16%] -translate-x-1/2 border-2 border-amber-300/50 bg-[#0a332f]/45 ${litLanes.has(lane) ? "border-amber-100 bg-amber-300/25 shadow-[0_0_24px_#fbbf24]" : ""} ${hitEffect}`} style={{ left: `${lanePosition[lane]}%` }}>
-        <span className="absolute inset-0 grid place-items-center font-mono text-[clamp(14px,4vw,24px)] font-black tracking-[.12em] text-cyan-100 drop-shadow-[2px_2px_0_#06201e]">{RHYTHM_KEY_LABELS[lane]}</span>
+      <div className={`pointer-events-none absolute bottom-[8.1%] h-[8%] w-[16%] -translate-x-1/2 rounded-full border-2 border-amber-300/50 bg-[#0a332f]/45 ${litLanes.has(lane) ? "border-amber-100 bg-amber-300/25 shadow-[0_0_24px_#fbbf24]" : ""} ${hitEffect}`} style={{ left: `${lanePosition[lane]}%` }}>
+        <span className="absolute inset-0 grid place-items-center font-pixel text-[clamp(14px,4vw,24px)] font-black text-cyan-100 drop-shadow-[2px_2px_0_#06201e]">{RHYTHM_KEY_LABELS[lane]}</span>
       </div>
     </React.Fragment>)}
 

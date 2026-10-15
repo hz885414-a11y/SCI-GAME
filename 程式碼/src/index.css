@@ -1,5 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Noto+Sans+TC:wght@900&family=Pixelify+Sans:wght@500;600;700&display=swap');
 @import "tailwindcss";
+
+/* Pixelify supplies crisp Latin glyphs; DotGothic keeps the game’s Chinese
+   labels in the same pixel-style family when glyphs are available. */
+.font-pixel {
+  font-family: "Pixelify Sans", "DotGothic16", "Noto Sans TC", monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-rendering: geometricPrecision;
+}
 
 @layer utilities {
   .bg-grid-pattern {
