@@ -3,6 +3,7 @@ import type { GameEventDefinition } from "../data/eventConfig";
 import { enqueueCardRewards } from "./eventManager";
 import type { ManagedCard } from "../card-events/types";
 import { getAllCardDefinitions, saveCustomCardDefinition } from "../data/cardDatabase";
+import { emitAmbientEvent } from "../ambient-dialogues/events";
 
 export type GameEventType =
   | "enter_area"
@@ -79,6 +80,20 @@ export async function emitGameEvent<TData extends Record<string, unknown>>(
     timestamp: new Date().toISOString(),
     data,
   };
+  // This is an observer only: ambient dialogue never participates in card
+  // processing and can therefore not change established event outcomes.
+  const ambientType = eventType === "enter_area" && data.area === "lab" ? "lab_enter"
+    : eventType === "boss_defeated" ? "boss_defeated"
+    : eventType === "item_collected" ? "item_obtained"
+    : eventType === "mission_completed" ? "quest_completed"
+    : eventType;
+  // Existing producers identify Bosses/items through `action`; expose it as
+  // the optional ambient eventId while preserving the complete original data.
+  const ambientEventId = typeof data.eventId === "string" ? data.eventId
+    : typeof data.bossId === "string" ? data.bossId
+    : typeof data.itemId === "string" ? data.itemId
+    : typeof data.action === "string" ? data.action : undefined;
+  emitAmbientEvent(ambientType, { ...data, eventId: ambientEventId });
 
   // Reserve this slot synchronously, before waiting. Calls made during the
   // same animation frame therefore retain their original gameplay order.

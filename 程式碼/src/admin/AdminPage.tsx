@@ -9,6 +9,7 @@ import { KnowledgeRuleControls } from "./KnowledgeRuleControls";
 import { BossAdmin } from "./BossAdmin";
 import { SupplyShopAdmin } from "./SupplyShopAdmin";
 import { CharacterPresentationAdmin } from "./CharacterPresentationAdmin";
+import { AmbientDialogueAdmin } from "./AmbientDialogueAdmin";
 
 type ModuleId = (typeof ADMIN_MODULES)[number]["id"];
 
@@ -22,6 +23,7 @@ const IMPACT: Record<ModuleId, string> = {
   cardEvents: "影響位置：伺服器統一處理玩家事件、累積 stats、卡片規則與 pendingCards。",
   characters: "影響位置：勇氣の實驗室角色立繪；重新整理前台後依目前螢幕尺寸套用。",
   dialogues: "影響位置：基地的研發實驗室；玩家輸入煩惱後，Claire、Ethan、Leo 的回覆。",
+  ambientDialogues: "影響位置：勇氣實驗室角色頭頂；正式任務、諮詢與戰鬥期間會自動暫停。",
 };
 
 const KNOWLEDGE_CATEGORIES = ["lighting", "energy", "materials", "maintenance", "marine", "safety"] as const;
@@ -206,6 +208,7 @@ export function AdminPage() {
           {selectedScenario && <div className="admin-scenario-editor"><h3>情境辨識設定｜{selectedScenario.name}</h3><div className="admin-scenario-grid"><label>後台顯示名稱<input value={selectedScenario.name} onChange={(e) => updateScenario({ name: e.target.value })} /></label><label>情境說明<input value={selectedScenario.description} onChange={(e) => updateScenario({ description: e.target.value })} /></label></div><div className="admin-keywords"><b>觸發關鍵字</b><small>玩家輸入只要包含其中一個詞，就會使用這個情境。越具體的詞建議排在越前面。</small>{selectedScenario.keywords.map((keyword, index) => <div className="admin-keyword-row" key={index}><input aria-label={`關鍵字 ${index + 1}`} value={keyword} onChange={(e) => updateScenario({ keywords: selectedScenario.keywords.map((item, itemIndex) => itemIndex === index ? e.target.value : item) })} /><button type="button" className="admin-delete" onClick={() => updateScenario({ keywords: selectedScenario.keywords.filter((_, itemIndex) => itemIndex !== index) })}>刪除</button></div>)}<button type="button" className="admin-add" onClick={() => updateScenario({ keywords: [...selectedScenario.keywords, "新關鍵字"] })}>＋ 新增關鍵字</button></div></div>}
           {(["claire", "ethan", "leo"] as const).map((character) => <section className="admin-dialogue-card" key={character}><b>{character === "claire" ? "Claire｜溫柔回覆" : character === "ethan" ? "Ethan｜理性分析" : "Leo｜熱血鼓勵"}</b><small>每一格都是一則完整回覆；可指定這句話出現時使用哪一張表情圖片。</small><DialogueRows value={dialogue[character]} portraits={config.dialoguePortraits?.[dialogueScenario]?.[character] || []} onChange={(lines, portraits) => setConfig({ ...config, dialogues: { ...config.dialogues, [dialogueScenario]: { ...dialogue, [character]: lines } }, dialoguePortraits: { ...config.dialoguePortraits, [dialogueScenario]: { ...(config.dialoguePortraits?.[dialogueScenario] || { claire: [], ethan: [], leo: [] }), [character]: portraits } } })} /></section>)}
         </div>}
+        {active === "ambientDialogues" && <AmbientDialogueAdmin />}
       </section>
     </div>
   </main>;

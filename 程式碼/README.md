@@ -26,7 +26,7 @@ View your app in AI Studio: https://ai.studio/apps/0b58f910-5c23-48e8-b06b-2c7be
 
 1. 在 Firebase Console 建立 Realtime Database。
 2. 複製 `.env.example` 為 `.env.local`，填入 `VITE_FIREBASE_DATABASE_URL`。
-3. 第一階段未加入登入，因此若要直接由瀏覽器後台儲存，需讓 `gameConfig` 節點可公開讀寫。`firebase-database.rules.json` 提供最小範圍的示例規則；請勿把其他資料放在此公開節點。
+3. 第一階段未加入登入，因此若要直接由瀏覽器後台儲存，需讓 `gameConfig` 與 `ambientDialogues` 節點可公開讀寫。`firebase-database.rules.json` 提供最小範圍的示例規則；請勿把其他資料放在此公開節點。
 4. 執行開發伺服器後開啟 `http://localhost:3000/admin`，調整內容並按「儲存到 Firebase」。
 
 新增管理模組時，在 `src/config/types.ts` 擴充資料結構、於 `src/config/defaults.ts` 提供離線預設值，再到 `src/admin/moduleRegistry.ts` 註冊模組即可。正式上線前建議在下一階段加入 Firebase Authentication 或將寫入移到受保護的伺服器端點。

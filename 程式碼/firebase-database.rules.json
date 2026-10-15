@@ -4,6 +4,10 @@
       ".read": true,
       ".write": true
     },
+    "ambientDialogues": {
+      ".read": true,
+      ".write": true
+    },
     "$other": {
       ".read": false,
       ".write": false

@@ -15,6 +15,7 @@ import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
 import { recordAction } from "../systems/playerStats";
 import { RhythmSolderingGame } from "./RhythmSolderingGame";
+import { emitAmbientEvent } from "../ambient-dialogues/events";
 
 interface RobotLabPanelProps {
   materials: MaterialInventory;
@@ -56,6 +57,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
       return;
     }
     setPendingUpgradeId(id);
+    emitAmbientEvent("research_start", { eventId: id });
     playSound("click");
   };
 
@@ -80,6 +82,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
     setUpgrades((previous) => ({ ...previous, [id]: currentLevel + 1 }));
     recordAction("repairRobot");
     recordAction("upgradeRobotModule");
+    emitAmbientEvent("research_success", { eventId: id });
     playSound("success");
     setPendingUpgradeId(null);
   };

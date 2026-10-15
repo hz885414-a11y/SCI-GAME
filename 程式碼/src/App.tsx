@@ -8,6 +8,9 @@ import {
   Scenario,
 } from "./data/responses";
 import { CharacterStandee, CustomSpeechBubble, detectEmotion, EmotionType } from "./components/Characters";
+import { AmbientSpeechBubble } from "./components/AmbientSpeechBubble";
+import { useAmbientDialogues } from "./ambient-dialogues/useAmbientDialogues";
+import { emitAmbientEvent } from "./ambient-dialogues/events";
 import { characterImages } from "./data/characterImages";
 import { SceneCharacters } from "./components/SceneCharacters";
 import { scenes } from "./data/scenes";
@@ -299,6 +302,11 @@ export default function App() {
   const [transitionStep, setTransitionStep] = useState(0);
   const [transitionAssetProgress, setTransitionAssetProgress] = useState({ loaded: 0, total: 0, currentLabel: "建立區域素材清單" });
   const visitedSceneAssetsRef = useRef<Set<AppScene>>(new Set(["ops"]));
+  const ambient = useAmbientDialogues({
+    inLab: appPhase === "main" && currentScene === "lab" && !isTransitioning,
+    blocked: gameMode !== "idle" || isGameOpen || isFortuneOpen || isInstructionsOpen || isSettingsOpen || isKnowledgeBookOpen || missionActive,
+  });
+  useEffect(() => { emitAmbientEvent("player_return"); }, []);
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
@@ -679,8 +687,12 @@ export default function App() {
 
   // Character interaction handler (disabled affection increase as requested)
   const handleCharacterInteraction = (charId: string) => {
-    // 刪除好感度上升功能，點擊角色不再增加好感度
+    // A character tap is an intentional, manual ambient-dialogue trigger.
+    // It never competes with the formal counseling dialogue.
     if (gameMode === "idle") {
+      if (ambient.advance()) return;
+      const playedDialogue = ambient.triggerCharacter(charId);
+      if (playedDialogue) return;
       // 在手機版本上，點擊目前顯示的角色會循環切換至燈燈小隊的下一個隊員，增加互動感！
       const currentIndex = CHARACTERS.findIndex((c) => c.id === charId);
       const nextIndex = (currentIndex + 1) % CHARACTERS.length;
@@ -1167,7 +1179,8 @@ export default function App() {
             </div>
           ) : (
             CHARACTERS.map((char) => {
-              const isSpeaking = activeSpeakerId === char.id;
+              const isAmbientSpeaker = !activeSpeakerId && ambient.line?.speaker === char.id;
+              const isSpeaking = activeSpeakerId === char.id || isAmbientSpeaker;
               const currentLine = storyLines[currentDialogueIndex];
               const currentLineText = (isSpeaking && currentLine) ? currentLine.text : "";
               
@@ -1192,6 +1205,12 @@ export default function App() {
                 else if (characterMood === "think") currentEmotion = "serious";
                 else currentEmotion = portraitEmotion(defaultPortrait);
               }
+              if (isAmbientSpeaker) {
+                currentEmotion = ambient.line?.expression === "happy" ? "happy"
+                  : ambient.line?.expression === "sad" ? "sad"
+                  : ambient.line?.expression === "angry" ? "serious"
+                  : ambient.line?.expression === "surprised" ? "excited" : "dialog";
+              }
 
               const customImagesObj = char.id === "claire" ? customClaire : char.id === "ethan" ? customEthan : customLeo;
 
@@ -1201,7 +1220,7 @@ export default function App() {
                   character={char}
                   isActive={activeSpeakerId === null || activeSpeakerId === char.id}
                   isSpeaking={isSpeaking}
-                  isAnySpeaking={activeSpeakerId !== null}
+                  isAnySpeaking={activeSpeakerId !== null || Boolean(ambient.line)}
                   onInteraction={() => handleCharacterInteraction(char.id)}
                   customImages={customImagesObj}
                   emotion={currentEmotion}
@@ -1210,6 +1229,10 @@ export default function App() {
               );
             })
           )}
+          {!activeSceneId && !activeSpeakerId && ambient.line && <AmbientSpeechBubble
+            line={ambient.line}
+            pointerPercent={gameConfig.characterLayouts?.[ambient.line.speaker as "claire" | "ethan" | "leo"]?.[characterBreakpoint]?.x ?? 50}
+          />}
 
           {/* Floated speech bubble over speaking character */}
           {!activeSceneId && activeSpeakerId && isTypewriterComplete && (
@@ -1359,7 +1382,7 @@ export default function App() {
                 <span className="text-[9px] font-mono opacity-60 hidden sm:block">SUPPORTED BY BRAVE LIGHT SQUAD</span>
               </div>
             ) : gameMode === "idle" ? (
-              <form onSubmit={handleCounselSubmit} className="flex gap-2 h-[34px] sm:h-[50px]">
+              <div className="flex gap-2"><form onSubmit={handleCounselSubmit} className="flex min-w-0 flex-1 gap-2 h-[34px] sm:h-[50px]">
                 <input
                   type="text"
                   value={inputText}
@@ -1383,7 +1406,7 @@ export default function App() {
                   <span>SEND_CIRCUIT</span>
                   <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 </button>
-              </form>
+              </form>{currentScene === "lab" && <button type="button" onClick={() => ambient.setAutoEnabled(!ambient.autoEnabled)} className="border border-zinc-700 px-2 text-[9px] text-zinc-300">{ambient.autoEnabled ? "日常對話：開" : "日常對話：關"}</button>}</div>
             ) : (
               // Check if we are at the end of the dialogue to show action choices in the footer bar!
               gameMode === "counseling" && currentDialogueIndex === storyLines.length - 1 ? (

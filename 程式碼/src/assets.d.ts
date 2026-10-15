@@ -17,3 +17,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+interface ImportMetaEnv {
+  readonly VITE_AMBIENT_DIALOGUES_PATH?: string;
+}
