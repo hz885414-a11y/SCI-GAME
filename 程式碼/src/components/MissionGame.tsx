@@ -16,6 +16,7 @@ import { StageEnding, type StageEndingSummary } from "./StageEnding";
 import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, type MissionEnemyType } from "../data/gameAssetUrls";
 import { useGameConfig } from "../config/GameConfigContext";
 import { getSupplyEffectTotals } from "../data/supplyShopConfig";
+import { characterImages } from "../data/characterImages";
 
 import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
 import {
@@ -5786,38 +5787,16 @@ export function MissionGame({
                       <button
                         key={agent.id}
                         onClick={() => { setSelectedAgent(agent); triggerSound("click"); }}
-                        className={`p-2 sm:p-4 border text-left flex flex-col justify-between items-center h-[140px] xs:h-[180px] sm:h-[240px] transition-all cursor-pointer rounded-lg relative overflow-hidden ${
+                        className={`border text-left flex flex-col justify-between items-center h-[190px] xs:h-[235px] sm:h-[300px] transition-all cursor-pointer rounded-[24px] relative overflow-hidden ${
                           selectedAgent.id === agent.id 
                             ? "bg-zinc-900/90 border-orange-500 shadow-lg shadow-orange-500/20 scale-102" 
                             : "bg-zinc-950/80 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
                         }`}
                       >
-                        <div className="absolute top-1.5 right-2 sm:top-2 sm:right-3">
-                          <span className="text-[9px] sm:text-[11px] text-zinc-500 font-black tracking-wider">{agent.id.toUpperCase()}</span>
-                        </div>
-
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-4">
-                          <SpriteAnimator
-                            src={walkSprites[agent.id as "claire" | "ethan" | "leo"].src}
-                            individualFrames={walkSprites[agent.id as "claire" | "ethan" | "leo"].individualFrames}
-                            totalFrames={6}
-                            idleFrame={0}
-                            // Claire has an authored idle image at index 0 and
-                            // four separate walking images at indices 1–4. The
-                            // agent chooser is a walking preview, so never
-                            // include the idle frame (or non-existent index 5).
-                            animationFrames={agent.id === "claire" ? [1, 2, 3, 4] : [1, 2, 3, 4, 5]}
-                            frameXOffsets={walkSprites[agent.id as "claire" | "ethan" | "leo"].frameXOffsets}
-                            fps={3}
-                            playing={true}
-                            // Claire's new authored PNGs include more transparent
-                            // canvas around the sprite. Compensate only in this
-                            // chooser preview so her visible figure matches the
-                            // other two agents, without changing mission scale.
-                            width={agent.id === "claire"
-                              ? (windowWidth >= 640 ? 154 : windowWidth >= 480 ? 126 : 106)
-                              : (windowWidth >= 640 ? 110 : windowWidth >= 480 ? 90 : 76)}
-                          />
+                        <div className="pointer-events-none absolute inset-0">
+                          <img src={characterImages[agent.id as "claire" | "ethan" | "leo"].normal} alt={`${agent.name} 頭像`} className="h-full w-full object-cover object-top transition-transform duration-300" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/5 to-black/15" />
+                          <span className="absolute inset-x-1 bottom-2 text-center font-pixel text-[clamp(20px,3vw,34px)] font-black tracking-[.12em] text-white [paint-order:stroke_fill] [-webkit-text-stroke:2px_#000]">{agent.name.toUpperCase()}</span>
                         </div>
                       </button>
                     ))}
@@ -6369,12 +6348,19 @@ export function MissionGame({
               <p className="mt-2 text-xs text-zinc-400">小隊清怪任務到此完成。機器人 Boss 作戰請從營業機動部的任務中心個別啟動。</p>
             </div>
 
-            <div className="mt-4 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-4">
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center sm:grid-cols-4">
+              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2 py-2"><span className="block text-lg">🪙</span><b className="block text-sm text-amber-200">+{sessionCoins}</b><small className="text-[10px] text-amber-100/70">回收金幣</small></div>
+              <div className="rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2 py-2"><span className="block text-lg">✦</span><b className="block text-sm text-cyan-100">{score}</b><small className="text-[10px] text-cyan-100/70">任務積分</small></div>
+              <div className="rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2 py-2"><span className="block text-lg">📦</span><b className="block text-sm text-emerald-100">{MATERIAL_IDS.reduce((total, id) => total + collectedMaterials[id], 0)}</b><small className="text-[10px] text-emerald-100/70">素材總數</small></div>
+              <div className="col-span-3 rounded-lg border border-zinc-700 bg-zinc-900/65 px-3 py-2 text-xs text-zinc-300 sm:col-span-1"><span className="text-zinc-500">出勤特工</span><b className="ml-2 text-white">{selectedAgent.name}</b></div>
+            </div>
+
+            <div className="mt-3 grid min-h-0 grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-8">
               {MATERIAL_IDS.map((id) => (
-                <div key={id} className="flex min-h-20 flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/55 p-3 text-center">
-                  <span className="text-2xl" style={{ color: MATERIAL_CONFIG[id].color }}>{MATERIAL_CONFIG[id].icon}</span>
-                  <span className="mt-1 text-xs font-bold text-zinc-300">{MATERIAL_CONFIG[id].name}</span>
-                  <b className="mt-1 text-xl text-white">× {collectedMaterials[id]}</b>
+                <div key={id} className={`flex min-h-[72px] flex-col items-center justify-center rounded-lg border p-1.5 text-center ${collectedMaterials[id] ? "border-zinc-700 bg-zinc-900/80" : "border-zinc-800/60 bg-zinc-900/30 opacity-55"}`} title={MATERIAL_CONFIG[id].name}>
+                  <span className="text-lg" style={{ color: MATERIAL_CONFIG[id].color }}>{MATERIAL_CONFIG[id].icon}</span>
+                  <b className="mt-0.5 text-sm text-white">× {collectedMaterials[id]}</b>
+                  <span className="mt-0.5 line-clamp-1 text-[9px] font-bold text-zinc-400">{MATERIAL_CONFIG[id].name}</span>
                 </div>
               ))}
             </div>

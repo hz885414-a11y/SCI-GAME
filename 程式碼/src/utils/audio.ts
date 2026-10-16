@@ -3,6 +3,71 @@
 
 let audioCtx: AudioContext | null = null;
 let isMuted = false;
+let rhythmNoiseBuffers: { ctx: AudioContext; bright: AudioBuffer; warm: AudioBuffer; soft: AudioBuffer } | null = null;
+
+function createNoiseBuffer(ctx: AudioContext, duration: number): AudioBuffer {
+  const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * duration)), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < data.length; index += 1) data[index] = Math.random() * 2 - 1;
+  return buffer;
+}
+
+/** Prime the short, procedural rhythm sounds during a trusted start gesture.
+ * This avoids allocating noise buffers on the first judged input. */
+export function primeRhythmHitSounds(): void {
+  const ctx = getAudioContext();
+  if (!ctx || rhythmNoiseBuffers?.ctx === ctx) return;
+  rhythmNoiseBuffers = {
+    ctx,
+    bright: createNoiseBuffer(ctx, 0.035),
+    warm: createNoiseBuffer(ctx, 0.04),
+    soft: createNoiseBuffer(ctx, 0.045),
+  };
+}
+
+/** Immediate input feedback for the soldering game. It is deliberately
+ * independent of React rendering and the music clock. */
+export function playRhythmHitSound(judgement: "perfect" | "great" | "good"): void {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    primeRhythmHitSounds();
+    const now = ctx.currentTime;
+    const config = judgement === "perfect"
+      ? { frequency: 330, endFrequency: 155, duration: 0.052, volume: 0.038, cutoff: 3100, noise: rhythmNoiseBuffers?.bright }
+      : judgement === "great"
+        ? { frequency: 250, endFrequency: 120, duration: 0.055, volume: 0.032, cutoff: 2100, noise: rhythmNoiseBuffers?.warm }
+        : { frequency: 190, endFrequency: 105, duration: 0.06, volume: 0.025, cutoff: 1450, noise: rhythmNoiseBuffers?.soft };
+    const oscillator = ctx.createOscillator();
+    const toneGain = ctx.createGain();
+    oscillator.type = judgement === "perfect" ? "square" : "triangle";
+    oscillator.frequency.setValueAtTime(config.frequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(config.endFrequency, now + config.duration);
+    toneGain.gain.setValueAtTime(config.volume, now);
+    toneGain.gain.exponentialRampToValueAtTime(0.001, now + config.duration);
+    oscillator.connect(toneGain).connect(ctx.destination);
+    oscillator.start(now);
+    oscillator.stop(now + config.duration);
+
+    if (config.noise) {
+      const source = ctx.createBufferSource();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      source.buffer = config.noise;
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(config.cutoff, now);
+      filter.Q.setValueAtTime(0.9, now);
+      gain.gain.setValueAtTime(judgement === "perfect" ? 0.024 : judgement === "great" ? 0.017 : 0.011, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + config.duration);
+      source.connect(filter).connect(gain).connect(ctx.destination);
+      source.start(now);
+      source.stop(now + config.duration);
+    }
+  } catch (error) {
+    // Sound feedback must never interfere with timing or input handling.
+    console.warn("Rhythm hit sound unavailable:", error);
+  }
+}
 
 function getAudioContext(): AudioContext | null {
   if (isMuted) return null;

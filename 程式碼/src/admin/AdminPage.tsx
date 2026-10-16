@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { DEFAULT_GAME_CONFIG } from "../config/defaults";
+import { DEFAULT_GAME_CONFIG, mergeGameConfig } from "../config/defaults";
 import { isFirebaseConfigured, loadFirebaseConfig, saveFirebaseConfig } from "../config/firebase";
 import type { DialoguePortrait, GameConfig, GameplayConfig } from "../config/types";
 import { ADMIN_MODULES } from "./moduleRegistry";
@@ -10,6 +10,8 @@ import { BossAdmin } from "./BossAdmin";
 import { SupplyShopAdmin } from "./SupplyShopAdmin";
 import { CharacterPresentationAdmin } from "./CharacterPresentationAdmin";
 import { AmbientDialogueAdmin } from "./AmbientDialogueAdmin";
+import { RhythmChartAdmin } from "./RhythmChartAdmin";
+import { getAllRhythmEdits, syncRhythmEdits } from "../rhythm/charts";
 
 type ModuleId = (typeof ADMIN_MODULES)[number]["id"];
 
@@ -24,6 +26,7 @@ const IMPACT: Record<ModuleId, string> = {
   characters: "影響位置：勇氣の實驗室角色立繪；重新整理前台後依目前螢幕尺寸套用。",
   dialogues: "影響位置：基地的研發實驗室；玩家輸入煩惱後，Claire、Ethan、Leo 的回覆。",
   ambientDialogues: "影響位置：勇氣實驗室角色頭頂；正式任務、諮詢與戰鬥期間會自動暫停。",
+  rhythm: "影響位置：C2-932 改裝時的焊接節奏小遊戲；變更會納入右上角 Firebase 儲存，供所有裝置讀取。",
 };
 
 const KNOWLEDGE_CATEGORIES = ["lighting", "energy", "materials", "maintenance", "marine", "safety"] as const;
@@ -109,7 +112,11 @@ export function AdminPage() {
   useEffect(() => {
     if (!isFirebaseConfigured()) { setStatus("未設定 Firebase，目前顯示本地預設值"); return; }
     loadFirebaseConfig().then((remote) => {
-      if (remote) setConfig({ ...DEFAULT_GAME_CONFIG, ...remote, gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote.gameplay } });
+      if (remote) {
+        const merged = mergeGameConfig(remote);
+        syncRhythmEdits(merged.rhythmEdits);
+        setConfig(merged);
+      }
       setStatus(remote ? "已載入 Firebase 最新設定" : "Firebase 尚無設定，已載入本地預設值");
     }).catch((error) => setStatus(`${error.message}，已載入本地預設值`));
   }, []);
@@ -134,7 +141,7 @@ export function AdminPage() {
       const cards = [...config.cards].sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
       const eventCategory = (event: (typeof config.events)[number]) => cards.find((card) => card.id === event.rewardCard)?.category;
       const events = [...config.events].sort((a, b) => categoryRank(eventCategory(a)) - categoryRank(eventCategory(b)));
-      const next = { ...config, cards, events, version: config.version + 1, updatedAt: new Date().toISOString() };
+      const next = { ...config, cards, events, rhythmEdits: getAllRhythmEdits(), version: config.version + 1, updatedAt: new Date().toISOString() };
       await saveFirebaseConfig(next);
       localStorage.setItem("sci_game_config_updated", String(Date.now()));
       setConfig(next);
@@ -209,6 +216,7 @@ export function AdminPage() {
           {(["claire", "ethan", "leo"] as const).map((character) => <section className="admin-dialogue-card" key={character}><b>{character === "claire" ? "Claire｜溫柔回覆" : character === "ethan" ? "Ethan｜理性分析" : "Leo｜熱血鼓勵"}</b><small>每一格都是一則完整回覆；可指定這句話出現時使用哪一張表情圖片。</small><DialogueRows value={dialogue[character]} portraits={config.dialoguePortraits?.[dialogueScenario]?.[character] || []} onChange={(lines, portraits) => setConfig({ ...config, dialogues: { ...config.dialogues, [dialogueScenario]: { ...dialogue, [character]: lines } }, dialoguePortraits: { ...config.dialoguePortraits, [dialogueScenario]: { ...(config.dialoguePortraits?.[dialogueScenario] || { claire: [], ethan: [], leo: [] }), [character]: portraits } } })} /></section>)}
         </div>}
         {active === "ambientDialogues" && <AmbientDialogueAdmin />}
+        {active === "rhythm" && <RhythmChartAdmin onChanged={() => setConfig((current) => ({ ...current, rhythmEdits: getAllRhythmEdits() }))} />}
       </section>
     </div>
   </main>;

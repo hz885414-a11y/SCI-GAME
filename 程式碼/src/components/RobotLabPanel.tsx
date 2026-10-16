@@ -13,9 +13,10 @@ import {
 } from "../data/modificationSystem";
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
-import { recordAction } from "../systems/playerStats";
+import { recordAction, recordRhythmWeldResult } from "../systems/playerStats";
 import { RhythmSolderingGame } from "./RhythmSolderingGame";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
+import type { RhythmResult } from "../rhythm/types";
 
 interface RobotLabPanelProps {
   materials: MaterialInventory;
@@ -61,7 +62,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
     playSound("click");
   };
 
-  const completeUpgrade = () => {
+  const completeUpgrade = (result: RhythmResult) => {
     const id = pendingUpgradeId;
     if (!id) return;
     const currentLevel = upgrades[id] || 0;
@@ -79,9 +80,12 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
       });
       return next;
     });
-    setUpgrades((previous) => ({ ...previous, [id]: currentLevel + 1 }));
+    const awardedLevels = result.grade === "S" ? 3 : result.grade === "A" ? 2 : 1;
+    const levelsGained = Math.min(awardedLevels, MAX_LEVEL - currentLevel);
+    setUpgrades((previous) => ({ ...previous, [id]: currentLevel + levelsGained }));
     recordAction("repairRobot");
-    recordAction("upgradeRobotModule");
+    recordAction("upgradeRobotModule", levelsGained);
+    recordRhythmWeldResult(result.grade);
     emitAmbientEvent("research_success", { eventId: id });
     playSound("success");
     setPendingUpgradeId(null);

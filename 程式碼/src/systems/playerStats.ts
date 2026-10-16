@@ -21,6 +21,11 @@ export const PLAYER_ACTIONS = [
   "purchaseHumanUpgrade",
   "repairRobot",
   "upgradeRobotModule",
+  "rhythmWeldCompleted",
+  "rhythmGradeS",
+  "rhythmGradeA",
+  "rhythmGradeB",
+  "rhythmLowGradeStreak5",
   "useWorkLight",
   "highBeamActivated",
   "takeDamage",
@@ -66,6 +71,11 @@ export const PLAYER_ACTION_INFO: Record<PlayerAction, { label: string; descripti
   purchaseHumanUpgrade: { label: "採購角色升級", description: "使用金幣成功購買一次人類角色強化。", group: "成長" },
   repairRobot: { label: "維修／改裝機器人", description: "在技術研發部完成一次機器人改裝。", group: "基地" },
   upgradeRobotModule: { label: "升級機器人模組", description: "成功提升一級永久機器人模組。", group: "成長" },
+  rhythmWeldCompleted: { label: "完成焊接任務", description: "完成一次機器人改裝的節奏焊接。", group: "節奏焊接" },
+  rhythmGradeS: { label: "焊接達成 S 級", description: "以至少 95% 同步率完成焊接。", group: "節奏焊接" },
+  rhythmGradeA: { label: "焊接達成 A 級", description: "以至少 85% 同步率完成焊接。", group: "節奏焊接" },
+  rhythmGradeB: { label: "焊接達成 B 級", description: "以至少 70% 同步率完成焊接。", group: "節奏焊接" },
+  rhythmLowGradeStreak5: { label: "焊接連續低於 C 級五次", description: "連續五次焊接未達 C 級。", group: "節奏焊接" },
   useWorkLight: { label: "操作工作燈", description: "玩家切換一次工作燈照明模式。", group: "照明" },
   highBeamActivated: { label: "啟動高亮模式", description: "工作燈由 LOW 切換至 HIGH。", group: "照明" },
   takeDamage: { label: "玩家受到傷害", description: "小隊或機器人在戰鬥中受到一次傷害。", group: "戰鬥" },
@@ -131,6 +141,23 @@ export function recordAction(action: PlayerAction, amount = 1): PlayerStats {
   }
   notifyEventSystemChanged();
   return next;
+}
+
+const RHYTHM_LOW_GRADE_STREAK_KEY = "sci_rhythm_low_grade_streak";
+
+/** Records grade-specific actions so both the local knowledge system and the
+ * server Card Event System can award first-achievement / streak cards. */
+export function recordRhythmWeldResult(grade: "S" | "A" | "B" | "C" | "D" | "E" | "F"): void {
+  recordAction("rhythmWeldCompleted");
+  if (grade === "S") recordAction("rhythmGradeS");
+  if (grade === "A") recordAction("rhythmGradeA");
+  if (grade === "B") recordAction("rhythmGradeB");
+  const isBelowC = grade === "D" || grade === "E" || grade === "F";
+  const streak = isBelowC ? readStoredValue<number>(RHYTHM_LOW_GRADE_STREAK_KEY, 0) + 1 : 0;
+  writeStoredValue(RHYTHM_LOW_GRADE_STREAK_KEY, streak);
+  // Emit once per run at the fifth consecutive low grade; completing another
+  // low-grade run does not repeatedly fire the same streak achievement.
+  if (streak === 5) recordAction("rhythmLowGradeStreak5");
 }
 
 function getGameEventType(action: PlayerAction): GameEventType {

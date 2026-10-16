@@ -4,6 +4,8 @@ import { MUSIC_ASSETS } from "../utils/audio";
 export class RhythmAudioController {
   private audio: HTMLAudioElement | null = null;
   private fallbackStartedAt = 0;
+  private fallbackPausedAt = 0;
+  private fallbackIsPaused = false;
   private priming: Promise<void> | null = null;
 
   /**
@@ -30,13 +32,15 @@ export class RhythmAudioController {
       });
   }
 
-  async start(): Promise<void> {
-    this.fallbackStartedAt = performance.now();
+  async start(startAt = 0): Promise<void> {
+    this.fallbackStartedAt = performance.now() - startAt * 1000;
+    this.fallbackPausedAt = startAt;
+    this.fallbackIsPaused = false;
     if (!this.audio) this.prime();
     await this.priming;
     const audio = this.audio;
     if (!audio) return;
-    audio.currentTime = 0;
+    audio.currentTime = Math.max(0, startAt);
     audio.muted = false;
     try {
       await audio.play();
@@ -48,12 +52,44 @@ export class RhythmAudioController {
 
   getTime(): number {
     if (this.audio && !this.audio.paused && Number.isFinite(this.audio.currentTime)) return this.audio.currentTime;
+    if (this.audio && Number.isFinite(this.audio.currentTime)) return this.audio.currentTime;
+    if (this.fallbackIsPaused) return this.fallbackPausedAt;
     return Math.max(0, (performance.now() - this.fallbackStartedAt) / 1000);
+  }
+
+  /** True when the real music element reached its end, even if its decoded
+   * duration differs slightly from the chart metadata. */
+  hasEnded(): boolean {
+    return this.audio?.ended ?? false;
+  }
+
+  pause(): void {
+    this.fallbackPausedAt = this.getTime();
+    this.fallbackIsPaused = true;
+    this.audio?.pause();
+  }
+
+  async resume(): Promise<void> {
+    if (this.audio) {
+      try { await this.audio.play(); return; } catch { /* use fallback clock */ }
+    }
+    this.fallbackStartedAt = performance.now() - this.fallbackPausedAt * 1000;
+    this.fallbackPausedAt = 0;
+    this.fallbackIsPaused = false;
+  }
+
+  seek(time: number): void {
+    const next = Math.max(0, time);
+    if (this.audio) this.audio.currentTime = next;
+    this.fallbackPausedAt = next;
+    this.fallbackStartedAt = performance.now() - next * 1000;
   }
 
   stop(): void {
     if (this.audio) { this.audio.pause(); this.audio.src = ""; this.audio.load(); }
     this.audio = null;
     this.priming = null;
+    this.fallbackPausedAt = 0;
+    this.fallbackIsPaused = false;
   }
 }

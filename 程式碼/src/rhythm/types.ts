@@ -40,6 +40,8 @@ export interface RhythmNoteAdjustment {
   timeMs?: number;
   lane?: RhythmLane;
   lanes?: RhythmLane[];
+  type?: RhythmNoteType;
+  durationMs?: number;
 }
 
 export interface RhythmScore {
@@ -54,7 +56,9 @@ export interface RhythmScore {
 
 export interface RhythmResult extends RhythmScore {
   accuracy: number;
-  grade: "S" | "A" | "B" | "C";
+  grade: "S" | "A" | "B" | "C" | "D" | "E" | "F";
+  /** Score-only reward for strong soldering performance; it never consumes or grants materials. */
+  bonusScore: number;
   totalNotes: number;
 }
 

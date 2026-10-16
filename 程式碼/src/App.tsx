@@ -7,7 +7,7 @@ import {
   DialogueLine,
   Scenario,
 } from "./data/responses";
-import { CharacterStandee, CustomSpeechBubble, detectEmotion, EmotionType } from "./components/Characters";
+import { CharacterStandee, detectEmotion, EmotionType } from "./components/Characters";
 import { AmbientSpeechBubble } from "./components/AmbientSpeechBubble";
 import { useAmbientDialogues } from "./ambient-dialogues/useAmbientDialogues";
 import { emitAmbientEvent } from "./ambient-dialogues/events";
@@ -60,13 +60,6 @@ import {
 } from "lucide-react";
 
 type AppScene = "lab" | "tech" | "ops" | "supply";
-
-type PortraitKey = "normal" | "dialog" | "happy" | "think" | "surprise";
-
-const portraitKeyForPreload = (portrait: string | undefined): PortraitKey => {
-  if (portrait === "normal" || portrait === "happy" || portrait === "think" || portrait === "surprise") return portrait;
-  return "dialog";
-};
 
 const APP_LAST_SCENE_KEY = "light_crew_last_scene";
 
@@ -331,21 +324,11 @@ export default function App() {
     // browser's own memory scheduling after the Lab is already mounted.
     const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
     if (targetScene === "lab") {
-      // Only block the doorway on the three portraits that are visible on the
-      // first lab screen. Loading every expression here meant a first visit
-      // could wait on 16 large remote PNGs, making the public site appear to
-      // have fallen back to the base. Other expressions still load normally
-      // when their dialogue is first shown.
-      const visiblePortraits = (Object.keys(characterImages) as Array<keyof typeof characterImages>).map((character) => {
-        const configuredPortrait = gameConfig.characterDefaultPortraits?.[character] ?? "dialog";
-        const portraitKey = portraitKeyForPreload(configuredPortrait);
-        return {
-          label: `${character.toUpperCase()} 初始立繪`,
-          url: characterImages[character][portraitKey],
-        };
-      });
+      // The lab background is the only asset required before navigation.
+      // Waiting for three large portrait decodes made the entrance stutter on
+      // mid-range devices; mounted image elements load them after the scene
+      // has become interactive.
       targetAssets.push({ label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab });
-      if (!isMobileViewport) targetAssets.push(...visiblePortraits);
     } else if (targetScene === "tech") {
       targetAssets.push(
         { label: "技術研發部背景", url: BACKGROUND_ASSETS.tech },
@@ -394,7 +377,7 @@ export default function App() {
         // Retain a short walk sequence even when everything was instant from
         // cache, but always complete the navigation if a remote asset fails.
         const elapsed = Date.now() - startedAt;
-        if (elapsed < 1200) await new Promise<void>((resolve) => window.setTimeout(resolve, 1200 - elapsed));
+        if (elapsed < 650) await new Promise<void>((resolve) => window.setTimeout(resolve, 650 - elapsed));
         clearInterval(interval);
         setTransitionStep(6);
         setCurrentScene(targetScene);
@@ -406,9 +389,6 @@ export default function App() {
       }
     })();
   };
-
-  // Waveform meter simulation (for lab aesthetic)
-  const [waveHeights, setWaveHeights] = useState<number[]>([15, 25, 40, 20, 10, 30, 45, 12, 18, 32, 22]);
 
   // Timers and Refs
   const typewriterTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -461,15 +441,7 @@ export default function App() {
       setStandeeStyle("photo"); // Default is photo
     }
 
-    // Gentle wave animation for the lab dashboard
-    const waveInterval = setInterval(() => {
-      setWaveHeights((prev) =>
-        prev.map((h) => Math.max(5, Math.min(60, h + (Math.random() * 20 - 10))))
-      );
-    }, 250);
-
     return () => {
-      clearInterval(waveInterval);
       if (typewriterTimerRef.current) clearTimeout(typewriterTimerRef.current);
     };
   }, []);
@@ -1234,17 +1206,16 @@ export default function App() {
             pointerPercent={gameConfig.characterLayouts?.[ambient.line.speaker as "claire" | "ethan" | "leo"]?.[characterBreakpoint]?.x ?? 50}
           />}
 
-          {/* Floated speech bubble over speaking character */}
+          {/* Formal replies reuse the same centered, pointer-aware bubble as ambient dialogue. */}
           {!activeSceneId && activeSpeakerId && isTypewriterComplete && (
-            <CustomSpeechBubble
-              characterId={activeSpeakerId}
-              text={
-                activeSpeakerId === "claire"
-                  ? "沒關係，我陪你。"
-                  : activeSpeakerId === "ethan"
-                    ? "先別急，我們看事實。"
-                    : "交給我！"
-              }
+            <AmbientSpeechBubble
+              line={{
+                speaker: activeSpeakerId as "claire" | "ethan" | "leo",
+                text: storyLines[currentDialogueIndex]?.text || "",
+                expression: "normal",
+                durationMs: 0,
+              }}
+              pointerPercent={gameConfig.characterLayouts?.[activeSpeakerId as "claire" | "ethan" | "leo"]?.[characterBreakpoint]?.x ?? 50}
             />
           )}
         </div>

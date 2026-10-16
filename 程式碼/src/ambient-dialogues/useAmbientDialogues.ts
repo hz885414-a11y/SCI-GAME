@@ -5,7 +5,9 @@ import { canPlay, getAmbientState, saveAmbientState } from "./storage";
 import type { AmbientDialogue, AmbientDialogueConfig, AmbientDialogueLine } from "./types";
 import { DEFAULT_AMBIENT_DIALOGUES } from "./defaults";
 
-const MANUAL_TAP_GUARD_MS = 180;
+// Keep a tiny guard against duplicate touch/click events without making
+// advancing dialogue feel delayed when the player taps through it.
+const MANUAL_TAP_GUARD_MS = 80;
 
 export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocked: boolean }) {
   const [config, setConfig] = useState<AmbientDialogueConfig>(DEFAULT_AMBIENT_DIALOGUES);
@@ -83,7 +85,7 @@ export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocke
       if (!canPlay(dialogue, state)) return false;
       if (!eventType) return dialogue.category === "ambient" && dialogue.id !== state.lastAmbientId;
       const condition = dialogue.condition;
-      return dialogue.category === "event" && condition?.eventType === eventType && (!condition.eventId || condition.eventId === eventId) && Object.entries(condition.required || {}).every(([key, value]) => data[key] === value) && Math.random() <= (condition.chance ?? 1);
+      return dialogue.category === "event" && condition?.eventType === eventType && (!condition.eventId || condition.eventId === eventId) && Object.entries(condition.required || {}).every(([key, value]) => condition.eventType === "character_click_count" && key === "clickCount" ? Number(data[key]) >= Number(value) : data[key] === value) && Math.random() <= (condition.chance ?? 1);
     });
     if (!candidates.length) return false;
     const priority = Math.max(...candidates.map((dialogue) => dialogue.priority));
@@ -146,13 +148,28 @@ export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocke
   };
   const triggerCharacter = (characterId: string) => {
     if (!acceptManualTap()) return false;
+    const clickState = getAmbientState();
+    clickState.characterClickCount = (clickState.characterClickCount || 0) + 1;
+    saveAmbientState(clickState);
+    if (choose("character_click_count", undefined, { clickCount: clickState.characterClickCount })) return true;
     if (choose("custom_event", `character_${characterId}`, { characterId })) return true;
     const state = getAmbientState();
     const candidates = configRef.current.dialogues.filter((dialogue) => dialogue.category === "ambient" && dialogue.enabled && dialogue.lines.length > 0 && (!dialogue.maxTriggers || (state.played[dialogue.id] || 0) < dialogue.maxTriggers));
     if (!candidates.length) return false;
     const priority = Math.max(...candidates.map((dialogue) => dialogue.priority));
     const ranked = candidates.filter((dialogue) => dialogue.priority === priority);
-    return play(ranked[Math.floor(Math.random() * ranked.length)]);
+    const previousIds = state.manualAmbientHistory || [];
+    // A manual tap draws from a shuffled-style pool: do not repeat a dialogue
+    // until every currently eligible dialogue in this priority group was heard.
+    let available = ranked.filter((dialogue) => !previousIds.includes(dialogue.id));
+    if (!available.length) {
+      state.manualAmbientHistory = [];
+      available = ranked;
+    }
+    const selected = available[Math.floor(Math.random() * available.length)];
+    state.manualAmbientHistory = [...(state.manualAmbientHistory || []), selected.id];
+    saveAmbientState(state);
+    return play(selected);
   };
   return { line, autoEnabled, setAutoEnabled, stop, advance, triggerCharacter };
 }

@@ -30,6 +30,8 @@ export function applyJudgement(score: RhythmScore, judgement: RhythmJudgement): 
 export function calculateResult(score: RhythmScore, totalNotes: number): RhythmResult {
   const weighted = score.perfect + score.great * 0.8 + score.good * 0.5;
   const accuracy = totalNotes ? Math.round((weighted / totalNotes) * 1000) / 10 : 0;
-  const grade = accuracy >= 95 ? "S" : accuracy >= 85 ? "A" : accuracy >= 70 ? "B" : "C";
-  return { ...score, totalNotes, accuracy, grade };
+  const grade = accuracy >= 95 ? "S" : accuracy >= 85 ? "A" : accuracy >= 70 ? "B" : accuracy >= 55 ? "C" : accuracy >= 40 ? "D" : accuracy >= 20 ? "E" : "F";
+  const bonusRate = grade === "S" ? 0.1 : grade === "A" ? 0.06 : grade === "B" ? 0.03 : 0;
+  const bonusScore = Math.round(score.score * bonusRate);
+  return { ...score, score: score.score + bonusScore, totalNotes, accuracy, grade, bonusScore };
 }

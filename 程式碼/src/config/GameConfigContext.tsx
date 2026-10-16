@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { DEFAULT_GAME_CONFIG } from "./defaults";
+import { DEFAULT_GAME_CONFIG, mergeGameConfig } from "./defaults";
 import { isFirebaseConfigured, loadFirebaseConfig } from "./firebase";
 import { setRuntimeConfig } from "./runtimeStore";
+import { syncRhythmEdits } from "../rhythm/charts";
 import type { ConfigSource, GameConfig } from "./types";
 
 const ConfigContext = createContext({ config: DEFAULT_GAME_CONFIG, source: "local-default" as ConfigSource, loading: true });
@@ -19,7 +20,8 @@ export function GameConfigProvider({ children }: { children: React.ReactNode }) 
     loadFirebaseConfig(controller.signal)
       .then((remote) => {
         if (!remote) return;
-        const merged = { ...DEFAULT_GAME_CONFIG, ...remote, gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote.gameplay } };
+        const merged = mergeGameConfig(remote);
+        syncRhythmEdits(merged.rhythmEdits);
         setConfig(merged);
         setRuntimeConfig(merged);
         setSource("firebase");
@@ -39,7 +41,8 @@ export function GameConfigProvider({ children }: { children: React.ReactNode }) 
       loadFirebaseConfig()
         .then((remote) => {
           if (!remote) return;
-          const merged = { ...DEFAULT_GAME_CONFIG, ...remote, gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote.gameplay } };
+          const merged = mergeGameConfig(remote);
+          syncRhythmEdits(merged.rhythmEdits);
           setConfig(merged);
           setRuntimeConfig(merged);
           setSource("firebase");

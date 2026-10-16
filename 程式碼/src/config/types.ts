@@ -4,6 +4,14 @@ import type { DialogueLine, Scenario } from "../data/responses";
 import type { ProloguePage } from "../data/prologue";
 import type { BossAdminDefinition } from "../data/bossAdminConfig";
 import type { SupplyShopItem } from "../data/supplyShopConfig";
+import type { RhythmDifficulty, RhythmNote, RhythmNoteAdjustment } from "../rhythm/types";
+
+export interface RhythmChartEdits {
+  notes?: Record<string, RhythmNoteAdjustment>;
+  added?: RhythmNote[];
+  removed?: string[];
+}
+export type RhythmEditsByDifficulty = Partial<Record<RhythmDifficulty, RhythmChartEdits>>;
 
 export interface GameplayConfig {
   playerBaseAttack: number;
@@ -96,6 +104,8 @@ export interface GameConfig {
   ending: ProloguePage[];
   bosses: BossAdminDefinition[];
   supplyShopItems: SupplyShopItem[];
+  /** Versioned, shared rhythm chart edits. The JSON source files remain the base chart. */
+  rhythmEdits: RhythmEditsByDifficulty;
 }
 
 export type ConfigSource = "firebase" | "local-default";

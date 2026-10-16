@@ -1,5 +1,5 @@
 export interface AdminModule {
-  id: "gameplay" | "bosses" | "supply" | "prologue" | "ending" | "knowledge" | "cardEvents" | "characters" | "dialogues" | "ambientDialogues";
+  id: "gameplay" | "bosses" | "supply" | "prologue" | "ending" | "knowledge" | "cardEvents" | "characters" | "dialogues" | "ambientDialogues" | "rhythm";
   label: string;
   description: string;
 }
@@ -15,4 +15,5 @@ export const ADMIN_MODULES: AdminModule[] = [
   { id: "characters", label: "角色立繪設定", description: "依桌機、平板、手機調整角色位置與大小" },
   { id: "dialogues", label: "基地角色對話", description: "研發實驗室輸入煩惱後，三位角色的回覆" },
   { id: "ambientDialogues", label: "角色對話管理", description: "實驗室日常聊天與遊戲事件觸發對話" },
+  { id: "rhythm", label: "焊接音樂編輯器", description: "調整焊接小遊戲音符的時間點與 Z／X／C／V 軌道" },
 ];

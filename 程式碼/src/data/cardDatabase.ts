@@ -144,6 +144,10 @@ export const CARD_DATABASE: KnowledgeCardDefinition[] = [
     industryNote: "預防性維護可提高設備妥善率並減少非預期停機。",
     image: "/assets/cards/maintenance.png",
   },
+  { id: "card_rhythm_s", category: "maintenance", icon: "⚡", title: "焊接同步：極限校準", description: "S 級焊接證明了輸入、音樂與工具動作能精準同步。", industryNote: "精密製程常以時間同步與重複精度確保組裝品質。", image: "" },
+  { id: "card_rhythm_a", category: "maintenance", icon: "🎛️", title: "焊接同步：穩定校準", description: "A 級焊接完成高品質模組校準。", industryNote: "穩定的工序節奏有助於降低焊點品質的變異。", image: "" },
+  { id: "card_rhythm_b", category: "materials", icon: "🔩", title: "焊接同步：實用強度", description: "B 級焊接讓模組達到可投入作戰的強度。", industryNote: "良好的焊接品質取決於熱量、材料與接點潔淨度。", image: "" },
+  { id: "card_rhythm_low_streak", category: "safety", icon: "📉", title: "焊接失步：診斷紀錄", description: "連續失步不是失敗，而是一份能協助校正操作節奏的資料。", industryNote: "製程診斷會從重複偏差中找出設備、治具或操作流程的校正點。", image: "" },
   {
     id: "card_marine",
     category: "marine",

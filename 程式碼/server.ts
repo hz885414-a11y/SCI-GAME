@@ -6,7 +6,7 @@ import type { GameEvent } from "./src/systems/gameEvents";
 import { processCardEvent, validateCardEvent } from "./src/card-events/engine";
 import { getDefaultCardRules, getDefaultManagedCards } from "./src/card-events/seed";
 import type { CardEventPayload, CardRule, ManagedCard, UserCardState } from "./src/card-events/types";
-import { DEFAULT_GAME_CONFIG } from "./src/config/defaults";
+import { DEFAULT_GAME_CONFIG, mergeGameConfig } from "./src/config/defaults";
 import type { GameConfig } from "./src/config/types";
 
 const env = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
@@ -78,7 +78,7 @@ async function loadKnowledgeConfig(): Promise<GameConfig> {
   if (!firebaseDatabaseUrl) return DEFAULT_GAME_CONFIG;
   try {
     const remote = await firebaseRead<Partial<GameConfig>>("gameConfig/v1");
-    return remote ? { ...DEFAULT_GAME_CONFIG, ...remote, cards: remote.cards || DEFAULT_GAME_CONFIG.cards, events: remote.events || DEFAULT_GAME_CONFIG.events } : DEFAULT_GAME_CONFIG;
+    return remote ? mergeGameConfig(remote) : DEFAULT_GAME_CONFIG;
   } catch { return DEFAULT_GAME_CONFIG; }
 }
 

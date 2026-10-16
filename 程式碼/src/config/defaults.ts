@@ -84,4 +84,23 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   ending: endingPages,
   bosses: BOSS_ADMIN_DEFAULTS,
   supplyShopItems: SUPPLY_SHOP_DEFAULTS,
+  rhythmEdits: {},
 };
+
+/** Adds newly shipped default cards/events to older Firebase documents while
+ * retaining every operator edit that already exists under the same id. */
+export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined): GameConfig {
+  const mergeById = <T extends { id: string }>(defaults: T[], saved: T[] | undefined) => {
+    const overrides = new Map((saved || []).map((entry) => [entry.id, entry]));
+    const known = defaults.map((entry) => overrides.get(entry.id) || entry);
+    const additions = (saved || []).filter((entry) => !defaults.some((defaultEntry) => defaultEntry.id === entry.id));
+    return [...known, ...additions];
+  };
+  return {
+    ...DEFAULT_GAME_CONFIG,
+    ...remote,
+    gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote?.gameplay },
+    cards: mergeById(DEFAULT_GAME_CONFIG.cards, remote?.cards),
+    events: mergeById(DEFAULT_GAME_CONFIG.events, remote?.events),
+  };
+}

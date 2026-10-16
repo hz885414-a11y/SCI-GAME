@@ -87,6 +87,10 @@ export const EVENT_CONFIG: GameEventDefinition[] = [
     rewardCard: "card_maintenance",
     once: true,
   },
+  { id: "event_rhythm_s", title: "焊接同步：S 級", content: "首次以 S 級完成焊接，精準的節奏讓模組校準達到最佳狀態。", icon: "⚡", triggerType: "actionCount", action: "rhythmGradeS", requiredCount: 1, rewardCard: "card_rhythm_s", once: true },
+  { id: "event_rhythm_a", title: "焊接同步：A 級", content: "首次以 A 級完成焊接，穩定的節奏讓模組獲得高品質校準。", icon: "🎛️", triggerType: "actionCount", action: "rhythmGradeA", requiredCount: 1, rewardCard: "card_rhythm_a", once: true },
+  { id: "event_rhythm_b", title: "焊接同步：B 級", content: "首次以 B 級完成焊接，模組已通過實用強度的節奏校準。", icon: "🔩", triggerType: "actionCount", action: "rhythmGradeB", requiredCount: 1, rewardCard: "card_rhythm_b", once: true },
+  { id: "event_rhythm_low_streak", title: "焊接失步紀錄", content: "連續五次焊接未達 C 級；錯誤資料將成為下一輪校準的依據。", icon: "📉", triggerType: "actionCount", action: "rhythmLowGradeStreak5", requiredCount: 1, rewardCard: "card_rhythm_low_streak", once: true },
   {
     id: "event_marine",
     title: "鹽霧中的設備",
