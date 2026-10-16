@@ -6,6 +6,7 @@ import { BOSS_ADMIN_DEFAULTS } from "../data/bossAdminConfig";
 import { SUPPLY_SHOP_DEFAULTS } from "../data/supplyShopConfig";
 import { endingPages } from "../data/ending";
 import type { GameConfig } from "./types";
+import { DEFAULT_CARD_LAYOUT } from "./cardLayout";
 
 const DEFAULT_DIALOGUE_PORTRAITS = Object.fromEntries(Object.entries(RESPONSE_DATABASE).map(([scenarioId, dialogue]) => [scenarioId, {
   claire: dialogue.claire.map(() => "auto"),
@@ -67,6 +68,7 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   },
   events: EVENT_CONFIG,
   cards: CARD_DATABASE,
+  cardLayout: DEFAULT_CARD_LAYOUT,
   dialogues: RESPONSE_DATABASE,
   dialoguePortraits: DEFAULT_DIALOGUE_PORTRAITS,
   characterDefaultPortraits: {
@@ -101,6 +103,7 @@ export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined):
     ...remote,
     gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote?.gameplay },
     cards: mergeById(DEFAULT_GAME_CONFIG.cards, remote?.cards),
+    cardLayout: { ...DEFAULT_CARD_LAYOUT, ...remote?.cardLayout },
     events: mergeById(DEFAULT_GAME_CONFIG.events, remote?.events),
   };
 }

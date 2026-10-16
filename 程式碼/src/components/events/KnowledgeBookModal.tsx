@@ -118,7 +118,7 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
     {selectedCard && ownedCards.includes(selectedCard.id) && <div className="absolute inset-0 z-20 grid place-items-center bg-black/80 p-4" onClick={() => setSelectedCard(null)}>
       <div className="relative flex w-full max-w-md flex-col items-center gap-3" onClick={(event) => event.stopPropagation()}>
         <button type="button" onClick={() => setSelectedCard(null)} className="absolute right-0 top-0 z-10 grid h-8 w-8 place-items-center rounded border border-rose-400/60 bg-black/75 text-zinc-200 hover:bg-rose-950" aria-label="關閉卡片內容"><X className="h-4 w-4" /></button>
-        <CardFlip data={{ eventTitle: "已收藏的產業知識", eventContent: selectedCard.description, cardTitle: selectedCard.title, category: selectedCard.category.toUpperCase(), description: selectedCard.industryNote, extraText: selectedCard.bossEffect ? `知識應用：${selectedCard.bossEffect.label}` : "已收錄至燈燈小隊知識卡圖鑑。", cardId: selectedCard.id, imageUrl: selectedCard.image }} resetKey={`knowledge-book-${selectedCard.id}`} initialFlipped />
+        <CardFlip data={{ cardTitle: selectedCard.title, category: selectedCard.category.toUpperCase(), description: selectedCard.description, extraText: [selectedCard.industryNote, selectedCard.bossEffect ? `知識應用：${selectedCard.bossEffect.label}` : ""].filter(Boolean).join("\n"), cardId: selectedCard.id, imageUrl: selectedCard.image }} resetKey={`knowledge-book-${selectedCard.id}`} initialFlipped />
         <p className="font-mono text-[10px] tracking-[.16em] text-zinc-400">CARD DATA ARCHIVED</p>
       </div>
     </div>}

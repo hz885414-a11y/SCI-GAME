@@ -51,7 +51,7 @@ const manifest: CoreAssetItem[] = [
   { label: "MAIN TITLE", url: UI_IMAGE_ASSETS.mainTitle },
   { label: "MISSION TITLE", url: UI_IMAGE_ASSETS.missionTitle },
   { label: "EVENT CARD BACK", url: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Back.png" },
-  { label: "EVENT CARD FRONT", url: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Front.png" },
+  { label: "EVENT CARD FRONT", url: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Front.png?v=20261017" },
   { label: "LAB BACKGROUND", url: BACKGROUND_ASSETS.lab },
   { label: "R&D BACKGROUND", url: BACKGROUND_ASSETS.tech },
   { label: "OPS BACKGROUND", url: BACKGROUND_ASSETS.business },

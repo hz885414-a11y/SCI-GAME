@@ -5,6 +5,7 @@ import type { ProloguePage } from "../data/prologue";
 import type { BossAdminDefinition } from "../data/bossAdminConfig";
 import type { SupplyShopItem } from "../data/supplyShopConfig";
 import type { RhythmDifficulty, RhythmNote, RhythmNoteAdjustment } from "../rhythm/types";
+import type { CardLayoutConfig } from "./cardLayout";
 
 export interface RhythmChartEdits {
   notes?: Record<string, RhythmNoteAdjustment>;
@@ -95,6 +96,7 @@ export interface GameConfig {
   gameplay: GameplayConfig;
   events: GameEventDefinition[];
   cards: KnowledgeCardDefinition[];
+  cardLayout: CardLayoutConfig;
   dialogues: DialogueConfig;
   dialoguePortraits: DialoguePortraitConfig;
   characterDefaultPortraits: CharacterDefaultPortraitConfig;

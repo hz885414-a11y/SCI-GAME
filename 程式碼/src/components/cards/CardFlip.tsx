@@ -3,8 +3,6 @@ import { CardBack } from "./CardBack";
 import { CardFront, type CardFrontData } from "./CardFront";
 
 export const CARD_FLIP_MOCK_DATA: CardFrontData = {
-  eventTitle: "防水等級的秘密-02",
-  eventContent: "工程師跟你說明了 IP rating 防水數字代表的意義",
   cardTitle: "IP67 防護等級",
   category: "LIGHTING",
   description: "通常會把產品測試約 1 m 水深並且放置 30 分鐘後也可以使用",

@@ -486,3 +486,145 @@
     transform: translate(-50%, -50%) scale(2.6) rotate(90deg);
   }
 }
+
+/* Admin-only card layout calibration workbench. These guides never render on the game card. */
+.card-alignment-workbench {
+  display: grid;
+  grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.card-alignment-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid #ef4444;
+  border-radius: 12px;
+  background: #090304;
+  box-shadow: 0 0 28px rgba(239, 68, 68, .22);
+}
+
+.card-alignment-preview > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-alignment-image {
+  position: absolute;
+  left: 6.6%;
+  right: 6.6%;
+  top: 7%;
+  height: 31%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(circle at center, rgba(127, 29, 29, .55), rgba(0, 0, 0, .92) 68%);
+  color: #a57777;
+  font: 700 9px monospace;
+  letter-spacing: .14em;
+}
+
+.card-alignment-image img { width: 100%; height: 100%; object-fit: cover; }
+.card-alignment-category { position: absolute; right: 8%; top: 40.5%; border: 1px solid rgba(248, 113, 113, .8); background: rgba(0, 0, 0, .72); padding: 3px 6px; color: #fecaca; font: 800 8px monospace; letter-spacing: .08em; }
+.card-alignment-id { position: absolute; bottom: 3.5%; left: 12.5%; right: 12%; overflow: hidden; color: #d4d4d8; font: 8px monospace; letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; }
+
+.card-alignment-slot {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  padding: 7px;
+  border-width: 2px;
+  color: #fff;
+  font-size: clamp(9px, 1.1vw, 12px);
+  line-height: 1.25;
+  cursor: grab;
+  touch-action: none;
+}
+
+.card-alignment-slot b { font-size: .85em; letter-spacing: .08em; }
+.card-alignment-slot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-alignment-slot small { margin-top: auto; font-family: monospace; font-size: .75em; color: rgba(255, 255, 255, .92); }
+.card-alignment-slot b,
+.card-alignment-slot span,
+.card-alignment-slot small { pointer-events: none; }
+.card-alignment-slot:active { cursor: grabbing; }
+
+.card-alignment-resize {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #0f172a;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .55);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.card-alignment-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.card-alignment-controls fieldset {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #29445d;
+  background: rgba(5, 18, 30, .7);
+}
+
+.card-alignment-controls legend { padding: 0 5px; color: #67e8f9; font-weight: 800; }
+.card-alignment-controls fieldset > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.card-alignment-controls label { display: grid; grid-template-columns: 1fr auto; gap: 4px; color: #b7d4e9; font-size: 12px; }
+.card-alignment-controls label input { grid-column: 1 / -1; min-width: 0; }
+.card-alignment-controls label span { grid-column: 2; grid-row: 1; color: #5d86a3; }
+.card-alignment-note { margin: 0; color: #9cb9cd; font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 780px) {
+  .card-alignment-workbench { grid-template-columns: 1fr; }
+  .card-alignment-preview { max-width: 390px; }
+  .card-alignment-controls fieldset > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.card-live-preview {
+  position: relative;
+  width: min(100%, 420px);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid #ef4444;
+  border-radius: 12px;
+  background: #090304;
+  box-shadow: 0 0 28px rgba(239, 68, 68, .22);
+}
+
+.card-live-preview > img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.card-live-image { position: absolute; right: auto; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at center, rgba(127,29,29,.55), rgba(0,0,0,.92) 68%); color: #a57777; font: 700 9px monospace; letter-spacing: .14em; }
+.card-live-image img { width: 100%; height: 100%; object-fit: cover; }
+.card-live-title { position: absolute; left: 9%; top: 39.4%; width: 66%; height: 6.8%; padding: 0; border: 0; outline: 0; background: transparent; color: #fff; font: 900 clamp(15px,4.6vw,25px)/1 sans-serif; letter-spacing: .04em; }
+.card-live-category { position: absolute; right: 8%; top: 40.5%; border: 1px solid rgba(248,113,113,.8); background: rgba(0,0,0,.72); padding: 3px 6px; color: #fecaca; font: 800 8px monospace; letter-spacing: .08em; }
+.card-live-label { position: absolute; left: 11.5%; color: #fff; font-size: clamp(10px,1.1vw,12px); font-weight: 900; letter-spacing: .05em; pointer-events: none; }
+.card-live-label.description { top: 48%; }
+.card-live-label.extra { top: 63.2%; }
+.card-live-content { position: absolute; left: 11.9%; width: 76%; resize: none; border: 0; outline: 1px solid transparent; background: transparent; color: #f4f4f5; font: clamp(9px,1.05vw,11px)/1.45 sans-serif; overflow: auto; }
+.card-live-content:hover, .card-live-content:focus, .card-live-title:hover, .card-live-title:focus { outline-color: rgba(103,232,249,.9); background: rgba(8,47,73,.24); }
+.card-live-content.description { top: 51%; height: 9.6%; }
+.card-live-content.extra { top: 66.2%; height: 10.4%; white-space: pre-wrap; }
+.card-live-id { position: absolute; bottom: 3.5%; left: 12.5%; right: 12%; overflow: hidden; color: #d4d4d8; font: 8px monospace; letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.card-live-preview.is-adjusting input,
+.card-live-preview.is-adjusting textarea { pointer-events: none; }
+.card-template-slot { position: absolute; box-sizing: border-box; border: 2px dashed #67e8f9; background: rgba(34,211,238,.16); cursor: grab; touch-action: none; z-index: 10; }
+.card-template-slot:active { cursor: grabbing; }
+.card-template-slot > span { position: absolute; left: 0; top: -20px; padding: 2px 5px; background: #083344; color: #cffafe; font: 700 10px sans-serif; white-space: nowrap; pointer-events: none; }
+.card-template-slot > button { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: #0e7490; cursor: nwse-resize; }

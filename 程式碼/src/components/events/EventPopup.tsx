@@ -55,8 +55,6 @@ export function EventPopup({ reward, playSound }: EventPopupProps) {
   };
 
   const cardData = {
-    eventTitle: event.title,
-    eventContent: event.content,
     cardTitle: card.title,
     category: card.category.toUpperCase(),
     description: card.description,
