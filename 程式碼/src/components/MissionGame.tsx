@@ -333,7 +333,8 @@ export function MissionGame({
   const [exp, setExp] = useState<number>(0);
   const [expNeeded, setExpNeeded] = useState<number>(100);
   const [batteryPercent, setBatteryPercent] = useState<number>(100);
-  const [batteryMode, setBatteryMode] = useState<"LOW" | "HIGH">("LOW");
+  const [batteryMode, setBatteryMode] = useState<"OFF" | "LOW" | "HIGH">("OFF");
+  const [interactionFeedback, setInteractionFeedback] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
@@ -404,6 +405,11 @@ export function MissionGame({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRootRef = useRef<HTMLDivElement | null>(null);
   const keysRef = useRef<Record<string, boolean>>({});
+  // Future NPC, chest and switch systems set this ref when the player enters
+  // their interaction range. The UI already supports tap and long-press paths.
+  const interactionTargetRef = useRef<{ label: string; onTap: () => void; onHold?: () => void } | null>(null);
+  const interactionHoldTimerRef = useRef<number | null>(null);
+  const interactionFeedbackTimerRef = useRef<number | null>(null);
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -954,15 +960,40 @@ export function MissionGame({
     }
   };
 
-  // Switch Low/High Battery Mode manually
+  // Adventure work-light cycle: OFF → LOW → HIGH → OFF. Boss combat retains
+  // its existing two-mode behavior so this UI change cannot alter robot balance.
   const toggleBatteryMode = () => {
     setBatteryMode((prev) => {
-      const next = prev === "LOW" ? "HIGH" : "LOW";
+      const next = stage === "PLAYING"
+        ? prev === "OFF" ? "LOW" : prev === "LOW" ? "HIGH" : "OFF"
+        : prev === "HIGH" ? "LOW" : "HIGH";
       recordAction("useWorkLight");
       if (next === "HIGH") recordAction("highBeamActivated");
       triggerSound(next === "HIGH" ? "power" : "click");
       return next;
     });
+  };
+
+  const triggerInteraction = (kind: "tap" | "hold") => {
+    if (stage !== "PLAYING") return;
+    const target = interactionTargetRef.current;
+    if (target) {
+      (kind === "hold" && target.onHold ? target.onHold : target.onTap)();
+      triggerSound(kind === "hold" ? "power" : "click");
+      setInteractionFeedback(`${kind === "hold" ? "長按互動" : "互動"}：${target.label}`);
+    } else {
+      triggerSound("click");
+      setInteractionFeedback("附近沒有可互動的目標");
+    }
+    if (interactionFeedbackTimerRef.current) window.clearTimeout(interactionFeedbackTimerRef.current);
+    interactionFeedbackTimerRef.current = window.setTimeout(() => setInteractionFeedback(null), 1500);
+  };
+  const beginInteractionHold = () => {
+    if (interactionHoldTimerRef.current) window.clearTimeout(interactionHoldTimerRef.current);
+    interactionHoldTimerRef.current = window.setTimeout(() => { interactionHoldTimerRef.current = null; triggerInteraction("hold"); }, 550);
+  };
+  const endInteractionHold = () => {
+    if (interactionHoldTimerRef.current) { window.clearTimeout(interactionHoldTimerRef.current); interactionHoldTimerRef.current = null; triggerInteraction("tap"); }
   };
 
   const toggleGamePause = () => {
@@ -1079,6 +1110,11 @@ export function MissionGame({
       // SPACE to toggle Mode
       if (e.code === "Space" && stage === "PLAYING") {
         toggleBatteryMode();
+      }
+
+      if (e.code === "KeyE" && stage === "PLAYING" && !e.repeat) {
+        e.preventDefault();
+        triggerInteraction("tap");
       }
 
       if (e.code === "KeyR" && !e.repeat) {
@@ -1234,7 +1270,7 @@ export function MissionGame({
     setExp(0);
     setExpNeeded(100);
     setBatteryPercent(100);
-    setBatteryMode("LOW");
+    setBatteryMode("OFF");
     setTimeLeft(isDemoMode ? 30 : 90);
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
@@ -1423,6 +1459,7 @@ export function MissionGame({
     recordAction("startBossBattle");
     if (entrySource === "exhibition") recordAction("exhibitionBossBattle");
     if (selectedChapter === 3) recordAction("marineBattle");
+    setBatteryMode("LOW");
     setStage("BOSSBATTLE");
     setBossIntroPhase("entrance");
     setWeaponLevels(getRobotWeaponLevels());
@@ -1658,6 +1695,7 @@ export function MissionGame({
       
       let dx = 0;
       let dy = 0;
+      const isLightOff = stage === "PLAYING" && batteryMode === "OFF";
       const isHigh = batteryMode === "HIGH";
 
       if (!isPaused) {
@@ -1817,7 +1855,7 @@ export function MissionGame({
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
       if (stage === "PLAYING") {
-        const drainRate = batteryMode === "HIGH" 
+        const drainRate = batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
           : 0.03;
 
@@ -2268,7 +2306,7 @@ export function MissionGame({
       // 4. WEAPONS AUTO-FIRE LOGIC
       
       // -- range_attack Sector Sweep --
-      if (weaponLevels["range_attack"] > 0) {
+      if (!isLightOff && weaponLevels["range_attack"] > 0) {
         const rate = isHigh ? 25 : 45;
         const lightAttackProfile = isHigh ? LIGHT_ATTACK_PROFILES.HIGH : LIGHT_ATTACK_PROFILES.LOW;
         if (state.ticks % rate === 0) {
@@ -2370,7 +2408,7 @@ export function MissionGame({
       }
 
       // -- laser_weapon Slim Beam Laser --
-      if (weaponLevels["laser_weapon"] > 0) {
+      if (!isLightOff && weaponLevels["laser_weapon"] > 0) {
         const rate = isHigh ? 12 : 25;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
@@ -2435,7 +2473,7 @@ export function MissionGame({
       }
 
       // -- tracking_weapon Flexible Gooseneck Tracking --
-      if (weaponLevels["tracking_weapon"] > 0) {
+      if (!isLightOff && weaponLevels["tracking_weapon"] > 0) {
         // Periodically tick electrical laser connection links
         if (state.ticks % 10 === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
@@ -2496,7 +2534,7 @@ export function MissionGame({
       }
 
       // -- C2-932 Work Ground Lamp Light Circles --
-      if (weaponLevels["special_lighting"] > 0) {
+      if (!isLightOff && weaponLevels["special_lighting"] > 0) {
         const rate = isHigh ? 80 : 140;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
@@ -2528,7 +2566,7 @@ export function MissionGame({
       }
 
       // -- heavy_beam Heavy Precision Handheld Flashlight Beam --
-      if (weaponLevels["heavy_beam"] > 0) {
+      if (!isLightOff && weaponLevels["heavy_beam"] > 0) {
         const rate = isHigh ? 35 : 60;
         if (state.ticks % rate === 0) {
           if (stage === "BOSSBATTLE" && state.companionSkills) {
@@ -5083,7 +5121,7 @@ export function MissionGame({
           // Draw equipped inspection lamp in hands
           ctx.fillStyle = "#374151";
           ctx.fillRect(player.x + baseSize * 0.11, player.y - baseSize * 0.01, baseSize * 0.07, baseSize * 0.18); // lamp casing
-          ctx.fillStyle = batteryMode === "HIGH" ? "#fef08a" : "#fef9c3"; // glowing bulb
+          ctx.fillStyle = batteryMode === "HIGH" ? "#fef08a" : batteryMode === "LOW" ? "#fef9c3" : "#374151"; // work-light bulb
           ctx.beginPath();
           ctx.arc(player.x + baseSize * 0.15, player.y + baseSize * 0.2, baseSize * 0.06, 0, Math.PI * 2);
           ctx.fill();
@@ -5453,6 +5491,9 @@ export function MissionGame({
           // dark, while the player's lamp cuts a readable pool through it.
           mctx.fillStyle = "rgba(0, 0, 0, 0.90)";
           mctx.fillRect(0, 0, canvas.width, canvas.height);
+          if (isLightOff) {
+            ctx.drawImage(maskCanvas, 0, 0);
+          } else {
 
           // Subtraction mode - cut holes in dark fog
           mctx.globalCompositeOperation = "destination-out";
@@ -5536,6 +5577,7 @@ export function MissionGame({
           ctx.closePath();
           ctx.fill();
           ctx.restore();
+          }
         }
         ctx.restore();
       }
@@ -6028,12 +6070,14 @@ export function MissionGame({
                 className={`px-2 py-1 text-[9px] font-bold uppercase rounded border cursor-pointer transition-all flex items-center gap-1 ${
                   batteryMode === "HIGH" 
                     ? "bg-amber-500 text-zinc-950 border-amber-400 font-black" 
-                    : "bg-zinc-900 text-zinc-400 border-zinc-800"
+                    : batteryMode === "LOW" ? "bg-zinc-900 text-zinc-400 border-zinc-800" : "bg-zinc-950 text-zinc-600 border-zinc-800"
                 }`}
               >
                 <Zap className="w-3 h-3" />
-                <span>{batteryMode}</span>
+                <span>{batteryMode === "OFF" ? "OFF" : batteryMode}</span>
               </button>
+
+              {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-cyan-700 bg-cyan-950/45 text-cyan-200 transition hover:border-cyan-300" aria-label="互動：點擊或長按" title="互動（E）；長按可觸發特殊互動"><Sparkles className="w-3 h-3" /><span>互動</span></button>}
 
               {/* Virtual Control Switch */}
               <button 
@@ -6148,7 +6192,7 @@ export function MissionGame({
                   className="px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-600 active:from-amber-400 active:to-orange-500 hover:brightness-110 text-zinc-950 font-black text-xs tracking-wider rounded border border-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)] cursor-pointer flex items-center gap-2 select-none"
                 >
                   <Zap className="w-4 h-4 fill-zinc-950 text-zinc-950 animate-pulse" />
-                  <span>切換強光/省電模式</span>
+                  <span>切換工作燈（關閉／弱光／強光）</span>
                 </button>
                 <button
                   onClick={startGame}
@@ -6197,9 +6241,11 @@ export function MissionGame({
               </div>
             </div>
 
-            <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : "border-orange-500/70 bg-black/65 text-orange-300"}`} aria-label="切換強光或省電模式">
-              <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : "省電"}</b></span>
+            {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動</b></span></button>}
+            <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : batteryMode === "LOW" ? "border-orange-500/70 bg-black/65 text-orange-300" : "border-zinc-700 bg-zinc-950/80 text-zinc-500"}`} aria-label="切換工作燈：關閉、弱光、強光">
+              <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : batteryMode === "LOW" ? "弱光" : "關閉"}</b></span>
             </button>
+            {interactionFeedback && <div className="pointer-events-none absolute bottom-[104px] right-4 max-w-[190px] rounded border border-cyan-400/50 bg-cyan-950/90 px-2 py-1 text-right font-mono text-[10px] text-cyan-100 shadow-lg">{interactionFeedback}</div>}
           </div>
 
           {/* Bottom Mobile Control Toolbar for touch fallback */}
@@ -6298,14 +6344,16 @@ export function MissionGame({
                   <div className="border border-zinc-700 bg-black/60 p-4">
                     <p className="mb-2 text-sm font-black text-amber-400 sm:text-base">⌨ 電腦操作</p>
                     <p><b className="whitespace-nowrap text-white">WASD／方向鍵：</b>移動並控制照明攻擊方向</p>
-                    <p><b className="whitespace-nowrap text-white">Space：</b>切換強光／省電模式</p>
+                    <p><b className="whitespace-nowrap text-white">Space：</b>切換工作燈：關閉／弱光／強光</p>
+                    <p><b className="whitespace-nowrap text-white">E：</b>互動；未來可用於 NPC、寶箱與開關</p>
                     <p><b className="text-white">R：</b>重新挑戰</p>
                     <p><b className="text-white">P／Esc：</b>暫停或繼續任務</p>
                   </div>
                   <div className="border border-zinc-700 bg-black/60 p-4">
                     <p className="mb-2 text-sm font-black text-amber-400 sm:text-base">📱 手機操作</p>
                     <p><b className="whitespace-nowrap text-white">方向控制鍵：</b>移動並控制照明攻擊方向</p>
-                    <p><b className="whitespace-nowrap text-white">強度按鈕：</b>切換強光／省電模式</p>
+                    <p><b className="whitespace-nowrap text-white">工作燈按鈕：</b>切換關閉／弱光／強光</p>
+                    <p><b className="whitespace-nowrap text-white">互動按鈕：</b>點擊互動；長按觸發特殊互動</p>
                     <p>角色會朝目前移動方向自動進行照明攻擊。</p>
                   </div>
                 </div>
