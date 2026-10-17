@@ -225,6 +225,8 @@
 }
 
 .card-flip {
+  position: relative;
+  isolation: isolate;
   width: min(88vw, 400px);
   height: min(72dvh, 600px);
   padding: 0;
@@ -258,6 +260,47 @@
 }
 
 .card-flip-front { transform: rotateY(180deg); }
+
+/* Story-card emphasis: visual layers are isolated from the flip transform and
+   only animate opacity/transform so they remain inexpensive on mobile. */
+.card-flip-effect-important::before,
+.card-flip-effect-critical::before,
+.card-flip-effect-critical::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.card-flip-effect-important::before {
+  border: 2px solid rgba(251, 191, 36, .8);
+  box-shadow: 0 0 18px 5px rgba(251, 191, 36, .42), inset 0 0 18px rgba(251, 191, 36, .18);
+  animation: storyCardPulse 1.7s ease-in-out infinite;
+}
+
+.card-flip-effect-critical::before {
+  border: 2px solid rgba(253, 186, 116, .9);
+  box-shadow: 0 0 24px 8px rgba(239, 68, 68, .5), 0 0 50px 14px rgba(251, 191, 36, .18);
+  animation: storyCardPulse .95s ease-in-out infinite;
+}
+
+.card-flip-effect-critical::after {
+  inset: -18px;
+  background: repeating-conic-gradient(from 0deg, rgba(251,191,36,.82) 0 2deg, transparent 2deg 18deg);
+  mask: radial-gradient(circle, transparent 54%, #000 56%, #000 62%, transparent 64%);
+  opacity: .65;
+  animation: storyCardOrbit 4.5s linear infinite;
+}
+
+@keyframes storyCardPulse { 0%, 100% { opacity: .45; transform: scale(.985); } 50% { opacity: 1; transform: scale(1.02); } }
+@keyframes storyCardOrbit { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card-flip-effect-important::before,
+  .card-flip-effect-critical::before,
+  .card-flip-effect-critical::after { animation: none; opacity: .75; transform: none; }
+}
 
 @media (max-width: 480px) {
   .card-flip {

@@ -1,6 +1,7 @@
 import { getRuntimeConfig } from "../config/runtimeStore";
 
 export type KnowledgeCardCategory = "lighting" | "energy" | "materials" | "maintenance" | "marine" | "safety";
+export type CardStoryEffect = "standard" | "important" | "critical";
 
 export interface BossWeakeningEffect {
   type: "bossWeakening";
@@ -20,6 +21,8 @@ export interface KnowledgeCardDefinition {
   description: string;
   industryNote: string;
   image: string;
+  /** Visual emphasis for story-critical cards. Missing legacy values are standard. */
+  storyEffect?: CardStoryEffect;
   bossEffect?: BossWeakeningEffect;
 }
 

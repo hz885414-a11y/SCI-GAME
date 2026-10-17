@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { CardBack } from "./CardBack";
 import { CardFront, type CardFrontData } from "./CardFront";
+import type { CardStoryEffect } from "../../data/cardDatabase";
 
 export const CARD_FLIP_MOCK_DATA: CardFrontData = {
   cardTitle: "IP67 防護等級",
@@ -17,9 +18,10 @@ interface CardFlipProps {
   initialFlipped?: boolean;
   onFlip?: () => void;
   onFlippedChange?: (flipped: boolean) => void;
+  storyEffect?: CardStoryEffect;
 }
 
-export function CardFlip({ data, resetKey, initialFlipped = false, onFlip, onFlippedChange }: CardFlipProps) {
+export function CardFlip({ data, resetKey, initialFlipped = false, onFlip, onFlippedChange, storyEffect = "standard" }: CardFlipProps) {
   const [flipped, setFlipped] = useState(initialFlipped);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function CardFlip({ data, resetKey, initialFlipped = false, onFlip, onFli
   };
 
   return (
-    <div role="button" tabIndex={0} onClick={flip} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); flip(); } }} className="card-flip" aria-label={flipped ? `${data.cardTitle}卡片正面` : "翻開事件卡片"}>
+    <div role="button" tabIndex={0} onClick={flip} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); flip(); } }} className={`card-flip card-flip-effect-${storyEffect}`} aria-label={flipped ? `${data.cardTitle}卡片正面` : "翻開事件卡片"}>
       <span className={`card-flip-inner ${flipped ? "is-flipped" : ""}`}>
         <CardBack />
         <CardFront data={data} />
