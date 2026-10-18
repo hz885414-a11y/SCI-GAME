@@ -148,6 +148,10 @@ export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocke
     return true;
   };
   const triggerCharacter = (characterId: string) => {
+    // A character tap starts one complete ambient sequence. Do not let a
+    // second tap skip lines or enqueue replacement dialogue while it is still
+    // playing; this is the hard input lock needed for lower-memory phones.
+    if (busy.current) return false;
     if (!acceptManualTap()) return false;
     const clickState = getAmbientState();
     clickState.characterClickCount = (clickState.characterClickCount || 0) + 1;
@@ -172,5 +176,8 @@ export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocke
     saveAmbientState(state);
     return play(selected);
   };
-  return { line, autoEnabled, setAutoEnabled, stop, advance, triggerCharacter };
+  // Read the ref directly so an immediately following touch event cannot slip
+  // through before React has painted `line` for the first accepted tap.
+  const isPlaying = () => busy.current;
+  return { line, autoEnabled, setAutoEnabled, stop, advance, triggerCharacter, isPlaying };
 }

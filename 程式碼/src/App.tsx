@@ -695,7 +695,10 @@ export default function App() {
       labDiagnosticInteractionRef.current += 1;
       const interactionCount = labDiagnosticInteractionRef.current;
       if (interactionCount === 1 || interactionCount % 10 === 0) reportLabPerformance(interactionCount);
-      if (ambient.advance()) return true;
+      // An ambient dialogue owns the interaction until its own timer finishes.
+      // In particular, a rapid sequence of character taps must never skip or
+      // restart its lines on a phone.
+      if (ambient.isPlaying()) return false;
       const playedDialogue = ambient.triggerCharacter(charId);
       if (playedDialogue) return true;
       // 在手機版本上，點擊目前顯示的角色會循環切換至燈燈小隊的下一個隊員，增加互動感！
