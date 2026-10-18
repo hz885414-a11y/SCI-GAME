@@ -369,6 +369,7 @@ export function MissionGame({
   const [batteryPercent, setBatteryPercent] = useState<number>(100);
   const [batteryMode, setBatteryMode] = useState<"OFF" | "LOW" | "HIGH">("OFF");
   const [interactionFeedback, setInteractionFeedback] = useState<string | null>(null);
+  const [evacuationProgress, setEvacuationProgress] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
@@ -444,6 +445,8 @@ export function MissionGame({
   const interactionTargetRef = useRef<{ label: string; onTap: () => void; onHold?: () => void } | null>(null);
   const interactionHoldTimerRef = useRef<number | null>(null);
   const interactionFeedbackTimerRef = useRef<number | null>(null);
+  const evacuationTimerRef = useRef<number | null>(null);
+  const evacuationProgressTimerRef = useRef<number | null>(null);
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1065,6 +1068,19 @@ export function MissionGame({
     }
   };
 
+  const cancelEvacuation = () => {
+    if (evacuationTimerRef.current) window.clearTimeout(evacuationTimerRef.current);
+    if (evacuationProgressTimerRef.current) window.clearInterval(evacuationProgressTimerRef.current);
+    evacuationTimerRef.current = null;
+    evacuationProgressTimerRef.current = null;
+    setEvacuationProgress(null);
+  };
+
+  useEffect(() => () => {
+    if (evacuationTimerRef.current) window.clearTimeout(evacuationTimerRef.current);
+    if (evacuationProgressTimerRef.current) window.clearInterval(evacuationProgressTimerRef.current);
+  }, []);
+
   // Adventure work-light cycle: OFF → LOW → HIGH → OFF. Boss combat retains
   // its existing two-mode behavior so this UI change cannot alter robot balance.
   const toggleBatteryMode = () => {
@@ -1217,9 +1233,14 @@ export function MissionGame({
         toggleBatteryMode();
       }
 
-      if (e.code === "KeyE" && stage === "PLAYING" && !e.repeat) {
+      if (e.code === "KeyZ" && stage === "PLAYING" && !e.repeat) {
         e.preventDefault();
         triggerInteraction("tap");
+      }
+
+      if (e.code === "KeyV" && stage === "PLAYING" && !e.repeat) {
+        e.preventDefault();
+        beginEvacuation();
       }
 
       if (e.code === "KeyR" && !e.repeat) {
@@ -1338,6 +1359,8 @@ export function MissionGame({
   };
 
   const handleGameOver = () => {
+    // Evacuation never grants success after the player has died mid-upload.
+    cancelEvacuation();
     // The Boss-specific outcome must enter the candidate list before gameOver
     // closes this mission's card-event batch.
     if (stage === "BOSSBATTLE" && !bossOutcomeRecordedRef.current) {
@@ -1358,6 +1381,7 @@ export function MissionGame({
     if (!missionMapReady) return;
     setIsGamePaused(false);
     setIsMobileGameMenuOpen(false);
+    cancelEvacuation();
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -1528,6 +1552,7 @@ export function MissionGame({
 
   // Report Sequence transition
   const enterReport = () => {
+    cancelEvacuation();
     // A normal timed mission can now end here without requiring a Boss battle.
     // This is the mission boundary used by the card-event system to select one
     // eligible event/card by priority.
@@ -1554,6 +1579,30 @@ export function MissionGame({
     }
     triggerSound("victory");
     setStage("REPORT");
+  };
+
+  // Returning to base remains risky: the simulation and incoming damage keep
+  // running for the full two-second upload. Only a living player can reach the
+  // normal successful report screen.
+  const beginEvacuation = () => {
+    if (stage !== "PLAYING" || evacuationTimerRef.current !== null) return;
+    const startedAt = performance.now();
+    setEvacuationProgress(0);
+    setInteractionFeedback("撤離訊號傳送中：保持生存 2 秒");
+    triggerSound("power");
+    evacuationProgressTimerRef.current = window.setInterval(() => {
+      setEvacuationProgress(Math.min(1, (performance.now() - startedAt) / 2000));
+    }, 80);
+    evacuationTimerRef.current = window.setTimeout(() => {
+      evacuationTimerRef.current = null;
+      if (evacuationProgressTimerRef.current) window.clearInterval(evacuationProgressTimerRef.current);
+      evacuationProgressTimerRef.current = null;
+      if (engineRef.current.player.hp <= 0) return;
+      setEvacuationProgress(null);
+      setInteractionFeedback("撤離成功，正在返回基地");
+      triggerSound("success");
+      enterReport();
+    }, 2000);
   };
 
 
@@ -4818,7 +4867,7 @@ export function MissionGame({
             ctx.fillStyle = "#fef3c7";
             ctx.font = "bold 10px monospace";
             ctx.textAlign = "center";
-            ctx.fillText("按 E／互動淨化", core.x, core.y + 68);
+            ctx.fillText("按 Z／互動淨化", core.x, core.y + 68);
           }
           ctx.restore();
         });
@@ -6538,7 +6587,8 @@ export function MissionGame({
                 <span>{batteryMode === "OFF" ? "OFF" : batteryMode}</span>
               </button>
 
-              {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-cyan-700 bg-cyan-950/45 text-cyan-200 transition hover:border-cyan-300" aria-label="互動：點擊或長按" title="互動（E）；長按可觸發特殊互動"><Sparkles className="w-3 h-3" /><span>互動</span></button>}
+              {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-cyan-700 bg-cyan-950/45 text-cyan-200 transition hover:border-cyan-300" aria-label="互動：點擊或長按" title="互動（Z）；長按可觸發特殊互動"><Sparkles className="w-3 h-3" /><span>互動 Z</span></button>}
+              {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-emerald-700 bg-emerald-950/45 text-emerald-200 transition hover:border-emerald-300 disabled:opacity-50" aria-label="返回基地" title="返回基地（V），讀取 2 秒"><span>撤離 V</span></button>}
 
               {/* Virtual Control Switch */}
               <button 
@@ -6667,6 +6717,14 @@ export function MissionGame({
             </div>
           )}
 
+          {evacuationProgress !== null && (
+            <div className="pointer-events-none absolute left-1/2 top-20 z-50 w-56 -translate-x-1/2 rounded border border-emerald-400/70 bg-zinc-950/90 p-2 shadow-[0_0_20px_rgba(16,185,129,.25)] backdrop-blur-sm">
+              <div className="mb-1 flex items-center justify-between font-mono text-[10px] font-black text-emerald-200"><span>撤離傳輸中</span><span>{Math.round(evacuationProgress * 100)}%</span></div>
+              <div className="h-1.5 overflow-hidden rounded bg-zinc-800"><div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-300 transition-[width] duration-75" style={{ width: `${evacuationProgress * 100}%` }} /></div>
+              <p className="mt-1 text-center text-[9px] text-zinc-400">保持生存，傳輸完成後返回基地</p>
+            </div>
+          )}
+
           {/* Mobile HUD: all controls float above the full-height map. */}
           <div className="pointer-events-none absolute inset-0 z-40 sm:hidden" style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
             <div className="pointer-events-auto absolute left-2 top-[max(8px,env(safe-area-inset-top))] flex max-w-[48%] items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 shadow-lg backdrop-blur-[6px]">
@@ -6699,7 +6757,8 @@ export function MissionGame({
               </div>
             </div>
 
-            {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動</b></span></button>}
+            {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動 Z</b></span></button>}
+            {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className="pointer-events-auto absolute bottom-[max(28px,env(safe-area-inset-bottom))] right-40 grid h-12 w-12 place-items-center rounded-full border border-emerald-500/70 bg-emerald-950/80 text-center text-emerald-100 shadow-[0_0_14px_rgba(16,185,129,.2)] backdrop-blur-[4px] disabled:opacity-50" aria-label="撤離返回基地"><span className="text-[8px] font-black">撤離<br />V</span></button>}
             <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : batteryMode === "LOW" ? "border-orange-500/70 bg-black/65 text-orange-300" : "border-zinc-700 bg-zinc-950/80 text-zinc-500"}`} aria-label="切換工作燈：關閉、弱光、強光">
               <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : batteryMode === "LOW" ? "弱光" : "關閉"}</b></span>
             </button>
@@ -6803,7 +6862,8 @@ export function MissionGame({
                     <p className="mb-2 text-sm font-black text-amber-400 sm:text-base">⌨ 電腦操作</p>
                     <p><b className="whitespace-nowrap text-white">WASD／方向鍵：</b>移動並控制照明攻擊方向</p>
                     <p><b className="whitespace-nowrap text-white">Space：</b>切換工作燈：關閉／弱光／強光</p>
-                    <p><b className="whitespace-nowrap text-white">E：</b>互動；未來可用於 NPC、寶箱與開關</p>
+                    <p><b className="whitespace-nowrap text-white">Z：</b>互動；未來可用於 NPC、寶箱與開關</p>
+                    <p><b className="whitespace-nowrap text-white">V：</b>撤離返回基地（讀取約 2 秒；期間死亡仍算失敗）</p>
                     <p><b className="text-white">R：</b>重新挑戰</p>
                     <p><b className="text-white">P／Esc：</b>暫停或繼續任務</p>
                   </div>
