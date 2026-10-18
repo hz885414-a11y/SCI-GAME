@@ -102,13 +102,6 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
             aria-expanded={isMaterialPanelOpen}
           >
             <span className="flex min-w-0 items-center gap-2">
-              <span className="flex shrink-0 -space-x-1">
-                {MATERIAL_IDS.slice(0, 4).map((id) => (
-                  <span key={id} className="grid h-7 w-7 place-items-center border border-zinc-700 bg-black text-sm" style={{ color: MATERIAL_CONFIG[id].color }}>
-                    {MATERIAL_CONFIG[id].icon}
-                  </span>
-                ))}
-              </span>
               <span>
                 <b className="block text-xs tracking-wider text-zinc-200">改裝素材庫</b>
                 <small className="block text-[9px] text-zinc-500">點擊查看完整素材與缺少項目</small>
@@ -118,15 +111,15 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
           </button>
 
           <div className={`${isMaterialPanelOpen ? "mt-3 block" : "hidden"} xl:mt-0 xl:block`}>
-            <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
+            <div className="mb-3 hidden items-center justify-between border-b border-zinc-800 pb-2 xl:flex">
               <h3 className="text-sm font-black tracking-widest text-zinc-200">改裝素材庫</h3>
               <span className="h-1.5 w-1.5 animate-pulse bg-red-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-1">
               {MATERIAL_IDS.map((id) => (
                 <div key={id} className="group flex min-h-12 items-center gap-2 border border-zinc-800 bg-gradient-to-r from-zinc-900/90 to-zinc-950 px-2.5 transition-colors hover:border-zinc-600">
-                  <span className="grid h-7 w-7 shrink-0 place-items-center border border-zinc-700 bg-black/50 text-base" style={{ color: MATERIAL_CONFIG[id].color }}>
-                    {MATERIAL_CONFIG[id].icon}
+                  <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden border border-zinc-700 bg-black/50">
+                    <img src={MATERIAL_CONFIG[id].image} alt={MATERIAL_CONFIG[id].name} className="h-full w-full object-contain p-0.5" loading="lazy" decoding="async" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[11px] font-bold text-zinc-300">{MATERIAL_CONFIG[id].name}</span>
@@ -223,7 +216,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
                       const enough = materials[materialId as MaterialId] >= (amount || 0);
                       return (
                         <span key={materialId} className={`flex min-h-9 items-center gap-1.5 border bg-black/50 px-2 text-[9px] font-mono ${enough ? "border-zinc-700 text-zinc-300" : "border-red-900/70 text-red-400"}`}>
-                          <b style={{ color: MATERIAL_CONFIG[materialId as MaterialId].color }}>{MATERIAL_CONFIG[materialId as MaterialId].icon}</b>
+                          <img src={MATERIAL_CONFIG[materialId as MaterialId].image} alt={MATERIAL_CONFIG[materialId as MaterialId].name} className="h-5 w-5 object-contain" loading="lazy" decoding="async" />
                           {materials[materialId as MaterialId]}/{amount}
                         </span>
                       );

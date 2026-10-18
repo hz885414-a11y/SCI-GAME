@@ -18,6 +18,8 @@ export interface KnowledgeCardDefinition {
   category: KnowledgeCardCategory;
   icon: string;
   title: string;
+  /** Legacy cards default to left alignment. */
+  titleAlign?: "left" | "center";
   description: string;
   industryNote: string;
   image: string;

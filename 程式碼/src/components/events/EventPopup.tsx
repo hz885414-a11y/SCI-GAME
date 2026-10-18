@@ -56,6 +56,7 @@ export function EventPopup({ reward, playSound }: EventPopupProps) {
 
   const cardData = {
     cardTitle: card.title,
+    titleAlign: card.titleAlign,
     category: card.category.toUpperCase(),
     description: card.description,
     extraText: [card.industryNote, card.bossEffect ? `知識應用：${card.bossEffect.label}` : ""].filter(Boolean).join("\n"),

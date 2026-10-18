@@ -16,7 +16,6 @@ import { StageEnding, type StageEndingSummary } from "./StageEnding";
 import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES, type MissionEnemyType } from "../data/gameAssetUrls";
 import { useGameConfig } from "../config/GameConfigContext";
 import { getSupplyEffectTotals } from "../data/supplyShopConfig";
-import { characterImages } from "../data/characterImages";
 
 import { ROBOT_CONFIG, createC2932Deployment, type RobotSelectionState } from "../data/robotConfig";
 import {
@@ -79,6 +78,12 @@ interface EnemyEntity {
   hitFlashUntil?: number;
   hitOffsetX?: number;
   hitOffsetY?: number;
+  aiState?: "dormant" | "alerted" | "pursuing" | "searching";
+  alertTicks?: number;
+  lostSightTicks?: number;
+  searchTicks?: number;
+  lastSeenX?: number;
+  lastSeenY?: number;
 }
 
 interface EnemyDeathEffect {
@@ -149,6 +154,14 @@ const AGENTS: Agent[] = [
     defense: 1.2,
   }
 ];
+
+// Dedicated 4:5 portraits for the deployment picker. Dialogue portraits keep
+// using characterImages so this visual update remains scoped to this screen.
+const AGENT_PROFILE_IMAGES = {
+  claire: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/10.expression/Profile%20(C).png",
+  ethan: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/10.expression/Profile%20(E).png",
+  leo: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/10.expression/Profile%20(L).png",
+} as const;
 
 interface Chapter {
   id: number;
@@ -413,12 +426,37 @@ export function MissionGame({
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const materialImagesRef = useRef<Partial<Record<MaterialId, HTMLImageElement>>>({});
+  // The lamp-off locator is deliberately low-frequency. The world continues
+  // to render at full speed, while this full-screen fog mask is rebuilt at
+  // 30fps instead of on every animation frame.
+  const offLightMaskFrameRef = useRef(-Infinity);
   const missionBackgroundImgRef = useRef<HTMLImageElement | null>(null);
   const missionMaskDataRef = useRef<MissionMaskData | null>(null);
   const bossArenaBackgroundImgRef = useRef<HTMLImageElement | null>(null);
   const bossArenaMaskDataRef = useRef<MissionMaskData | null>(null);
   const bossVisualImagesRef = useRef<Partial<Record<BossVisualState, HTMLImageElement>>>({});
   const [missionMapReady, setMissionMapReady] = useState(false);
+
+  useEffect(() => {
+    // Material art is drawn by the canvas rather than React. Load it once for
+    // the session so pickups can use their real part image as they appear.
+    let disposed = false;
+    const timers = MATERIAL_IDS.map((materialId, index) => window.setTimeout(() => {
+      if (disposed) return;
+      const image = new Image();
+      image.decoding = "async";
+      image.onload = () => {
+        if (!disposed) materialImagesRef.current[materialId] = image;
+      };
+      image.src = MATERIAL_CONFIG[materialId].image;
+    }, index * 120));
+
+    return () => {
+      disposed = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
 
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
   const playerWalkFrameRefs = useRef<HTMLImageElement[]>([]);
@@ -804,6 +842,31 @@ export function MissionGame({
 
     return () => { cancelled = true; };
   }, [selectedAgent.id]);
+
+  useEffect(() => {
+    // Agent portraits are remote, high-resolution PNGs. Warm their network
+    // cache while the player reads step 1 instead of making step 2 request and
+    // decode all three at once. Staggering avoids competing with the mission
+    // screen's own first-paint assets on lower-memory phones.
+    if (stage !== "START" || startStep !== 1 || typeof document === "undefined") return;
+
+    const timers: number[] = [];
+    AGENTS.forEach((agent, index) => {
+      const timer = window.setTimeout(() => {
+        const link = document.createElement("link");
+        link.rel = "preload";
+        link.as = "image";
+        link.href = AGENT_PROFILE_IMAGES[agent.id as keyof typeof AGENT_PROFILE_IMAGES];
+        link.fetchPriority = "low";
+        document.head.appendChild(link);
+      }, 300 + index * 450);
+      timers.push(timer);
+    });
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [stage, startStep]);
 
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1024);
 
@@ -2703,6 +2766,12 @@ export function MissionGame({
               type: type,
               points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
               facingLeft: spawn.x > player.x,
+              aiState: "dormant",
+              alertTicks: 0,
+              lostSightTicks: 0,
+              searchTicks: 0,
+              lastSeenX: spawn.x,
+              lastSeenY: spawn.y,
             });
           }
         }
@@ -2758,14 +2827,14 @@ export function MissionGame({
 
       // Update and move enemies
       state.enemies = state.enemies.filter((enemy) => {
-        // Move towards player
         const dxToPlayer = player.x - enemy.x;
         const dyToPlayer = player.y - enemy.y;
         const d = Math.hypot(dxToPlayer, dyToPlayer);
+        let canDamagePlayer = enemy.isBossMinion === true;
 
-        if (d > 0.1) {
-          if (Math.abs(dxToPlayer) > 0.1) enemy.facingLeft = dxToPlayer < 0;
-          if (enemy.isBossMinion && stage === "BOSSBATTLE") {
+        if (enemy.isBossMinion && stage === "BOSSBATTLE") {
+          if (d > 0.1) {
+            if (Math.abs(dxToPlayer) > 0.1) enemy.facingLeft = dxToPlayer < 0;
             moveWithinBossArenaMask(
               enemy,
               (dxToPlayer / d) * enemy.speed,
@@ -2773,18 +2842,72 @@ export function MissionGame({
               enemy.radius,
               state.mapSize,
             );
-          } else {
+          }
+        } else {
+          // Normal mission enemies only acquire the player while illuminated.
+          // This is intentionally distance-based, keeping the stealth system
+          // predictable and inexpensive on mobile devices.
+          const detectionRange = isHigh ? 360 : 230;
+          const playerIsLit = !isLightOff && d <= detectionRange;
+          const aiState = enemy.aiState || "dormant";
+
+          if (playerIsLit) {
+            enemy.lastSeenX = player.x;
+            enemy.lastSeenY = player.y;
+            enemy.lostSightTicks = 0;
+            enemy.searchTicks = 0;
+            if (aiState === "dormant" || aiState === "searching") {
+              enemy.aiState = "alerted";
+              enemy.alertTicks = 0;
+            }
+          }
+
+          if (enemy.aiState === "alerted") {
+            enemy.alertTicks = (enemy.alertTicks || 0) + 1;
+            // A short readable beat after the exclamation mark before chase.
+            if (!isLightOff && enemy.alertTicks >= 24) enemy.aiState = "pursuing";
+            if (isLightOff) enemy.aiState = "searching";
+          } else if (enemy.aiState === "pursuing") {
+            if (isLightOff) {
+              enemy.lostSightTicks = (enemy.lostSightTicks || 0) + 1;
+              // Keep chasing from memory for 1.5 seconds after the lamp dies.
+              if (enemy.lostSightTicks >= 90) {
+                enemy.aiState = "searching";
+                enemy.searchTicks = 0;
+              }
+            }
+          } else if (enemy.aiState === "searching") {
+            enemy.searchTicks = (enemy.searchTicks || 0) + 1;
+            // Search the last lit location briefly, then return to dormancy.
+            if (enemy.searchTicks >= 150) enemy.aiState = "dormant";
+          }
+
+          const targetX = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff)
+            ? (enemy.lastSeenX ?? enemy.x)
+            : player.x;
+          const targetY = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff)
+            ? (enemy.lastSeenY ?? enemy.y)
+            : player.y;
+          const dxToTarget = targetX - enemy.x;
+          const dyToTarget = targetY - enemy.y;
+          const targetDistance = Math.hypot(dxToTarget, dyToTarget);
+          const shouldMove = enemy.aiState === "pursuing" || enemy.aiState === "searching";
+
+          if (shouldMove && targetDistance > 0.1) {
+            if (Math.abs(dxToTarget) > 0.1) enemy.facingLeft = dxToTarget < 0;
+            const searchSpeed = enemy.aiState === "searching" ? 0.72 : 1;
             moveWithinMissionMask(
               enemy,
-              (dxToPlayer / d) * enemy.speed,
-              (dyToPlayer / d) * enemy.speed,
+              (dxToTarget / targetDistance) * enemy.speed * searchSpeed,
+              (dyToTarget / targetDistance) * enemy.speed * searchSpeed,
               enemy.radius,
             );
           }
+          canDamagePlayer = enemy.aiState === "pursuing" || enemy.aiState === "searching";
         }
 
-        // Deal contact damage to player
-        if (d <= player.radius + enemy.radius && player.invincibleTime === 0) {
+        // Dormant and newly-alerted enemies cannot damage the player.
+        if (canDamagePlayer && d <= player.radius + enemy.radius && player.invincibleTime === 0) {
           recordAction("takeDamage");
           const contactDamage = enemy.isBossMinion
             ? enemy.bossMinionKind === "nut" ? 16 : 11
@@ -4461,10 +4584,19 @@ export function MissionGame({
           ctx.textBaseline = "middle";
           ctx.fillText("C", col.x, col.y + floatOffset + 0.5);
         } else {
-          // Draw a small briefcase with glowing handles
-          ctx.fillRect(col.x - 8, col.y - 6 + floatOffset, 16, 12);
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(col.x - 4, col.y - 9 + floatOffset, 8, 3);
+          const materialId = col.materialType as MaterialId | undefined;
+          const materialImage = materialId ? materialImagesRef.current[materialId] : undefined;
+          if (materialImage?.complete && materialImage.naturalWidth > 0) {
+            // Real material thumbnails keep their authored silhouette while
+            // staying small enough to remain clear among moving enemies.
+            const iconSize = 22;
+            ctx.drawImage(materialImage, col.x - iconSize / 2, col.y - iconSize / 2 + floatOffset, iconSize, iconSize);
+          } else {
+            // Brief fallback while a remote material thumbnail is loading.
+            ctx.fillRect(col.x - 8, col.y - 6 + floatOffset, 16, 12);
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(col.x - 4, col.y - 9 + floatOffset, 8, 3);
+          }
         }
         
         // Add subtle halo glowing under the items
@@ -4610,6 +4742,25 @@ export function MissionGame({
           ctx.beginPath();
           ctx.arc(enemy.x + hitFeedback.x, enemy.y + hitFeedback.y, enemy.radius, 0, Math.PI * 2);
           ctx.fill();
+        }
+
+        if (enemy.aiState === "alerted") {
+          const alertBounce = Math.sin((enemy.alertTicks || 0) * 0.45) * 2;
+          ctx.save();
+          ctx.translate(enemy.x, enemy.y - enemy.radius - 18 + alertBounce);
+          ctx.fillStyle = "#fef3c7";
+          ctx.strokeStyle = "#f59e0b";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#7c2d12";
+          ctx.font = "bold 15px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("!", 0, 1);
+          ctx.restore();
         }
 
         // Draw shadow health bar above larger clumpers
@@ -5476,24 +5627,49 @@ export function MissionGame({
         if (maskCanvas.width !== canvas.width || maskCanvas.height !== canvas.height) {
           maskCanvas.width = canvas.width;
           maskCanvas.height = canvas.height;
+          offLightMaskFrameRef.current = -Infinity;
         }
         const mctx = maskCanvas.getContext("2d");
         
         if (mctx) {
-          // The previous frame ends in destination-out mode. Reset before
-          // rebuilding the black mask or the new fill would erase instead of
-          // painting, making the darkness disappear after the first frame.
+          if (isLightOff) {
+            // Reusing the completed mask on alternating frames removes half
+            // of the expensive clear/fill/composite work. The player locator
+            // still tracks at 30fps, while input and game simulation remain
+            // on the normal requestAnimationFrame cadence.
+            if (state.ticks - offLightMaskFrameRef.current >= 2) {
+              offLightMaskFrameRef.current = state.ticks;
+              mctx.globalCompositeOperation = "source-over";
+              mctx.globalAlpha = 1;
+              mctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+              mctx.fillStyle = "rgba(0, 0, 0, 0.90)";
+              mctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              // The lamp is off, but retain a passive locator glow so the
+              // player can still identify their own position in darkness.
+              const px = player.x - state.camera.x;
+              const py = player.y - state.camera.y;
+              const locatorRadius = 150;
+              const locatorGlow = mctx.createRadialGradient(px, py, 5, px, py, locatorRadius);
+              locatorGlow.addColorStop(0, "rgba(0,0,0,0.94)");
+              locatorGlow.addColorStop(0.38, "rgba(0,0,0,0.62)");
+              locatorGlow.addColorStop(1, "rgba(0,0,0,0)");
+              mctx.globalCompositeOperation = "destination-out";
+              mctx.fillStyle = locatorGlow;
+              mctx.beginPath();
+              mctx.arc(px, py, locatorRadius, 0, Math.PI * 2);
+              mctx.fill();
+            }
+            ctx.drawImage(maskCanvas, 0, 0);
+          } else {
+          // The previous frame can end in destination-out mode. Reset before
+          // rebuilding or the new fill would erase rather than paint.
+          offLightMaskFrameRef.current = -Infinity;
           mctx.globalCompositeOperation = "source-over";
           mctx.globalAlpha = 1;
           mctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-          
-          // Exhibition work-light presentation: the unlit map stays genuinely
-          // dark, while the player's lamp cuts a readable pool through it.
           mctx.fillStyle = "rgba(0, 0, 0, 0.90)";
           mctx.fillRect(0, 0, canvas.width, canvas.height);
-          if (isLightOff) {
-            ctx.drawImage(maskCanvas, 0, 0);
-          } else {
 
           // Subtraction mode - cut holes in dark fog
           mctx.globalCompositeOperation = "destination-out";
@@ -5796,9 +5972,9 @@ export function MissionGame({
                   <ul className="list-disc pl-3.5 space-y-0.5 sm:space-y-1 text-[9.5px] sm:text-[10.5px]">
                     <li><b>選單：</b>使用 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">方向鍵</kbd> 切換，<kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">Enter / Space</kbd> 確認。</li>
                     <li><b>移動：</b>使用 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">WASD</kbd> 鍵在全方向移動。</li>
-                    <li><b>調光：</b>點擊或按下 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">Space 空白鍵</kbd> 切換 Low / High。</li>
+                    <li><b>調光：</b>點擊或按下 <kbd className="px-1 bg-zinc-800 border border-zinc-700 text-white rounded font-mono text-[8px] sm:text-[9px]">Space 空白鍵</kbd> 切換關閉／弱光／強光。</li>
                     <li><b>電力：</b>工作燈高亮度下極耗電，請收集 <b>綠色電池 🔋</b>。</li>
-                    <li><b>收集：</b>拾取 <b>金色工具箱 💼</b> 收集工作燈組裝機甲！</li>
+                    <li><b>潛行：</b>熄燈可避開遠方怪物；被追蹤後需維持關燈約 1.5 秒才會甩開。</li>
                   </ul>
                 </div>
 
@@ -5829,14 +6005,21 @@ export function MissionGame({
                       <button
                         key={agent.id}
                         onClick={() => { setSelectedAgent(agent); triggerSound("click"); }}
-                        className={`border text-left flex flex-col justify-between items-center h-[190px] xs:h-[235px] sm:h-[300px] transition-all cursor-pointer rounded-[24px] relative overflow-hidden ${
+                        className={`border text-left flex flex-col justify-between items-center h-[190px] xs:h-[235px] sm:h-[300px] transition-[transform,box-shadow,border-color,background-color] duration-200 cursor-pointer rounded-[24px] relative overflow-hidden will-change-transform ${
                           selectedAgent.id === agent.id 
                             ? "bg-zinc-900/90 border-orange-500 shadow-lg shadow-orange-500/20 scale-102" 
                             : "bg-zinc-950/80 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/50"
                         }`}
                       >
                         <div className="pointer-events-none absolute inset-0">
-                          <img src={characterImages[agent.id as "claire" | "ethan" | "leo"].normal} alt={`${agent.name} 頭像`} className="h-full w-full object-cover object-top transition-transform duration-300" />
+                          <img
+                            src={AGENT_PROFILE_IMAGES[agent.id as keyof typeof AGENT_PROFILE_IMAGES]}
+                            alt={`${agent.name} 頭像`}
+                            loading={selectedAgent.id === agent.id ? "eager" : "lazy"}
+                            decoding="async"
+                            fetchPriority={selectedAgent.id === agent.id ? "high" : "low"}
+                            className="h-full w-full object-cover object-top"
+                          />
                           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/5 to-black/15" />
                           <span className="absolute inset-x-1 bottom-2 text-center font-pixel text-[clamp(20px,3vw,34px)] font-black tracking-[.12em] text-white [paint-order:stroke_fill] [-webkit-text-stroke:2px_#000]">{agent.name.toUpperCase()}</span>
                         </div>
@@ -6180,7 +6363,7 @@ export function MissionGame({
 
               {/* Center Help tips */}
               <div className="hidden md:block text-[11px] text-zinc-500 max-w-sm text-center leading-relaxed">
-                💡 <span className="text-zinc-400">行動提示：</span>利用移動方向調整強光方向，收集金色手提箱 💼 升級新工作燈！
+                💡 <span className="text-zinc-400">行動提示：</span>強光能攻擊也會暴露你；熄燈後可甩開追蹤中的怪物。
               </div>
 
               {/* Right Side Mode Toggle */}
@@ -6206,12 +6389,9 @@ export function MissionGame({
             </div>
           )}
 
-          {/* Mobile portrait HUD: all controls float above the full-height map. */}
+          {/* Mobile HUD: all controls float above the full-height map. */}
           <div className="pointer-events-none absolute inset-0 z-40 sm:hidden" style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
             <div className="pointer-events-auto absolute left-2 top-[max(8px,env(safe-area-inset-top))] flex max-w-[48%] items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 shadow-lg backdrop-blur-[6px]">
-              <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full border border-orange-500/60 bg-black/50">
-                <div className="-ml-1 -mt-0.5 scale-90"><SpriteAnimator src={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].src} totalFrames={6} idleFrame={0} animationFrames={[1, 2, 3, 4, 5]} frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets} fps={7} playing={true} width={40} /></div>
-              </div>
               <div className="min-w-0">
                 <p className="truncate text-[10px] font-black leading-none text-white">{selectedAgent.name}</p>
                 <div className="mt-1 flex gap-px">{Array.from({ length: maxHp }).map((_, i) => <Heart key={i} className={`h-2.5 w-2.5 ${i < hp ? "fill-rose-500 text-rose-500" : "text-zinc-700"}`} />)}</div>
@@ -6252,7 +6432,7 @@ export function MissionGame({
           <div className="absolute bottom-4 inset-x-0 p-4 flex items-center justify-between pointer-events-none z-10 opacity-0 select-none">
             {/* Quick tips */}
             <div className="bg-zinc-900/90 border border-zinc-800 p-2.5 max-w-xs text-[10px] text-zinc-400 font-sans pointer-events-auto leading-relaxed">
-              💡 <span className="text-zinc-200">提示：</span>利用移動方向調整 range_attack 扇形強光方向。收集金色手提箱 💼 會直接升級或增加新的工作燈零件！
+              💡 <span className="text-zinc-200">提示：</span>強光會驚動怪物；關燈維持約 1.5 秒可讓追蹤者失去目標。
             </div>
 
             {/* Score */}
@@ -6406,7 +6586,7 @@ export function MissionGame({
             <div className="mt-3 grid min-h-0 grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-8">
               {MATERIAL_IDS.map((id) => (
                 <div key={id} className={`flex min-h-[72px] flex-col items-center justify-center rounded-lg border p-1.5 text-center ${collectedMaterials[id] ? "border-zinc-700 bg-zinc-900/80" : "border-zinc-800/60 bg-zinc-900/30 opacity-55"}`} title={MATERIAL_CONFIG[id].name}>
-                  <span className="text-lg" style={{ color: MATERIAL_CONFIG[id].color }}>{MATERIAL_CONFIG[id].icon}</span>
+                  <img src={MATERIAL_CONFIG[id].image} alt={MATERIAL_CONFIG[id].name} className="h-7 w-7 object-contain" loading="lazy" decoding="async" />
                   <b className="mt-0.5 text-sm text-white">× {collectedMaterials[id]}</b>
                   <span className="mt-0.5 line-clamp-1 text-[9px] font-bold text-zinc-400">{MATERIAL_CONFIG[id].name}</span>
                 </div>

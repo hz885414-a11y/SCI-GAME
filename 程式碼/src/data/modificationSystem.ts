@@ -6,15 +6,15 @@ export const MATERIAL_IDS = [
 export type MaterialId = (typeof MATERIAL_IDS)[number];
 export type MaterialInventory = Record<MaterialId, number>;
 
-export const MATERIAL_CONFIG: Record<MaterialId, { name: string; icon: string; color: string }> = {
-  energy_core: { name: "能量核心", icon: "⚡", color: "#22d3ee" },
-  metal_material: { name: "金屬材料", icon: "⬡", color: "#a1a1aa" },
-  electronic_parts: { name: "電子零件", icon: "▦", color: "#34d399" },
-  weapon_module: { name: "武器模組", icon: "✦", color: "#fb7185" },
-  defense_module: { name: "防禦模組", icon: "◆", color: "#60a5fa" },
-  mobility_module: { name: "移動模組", icon: "➤", color: "#fbbf24" },
-  lighting_module: { name: "燈具模組", icon: "☀", color: "#fde047" },
-  rare_tech_chip: { name: "稀有科技晶片", icon: "◇", color: "#c084fc" }
+export const MATERIAL_CONFIG: Record<MaterialId, { name: string; icon: string; image: string; color: string }> = {
+  energy_core: { name: "電池", icon: "▰", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Battery.png", color: "#22d3ee" },
+  metal_material: { name: "散熱器", icon: "▤", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Heat%20Sink.png", color: "#a1a1aa" },
+  electronic_parts: { name: "電路板", icon: "▦", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Circuit%20Board.png", color: "#34d399" },
+  weapon_module: { name: "LED 晶片", icon: "✦", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_LED%20Chip.png", color: "#fb7185" },
+  defense_module: { name: "固定支架與螺絲", icon: "◆", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Mounting%20Kit.png", color: "#60a5fa" },
+  mobility_module: { name: "開關", icon: "◉", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Switch.png", color: "#fbbf24" },
+  lighting_module: { name: "光學透鏡", icon: "◌", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Lens.png", color: "#fde047" },
+  rare_tech_chip: { name: "反光杯", icon: "◈", image: "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/11.PARTS/Parts_Reflector.png", color: "#c084fc" }
 };
 
 export const ROBOT_UPGRADE_IDS = [

@@ -103,7 +103,7 @@ export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined):
     ...remote,
     gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote?.gameplay },
     cards: mergeById(DEFAULT_GAME_CONFIG.cards, remote?.cards),
-    cardLayout: { ...DEFAULT_CARD_LAYOUT, ...remote?.cardLayout },
+    cardLayout: { ...DEFAULT_CARD_LAYOUT, ...remote?.cardLayout, titleAlign: remote?.cardLayout?.titleAlign || DEFAULT_CARD_LAYOUT.titleAlign },
     events: mergeById(DEFAULT_GAME_CONFIG.events, remote?.events),
   };
 }

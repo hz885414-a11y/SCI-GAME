@@ -8,6 +8,7 @@ export const CARD_FRONT_IMAGE_URL = "https://raw.githubusercontent.com/hz885414-
 
 export interface CardFrontData {
   cardTitle: string;
+  titleAlign?: "left" | "center";
   category: string;
   description: string;
   extraText: string;
@@ -42,9 +43,9 @@ export function CardFront({ data }: { data: CardFrontData }) {
       </div>
 
       <div className="absolute flex items-center justify-between gap-2 overflow-hidden" style={{ ...position("title"), width: "83%" }}>
-        <h2 className="min-w-0 break-words text-[clamp(15px,4.6vw,25px)] font-black leading-none tracking-wide text-white">{data.cardTitle}</h2>
-        <span className="shrink-0 border border-red-500/80 bg-black/70 px-2 py-1 font-mono text-[8px] font-black tracking-wider text-red-200 sm:text-[10px]">{data.category}</span>
+        <h2 className={`min-w-0 break-words font-pixel text-[clamp(15px,4.6vw,25px)] font-black leading-none tracking-wide text-white ${config.cardLayout.titleAlign === "center" ? "flex-1 text-center" : ""}`}>{data.cardTitle}</h2>
       </div>
+      <span className="absolute box-border overflow-hidden border border-red-500/80 bg-black/70 px-2 py-1 text-center font-mono text-[8px] font-black tracking-wider text-red-200 sm:text-[10px]" style={position("category")}>{data.category}</span>
 
       <h3 className="absolute flex items-center gap-1.5 overflow-hidden text-[10px] font-black tracking-wide text-white sm:text-xs" style={position("descriptionLabel")}><span aria-hidden="true">▣</span>卡片說明</h3>
       <p className="absolute overflow-y-auto overscroll-contain break-words text-[9px] leading-relaxed text-zinc-100 [scrollbar-width:thin] sm:text-[11px]" style={position("descriptionContent")}>{data.description}</p>
