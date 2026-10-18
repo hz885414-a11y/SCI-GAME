@@ -2,20 +2,8 @@ import React from "react";
 import { Character } from "../data/responses";
 import { playSound } from "../utils/audio";
 import { CharacterImage } from "./CharacterImage";
-import { characterImages, CharacterName, CharacterMood, MOBILE_CHARACTER_DIALOGUE_IMAGES } from "../data/characterImages";
+import { CharacterName, MOBILE_CHARACTER_DIALOGUE_IMAGES } from "../data/characterImages";
 import type { CharacterLayoutValue } from "../config/types";
-// @ts-ignore
-import claireNormalImg from "../claire_normal.png";
-// @ts-ignore
-import claireHappyImg from "../claire_happy.png";
-// @ts-ignore
-import claireSadImg from "../claire_sad.png";
-// @ts-ignore
-import claireThinkImg from "../claire_think.png";
-// @ts-ignore
-import ethanImg from "../ethan.png";
-// @ts-ignore
-import leoImg from "../leo.png";
 
 export type EmotionType = "dialog" | "happy" | "serious" | "sad" | "excited";
 
@@ -26,35 +14,6 @@ const CHARACTER_LAYOUT = {
   ethan: { scale: 1, x: 50, imageScale: 1.194, imageWidth: "auto", imageOffsetX: 0, imageOffsetY: "clamp(-322px, -45vw, -170px)" },
   leo: { scale: 1.06, x: 77, imageScale: 0.955, imageWidth: "auto", imageOffsetX: 0, imageOffsetY: "clamp(-144px, -15vw, -70px)" },
 } as const;
-
-/**
- * 🎨 預設人物情緒照片設定區 (自動對話串接表情)
- * 您可以將此處的網址或圖片，直接替換為您的本地圖片變數（例如 claireImg）或任何網路相片 URL。
- * 系統在讀取對話時，會根據情緒自動切換為對應的相片立繪。
- */
-export const DEFAULT_CHARACTER_EMOTIONS: Record<string, Record<EmotionType, string>> = {
-  claire: {
-    dialog: characterImages.claire.dialog,
-    happy: characterImages.claire.happy,
-    serious: characterImages.claire.think,
-    sad: characterImages.claire.normal,
-    excited: characterImages.claire.surprise,
-  },
-  ethan: {
-    dialog: characterImages.ethan.dialog,
-    happy: characterImages.ethan.happy,
-    serious: characterImages.ethan.think,
-    sad: characterImages.ethan.normal,
-    excited: characterImages.ethan.surprise,
-  },
-  leo: {
-    dialog: characterImages.leo.dialog,
-    happy: characterImages.leo.happy,
-    serious: characterImages.leo.think,
-    sad: characterImages.leo.normal,
-    excited: characterImages.leo.surprise,
-  },
-};
 
 export function detectEmotion(text: string, speakerId: string): EmotionType {
   const normalizedText = text.toLowerCase();
@@ -149,7 +108,6 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   emotion,
   layout: configuredLayout,
 }) => {
-  const [useFallback, setUseFallback] = React.useState(false);
   const [isMobileViewport, setIsMobileViewport] = React.useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
   );
@@ -162,30 +120,11 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
     return () => media.removeEventListener("change", syncViewport);
   }, []);
 
-  React.useEffect(() => {
-    setUseFallback(false);
-  }, [character.id, emotion, customImages]);
-
-  const defaultLocal = character.id === "claire"
-    ? (emotion === "sad"
-        ? claireSadImg
-        : emotion === "serious"
-          ? claireThinkImg
-          : emotion === "excited" || emotion === "happy"
-            ? claireHappyImg
-            : claireNormalImg)
-    : character.id === "ethan"
-      ? ethanImg
-      : leoImg;
-  
-  // Choose source
-  const customImgUrl = customImages ? customImages[emotion] : null;
-  const configImgUrl = DEFAULT_CHARACTER_EMOTIONS[character.id]?.[emotion];
-  const currentSrc = useFallback ? defaultLocal : (customImgUrl || configImgUrl || defaultLocal);
-
-  const handleImageError = () => {
-    setUseFallback(true);
-  };
+  // `customImages` is always a settings object, even before the user uploads
+  // anything. Check this individual emotion instead of the object itself.
+  // Otherwise phones never receive their compact WebP source and decode the
+  // original multi-megapixel PNGs for all three characters.
+  const customImgUrl = customImages?.[emotion] ?? null;
 
   const handleClick = () => {
     // Only play a sound for an accepted dialogue action. In particular this
@@ -208,7 +147,9 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   const translateY = isSpeaking ? -12 : 0;
   const visualOpacity = isAnySpeaking && !isSpeaking ? (isMobileViewport ? 0.66 : 0.72) : 1;
   const visualBrightness = isAnySpeaking && !isSpeaking ? 0.65 : 1;
-  const mobileSrc = customImages ? undefined : MOBILE_CHARACTER_DIALOGUE_IMAGES[character.id as CharacterName];
+  const mobileSrc = customImgUrl
+    ? undefined
+    : MOBILE_CHARACTER_DIALOGUE_IMAGES[character.id as CharacterName];
   const beamColor = character.id === "claire"
     ? "from-rose-950 via-rose-900/30 to-transparent"
     : character.id === "ethan"
@@ -272,7 +213,7 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
                 objectPosition: "center bottom",
                 transform: "translateX(-50%)",
               }}
-              src={customImages ? customImages[emotion] || undefined : undefined}
+              src={customImgUrl || undefined}
               mobileSrc={mobileSrc}
               priority={isSpeaking}
             />
