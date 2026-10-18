@@ -103,6 +103,27 @@ interface BombingZone {
   timer: number;
 }
 
+type DarkCorePhase = "corrupted" | "purifying" | "purified";
+
+interface DarkCoreEntity {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  phase: DarkCorePhase;
+  /** 0–1; the canvas simulation advances this over three seconds. */
+  progress: number;
+  initialVariant: number;
+  purifiedVariant: number;
+}
+
+const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
+  `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
+);
+const DARK_CORE_COUNT = 3;
+const DARK_CORE_PURIFICATION_TICKS = 180; // 3 seconds at the fixed 60 Hz simulation step.
+const DARK_CORE_INTERACTION_RANGE = 88;
+
 const C2_932_PUNCHES_REQUIRED = 3;
 const C2_932_FIELD_DURATION_MS = 3000;
 const C2_932_FIELD_RADIUS = 145;
@@ -427,6 +448,7 @@ export function MissionGame({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const materialImagesRef = useRef<Partial<Record<MaterialId, HTMLImageElement>>>({});
+  const darkCoreImagesRef = useRef<HTMLImageElement[]>([]);
   // The lamp-off locator is deliberately low-frequency. The world continues
   // to render at full speed, while this full-screen fog mask is rebuilt at
   // 30fps instead of on every animation frame.
@@ -456,6 +478,25 @@ export function MissionGame({
       disposed = true;
       timers.forEach((timer) => window.clearTimeout(timer));
     };
+  }, []);
+
+  useEffect(() => {
+    // These are small, static canvas sprites. Loading them once avoids image
+    // allocation during purification animation and keeps the interaction loop
+    // entirely inside the existing 60 Hz canvas simulation.
+    let disposed = false;
+    const images = DARK_CORE_IMAGE_URLS.map((url) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = url;
+      return image;
+    });
+    images.forEach((image, index) => {
+      image.onload = () => {
+        if (!disposed) darkCoreImagesRef.current[index] = image;
+      };
+    });
+    return () => { disposed = true; };
   }, []);
 
   const playerSpriteImgRef = useRef<HTMLImageElement | null>(null);
@@ -913,6 +954,7 @@ export function MissionGame({
     },
     enemies: [] as EnemyEntity[],
     enemyDeathEffects: [] as EnemyDeathEffect[],
+    darkCores: [] as DarkCoreEntity[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
@@ -1386,6 +1428,7 @@ export function MissionGame({
       },
       enemies: [],
       enemyDeathEffects: [],
+      darkCores: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -1441,6 +1484,36 @@ export function MissionGame({
         pulse: Math.random() * Math.PI
       });
     });
+
+    // Chapter two introduces an immobile objective: three dark cores are
+    // placed on valid map ground and remain where they spawned for the run.
+    if (selectedChapter === 2) {
+      const corePositions: Array<{ x: number; y: number }> = [];
+      for (let index = 0; index < DARK_CORE_COUNT; index++) {
+        let spawn: { x: number; y: number } | null = null;
+        for (let attempt = 0; attempt < 18; attempt++) {
+          const candidate = findWalkableSpawn(26);
+          if (!candidate) continue;
+          if (Math.hypot(candidate.x - initialPlayerPosition.x, candidate.y - initialPlayerPosition.y) < 230) continue;
+          if (corePositions.every((placed) => Math.hypot(candidate.x - placed.x, candidate.y - placed.y) > 260)) {
+            spawn = candidate;
+            break;
+          }
+        }
+        if (!spawn) continue;
+        corePositions.push(spawn);
+        engineRef.current.darkCores.push({
+          id: `dark-core-${index}`,
+          x: spawn.x,
+          y: spawn.y,
+          radius: 28,
+          phase: "corrupted",
+          progress: 0,
+          initialVariant: index % 2,
+          purifiedVariant: index % 2,
+        });
+      }
+    }
 
     setStage("PLAYING");
     setShowTipModal(true);
@@ -1601,6 +1674,7 @@ export function MissionGame({
       }, // Mecha is bigger
       enemies: [],
       enemyDeathEffects: [],
+      darkCores: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -3282,7 +3356,65 @@ export function MissionGame({
         return !hit;
       });
 
-      // 7. COLLECTIBLES & PLAYER EXP LEVELS
+      // 7. DARK CORE PURIFICATION (chapter 2 objective)
+      // Core state lives in the canvas engine rather than React, so the
+      // three-second meter stays smooth and does not cause a component render
+      // every simulation step. Leaving range pauses purification; interacting
+      // again beside the core resumes it from the displayed amount.
+      if (stage === "PLAYING" && state.darkCores) {
+        let nearestCore: DarkCoreEntity | null = null;
+        let nearestDistance = Infinity;
+
+        state.darkCores.forEach((core: DarkCoreEntity) => {
+          const distance = Math.hypot(core.x - player.x, core.y - player.y);
+          if (core.phase === "purifying" && distance <= DARK_CORE_INTERACTION_RANGE) {
+            core.progress = Math.min(1, core.progress + 1 / DARK_CORE_PURIFICATION_TICKS);
+            if (core.progress >= 1) {
+              core.phase = "purified";
+              triggerSound("power");
+              setInteractionFeedback("暗黑核心已淨化");
+              if (interactionFeedbackTimerRef.current) window.clearTimeout(interactionFeedbackTimerRef.current);
+              interactionFeedbackTimerRef.current = window.setTimeout(() => setInteractionFeedback(null), 1800);
+              for (let index = 0; index < 18; index++) {
+                spawnParticle(state, {
+                  x: core.x,
+                  y: core.y,
+                  vx: (Math.random() - 0.5) * 4.8,
+                  vy: (Math.random() - 0.5) * 4.8,
+                  radius: 2 + Math.random() * 2,
+                  color: index % 2 ? "#fef08a" : "#67e8f9",
+                  life: 0,
+                  maxLife: 30,
+                  alpha: 1,
+                });
+              }
+            }
+          }
+
+          if (core.phase !== "purified" && distance <= DARK_CORE_INTERACTION_RANGE && distance < nearestDistance) {
+            nearestCore = core;
+            nearestDistance = distance;
+          }
+        });
+
+        if (nearestCore) {
+          const targetCore = nearestCore;
+          interactionTargetRef.current = {
+            label: targetCore.phase === "purifying"
+              ? `暗黑核心淨化 ${Math.round(targetCore.progress * 100)}%`
+              : "淨化暗黑核心（約 3 秒）",
+            onTap: () => {
+              if (targetCore.phase === "corrupted") targetCore.phase = "purifying";
+            },
+          };
+        } else {
+          interactionTargetRef.current = null;
+        }
+      } else {
+        interactionTargetRef.current = null;
+      }
+
+      // 8. COLLECTIBLES & PLAYER EXP LEVELS
       state.collectibles = state.collectibles.filter((col) => {
         col.pulse += 0.05;
         const dist = Math.hypot(col.x - player.x, col.y - player.y);
@@ -4557,6 +4689,56 @@ export function MissionGame({
         ctx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
         ctx.stroke();
       });
+
+      // Chapter 2 dark-core objective. Artwork is selected by phase: CORE 1–2
+      // idle, CORE 3–7 across purification progress, and CORE 8–9 on success.
+      if (stage === "PLAYING" && state.darkCores) {
+        state.darkCores.forEach((core: DarkCoreEntity) => {
+          const imageIndex = core.phase === "corrupted"
+            ? core.initialVariant
+            : core.phase === "purifying"
+              ? 2 + Math.min(4, Math.floor(core.progress * 5))
+              : 7 + core.purifiedVariant;
+          const coreImage = darkCoreImagesRef.current[imageIndex];
+          const iconSize = 66;
+          const bob = core.phase === "corrupted" ? Math.sin((state.ticks + core.x) * 0.08) * 2 : 0;
+
+          ctx.save();
+          if (coreImage?.complete && coreImage.naturalWidth > 0) {
+            ctx.drawImage(coreImage, core.x - iconSize / 2, core.y - iconSize / 2 + bob, iconSize, iconSize);
+          } else {
+            const fallback = ctx.createRadialGradient(core.x, core.y, 3, core.x, core.y, core.radius);
+            fallback.addColorStop(0, core.phase === "purified" ? "#fef08a" : "#c026d3");
+            fallback.addColorStop(1, "rgba(24, 24, 27, 0)");
+            ctx.fillStyle = fallback;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y, core.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          if (core.phase === "purifying") {
+            const barWidth = 68;
+            const barY = core.y + 42;
+            ctx.fillStyle = "rgba(9, 9, 11, 0.82)";
+            ctx.fillRect(core.x - barWidth / 2, barY, barWidth, 7);
+            ctx.fillStyle = "#67e8f9";
+            ctx.fillRect(core.x - barWidth / 2 + 1, barY + 1, (barWidth - 2) * core.progress, 5);
+            ctx.strokeStyle = "rgba(165, 243, 252, 0.9)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(core.x - barWidth / 2, barY, barWidth, 7);
+            ctx.fillStyle = "#cffafe";
+            ctx.font = "bold 9px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText(`淨化 ${Math.round(core.progress * 100)}%`, core.x, barY + 18);
+          } else if (core.phase === "corrupted" && Math.hypot(core.x - player.x, core.y - player.y) <= DARK_CORE_INTERACTION_RANGE) {
+            ctx.fillStyle = "#fef3c7";
+            ctx.font = "bold 10px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("按 E／互動淨化", core.x, core.y + 45);
+          }
+          ctx.restore();
+        });
+      }
 
       // B. Draw Collectibles
       state.collectibles.forEach((col) => {
