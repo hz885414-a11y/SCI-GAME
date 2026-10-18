@@ -133,7 +133,7 @@ interface CharacterStandeeProps {
   isActive: boolean;
   isSpeaking: boolean;
   isAnySpeaking: boolean;
-  onInteraction: () => void;
+  onInteraction: () => boolean;
   customImages: Record<EmotionType, string | null> | null;
   emotion: EmotionType;
   layout?: CharacterLayoutValue;
@@ -177,8 +177,10 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   };
 
   const handleClick = () => {
-    playSound("bubble");
-    onInteraction();
+    // Only play a sound for an accepted dialogue action. In particular this
+    // prevents a rapid mobile tap stream from allocating many Web Audio nodes
+    // after the dialogue throttle has already rejected those taps.
+    if (onInteraction()) playSound("bubble");
   };
 
   const fallbackLayout = CHARACTER_LAYOUT[character.id as keyof typeof CHARACTER_LAYOUT] || CHARACTER_LAYOUT.ethan;

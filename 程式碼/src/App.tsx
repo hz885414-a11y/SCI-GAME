@@ -658,18 +658,20 @@ export default function App() {
 
 
   // Character interaction handler (disabled affection increase as requested)
-  const handleCharacterInteraction = (charId: string) => {
+  const handleCharacterInteraction = (charId: string): boolean => {
     // A character tap is an intentional, manual ambient-dialogue trigger.
     // It never competes with the formal counseling dialogue.
     if (gameMode === "idle") {
-      if (ambient.advance()) return;
+      if (ambient.advance()) return true;
       const playedDialogue = ambient.triggerCharacter(charId);
-      if (playedDialogue) return;
+      if (playedDialogue) return true;
       // 在手機版本上，點擊目前顯示的角色會循環切換至燈燈小隊的下一個隊員，增加互動感！
       const currentIndex = CHARACTERS.findIndex((c) => c.id === charId);
       const nextIndex = (currentIndex + 1) % CHARACTERS.length;
       setLastActiveSpeakerId(CHARACTERS[nextIndex].id);
+      return true;
     }
+    return false;
   };
 
   // Run Typewriter Effect for dialogue

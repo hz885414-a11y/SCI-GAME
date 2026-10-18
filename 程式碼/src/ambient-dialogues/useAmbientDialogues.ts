@@ -5,9 +5,9 @@ import { canPlay, getAmbientState, saveAmbientState } from "./storage";
 import type { AmbientDialogue, AmbientDialogueConfig, AmbientDialogueLine } from "./types";
 import { DEFAULT_AMBIENT_DIALOGUES } from "./defaults";
 
-// Keep a tiny guard against duplicate touch/click events without making
-// advancing dialogue feel delayed when the player taps through it.
-const MANUAL_TAP_GUARD_MS = 80;
+// Mobile touch can produce very dense repeated click events. One advance per
+// 180ms remains responsive while preventing rapid dialogue/image/audio churn.
+const MANUAL_TAP_GUARD_MS = 180;
 
 export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocked: boolean }) {
   const [config, setConfig] = useState<AmbientDialogueConfig>(DEFAULT_AMBIENT_DIALOGUES);

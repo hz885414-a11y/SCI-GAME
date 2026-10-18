@@ -64,7 +64,8 @@ export const CharacterImage: React.FC<CharacterImageProps> = ({
       className={className}
       style={style}
       loading={priority ? "eager" : "lazy"}
-      {...({ fetchPriority: priority ? "high" : "auto" })}
+      decoding="async"
+      {...({ fetchPriority: "auto" })}
       onError={() => setHasError(true)}
       referrerPolicy="no-referrer"
     />
