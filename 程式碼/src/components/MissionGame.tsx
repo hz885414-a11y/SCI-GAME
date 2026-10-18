@@ -3368,10 +3368,14 @@ export function MissionGame({
         state.darkCores.forEach((core: DarkCoreEntity) => {
           const distance = Math.hypot(core.x - player.x, core.y - player.y);
           if (core.phase === "purifying" && distance <= DARK_CORE_INTERACTION_RANGE) {
+            const previousProgress = core.progress;
             core.progress = Math.min(1, core.progress + 1 / DARK_CORE_PURIFICATION_TICKS);
+            if (Math.floor(previousProgress * DARK_CORE_PURIFICATION_TICKS / 36) !== Math.floor(core.progress * DARK_CORE_PURIFICATION_TICKS / 36) && core.progress < 1) {
+              triggerSound("corePurifyPulse");
+            }
             if (core.progress >= 1) {
               core.phase = "purified";
-              triggerSound("power");
+              triggerSound("corePurifyComplete");
               setInteractionFeedback("暗黑核心已淨化");
               if (interactionFeedbackTimerRef.current) window.clearTimeout(interactionFeedbackTimerRef.current);
               interactionFeedbackTimerRef.current = window.setTimeout(() => setInteractionFeedback(null), 1800);
@@ -3421,7 +3425,10 @@ export function MissionGame({
               ? `暗黑核心淨化 ${Math.round(targetCore.progress * 100)}%`
               : "淨化暗黑核心（約 3 秒）",
             onTap: () => {
-              if (targetCore.phase === "corrupted") targetCore.phase = "purifying";
+              if (targetCore.phase === "corrupted") {
+                targetCore.phase = "purifying";
+                triggerSound("corePurifyStart");
+              }
             },
           };
         } else {

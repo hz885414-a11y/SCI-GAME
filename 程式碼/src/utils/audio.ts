@@ -252,6 +252,34 @@ export function playSound(type: string) {
         tone(180, 0.18, 0.035, "sine", 720);
         break;
       }
+      case "corePurifyStart": {
+        // A restrained energy lock-on confirms that the player has begun
+        // purifying a dark core, without competing with combat effects.
+        tone(230, 0.18, 0.027, "sine", 480);
+        tone(520, 0.11, 0.016, "triangle", 680);
+        break;
+      }
+      case "corePurifyPulse": {
+        // Played at bounded milestones during the three-second progress bar.
+        tone(460, 0.075, 0.014, "sine", 590);
+        break;
+      }
+      case "corePurifyComplete": {
+        // A small ascending confirmation distinct from generic victory music.
+        [392, 523, 659].forEach((frequency, index) => {
+          const startAt = now + index * 0.065;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(frequency, startAt);
+          gain.gain.setValueAtTime(0.03, startAt);
+          gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(startAt);
+          osc.stop(startAt + 0.16);
+        });
+        break;
+      }
       case "low_battery":
       case "game_over": {
         tone(210, 0.2, 0.035, "square", 80);
