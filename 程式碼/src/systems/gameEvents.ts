@@ -3,6 +3,8 @@ import type { GameEventDefinition } from "../data/eventConfig";
 import { enqueueCardRewards } from "./eventManager";
 import type { ManagedCard } from "../card-events/types";
 import { getAllCardDefinitions, saveCustomCardDefinition } from "../data/cardDatabase";
+import { getAllEventDefinitions } from "../data/eventConfig";
+import { getPlayerStats } from "./playerStats";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
 
 export type GameEventType =
@@ -70,6 +72,56 @@ function legacyReward(card: ManagedCard, event: GameEvent): CardReward | null {
   };
 }
 
+/**
+ * GitHub Pages hosts only static assets, so there is no /api/game-events
+ * process there. Cards and event rules still come from the public Firebase
+ * game-config document; this evaluator makes that exact configuration usable
+ * in the static build and keeps player progress in this browser.
+ */
+function isStaticPublicBuild(): boolean {
+  return typeof window !== "undefined" && window.location.hostname.endsWith("github.io");
+}
+
+function isConfiguredEventSatisfied(definition: GameEventDefinition, event: GameEvent): boolean {
+  if (event.eventType === "debug_trigger") return event.data.eventId === definition.id;
+  if (event.data.action !== definition.action) return false;
+
+  const stats = getPlayerStats() as Record<string, number>;
+  if ((stats[definition.action] || 0) < Math.max(1, definition.requiredCount)) return false;
+
+  switch (definition.specialCondition) {
+    case "prologueCompleted":
+      return (stats["special.prologueCompleted"] || 0) > 0;
+    case "prologueSkipped":
+      return (stats["special.prologueSkipped"] || 0) > 0;
+    case "coinTotal":
+      return (stats.collectCoin || 0) >= Math.max(1, Number(definition.specialValue) || 1);
+    case "dialogueTotal":
+      return (stats["special.dialogueSubmitted"] || 0) >= Math.max(1, Number(definition.specialValue) || 1);
+    case "dialogueScenarioFirst":
+      return (stats[`special.dialogueScenarioFirst.${String(definition.specialValue || "")}`] || 0) > 0;
+    case "exhibitionClicked":
+      return (stats[`special.exhibitionClicked.${String(definition.specialValue || "")}`] || 0) > 0;
+    default:
+      return true;
+  }
+}
+
+function evaluateFirebaseConfiguredEvent(event: GameEvent): CardReward[] {
+  const cards = new Map(getAllCardDefinitions().map((card) => [card.id, card]));
+  return getAllEventDefinitions()
+    .filter((definition) => isConfiguredEventSatisfied(definition, event))
+    .map((definition) => {
+      const card = cards.get(definition.rewardCard);
+      return card ? {
+        rewardId: `firebase-config:${definition.id}:${card.id}`,
+        event: definition,
+        card,
+      } : null;
+    })
+    .filter((reward): reward is CardReward => Boolean(reward));
+}
+
 export async function emitGameEvent<TData extends Record<string, unknown>>(
   eventType: GameEvent["eventType"],
   data: TData,
@@ -103,6 +155,11 @@ export async function emitGameEvent<TData extends Record<string, unknown>>(
   await previousSubmission;
 
   try {
+    if (isStaticPublicBuild()) {
+      const rewards = evaluateFirebaseConfiguredEvent(event);
+      enqueueCardRewards(rewards);
+      return rewards;
+    }
     const response = await fetch("/api/game-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,6 +176,15 @@ export async function emitGameEvent<TData extends Record<string, unknown>>(
     enqueueCardRewards(rewards);
     return rewards;
   } catch (error) {
+    // A temporary server outage should not stop a public Firebase-configured
+    // card from being earned. This is also useful for preview hosts which do
+    // not expose the optional Express API.
+    const rewards = evaluateFirebaseConfiguredEvent(event);
+    if (rewards.length > 0) {
+      console.warn("Game-event API unavailable; using Firebase-configured browser evaluation.", error);
+      enqueueCardRewards(rewards);
+      return rewards;
+    }
     console.warn("Unable to submit game event.", event, error);
     return [];
   } finally {
