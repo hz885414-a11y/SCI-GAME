@@ -4700,25 +4700,78 @@ export function MissionGame({
               ? 2 + Math.min(4, Math.floor(core.progress * 5))
               : 7 + core.purifiedVariant;
           const coreImage = darkCoreImagesRef.current[imageIndex];
-          const iconSize = 66;
-          const bob = core.phase === "corrupted" ? Math.sin((state.ticks + core.x) * 0.08) * 2 : 0;
+          // Core art is a tall containment object. Keep its authored 1:2
+          // footprint rather than squeezing it into the material-pickup size.
+          const coreWidth = 100;
+          const coreHeight = 200;
+          const bob = core.phase === "corrupted" ? Math.sin((state.ticks + core.x) * 0.08) * 3 : 0;
+          const pulse = (Math.sin(state.ticks * 0.11 + core.x) + 1) / 2;
 
           ctx.save();
-          if (coreImage?.complete && coreImage.naturalWidth > 0) {
-            ctx.drawImage(coreImage, core.x - iconSize / 2, core.y - iconSize / 2 + bob, iconSize, iconSize);
+          // Layered, inexpensive canvas effects make this read as a dangerous
+          // world objective rather than a flat image: corruption breathes in
+          // place, purification projects a vertical beam, and success leaves
+          // a calm cyan seal. All effects are tied to the existing draw pass.
+          if (core.phase === "corrupted") {
+            const aura = ctx.createRadialGradient(core.x, core.y, 10, core.x, core.y, 72 + pulse * 10);
+            aura.addColorStop(0, `rgba(168, 85, 247, ${0.2 + pulse * 0.12})`);
+            aura.addColorStop(0.55, `rgba(88, 28, 135, ${0.16 + pulse * 0.08})`);
+            aura.addColorStop(1, "rgba(24, 24, 27, 0)");
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y, 82, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = `rgba(217, 70, 239, ${0.24 + pulse * 0.24})`;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 5]);
+            ctx.lineDashOffset = -state.ticks * 0.75;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y + 54, 42 + pulse * 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else if (core.phase === "purifying") {
+            const beam = ctx.createLinearGradient(core.x, core.y - 145, core.x, core.y + 110);
+            beam.addColorStop(0, "rgba(207, 250, 254, 0)");
+            beam.addColorStop(0.32, "rgba(103, 232, 249, 0.24)");
+            beam.addColorStop(0.72, "rgba(34, 211, 238, 0.16)");
+            beam.addColorStop(1, "rgba(207, 250, 254, 0)");
+            ctx.fillStyle = beam;
+            ctx.fillRect(core.x - 42, core.y - 145, 84, 255);
+            ctx.strokeStyle = "rgba(165, 243, 252, 0.62)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y + 64, 28 + (1 - core.progress) * 22, 0, Math.PI * 2);
+            ctx.stroke();
           } else {
-            const fallback = ctx.createRadialGradient(core.x, core.y, 3, core.x, core.y, core.radius);
+            const seal = ctx.createRadialGradient(core.x, core.y + 48, 6, core.x, core.y + 48, 64);
+            seal.addColorStop(0, "rgba(254, 240, 138, 0.42)");
+            seal.addColorStop(0.45, "rgba(34, 211, 238, 0.18)");
+            seal.addColorStop(1, "rgba(34, 211, 238, 0)");
+            ctx.fillStyle = seal;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y + 48, 64, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(103, 232, 249, 0.5)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(core.x, core.y + 48, 38, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          if (coreImage?.complete && coreImage.naturalWidth > 0) {
+            ctx.drawImage(coreImage, core.x - coreWidth / 2, core.y - coreHeight / 2 + bob, coreWidth, coreHeight);
+          } else {
+            const fallback = ctx.createRadialGradient(core.x, core.y, 3, core.x, core.y, coreHeight / 2);
             fallback.addColorStop(0, core.phase === "purified" ? "#fef08a" : "#c026d3");
             fallback.addColorStop(1, "rgba(24, 24, 27, 0)");
             ctx.fillStyle = fallback;
             ctx.beginPath();
-            ctx.arc(core.x, core.y, core.radius, 0, Math.PI * 2);
+            ctx.ellipse(core.x, core.y, coreWidth / 2, coreHeight / 2, 0, 0, Math.PI * 2);
             ctx.fill();
           }
 
           if (core.phase === "purifying") {
             const barWidth = 68;
-            const barY = core.y + 42;
+            const barY = core.y + 112;
             ctx.fillStyle = "rgba(9, 9, 11, 0.82)";
             ctx.fillRect(core.x - barWidth / 2, barY, barWidth, 7);
             ctx.fillStyle = "#67e8f9";
@@ -4734,7 +4787,7 @@ export function MissionGame({
             ctx.fillStyle = "#fef3c7";
             ctx.font = "bold 10px monospace";
             ctx.textAlign = "center";
-            ctx.fillText("按 E／互動淨化", core.x, core.y + 45);
+            ctx.fillText("按 E／互動淨化", core.x, core.y + 122);
           }
           ctx.restore();
         });
