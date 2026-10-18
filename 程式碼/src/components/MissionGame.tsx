@@ -122,7 +122,15 @@ interface DarkCoreGuardian {
   y: number;
   radius: number;
   interactionCount: number;
+  dialogueText: string | null;
+  dialogueUntilTick: number;
 }
+
+const DARK_CORE_MEMORY_LINES = [
+  "等了好久好久 ...",
+  "什麼時候回來 ...",
+  "不是說好了 ...",
+] as const;
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
@@ -1567,6 +1575,8 @@ export function MissionGame({
           y: guardSpawn.y,
           radius: 22,
           interactionCount: 0,
+          dialogueText: null,
+          dialogueUntilTick: 0,
         };
       }
     }
@@ -3559,8 +3569,10 @@ export function MissionGame({
         const guardianDistance = guardian ? Math.hypot(guardian.x - player.x, guardian.y - player.y) : Infinity;
         if (guardian && guardianDistance <= DARK_CORE_INTERACTION_RANGE && guardianDistance < nearestDistance) {
           interactionTargetRef.current = {
-            label: "不滅守衛：『光會熄滅，但我不會。』",
+            label: "傾聽殘存記憶",
             onTap: () => {
+              guardian.dialogueText = DARK_CORE_MEMORY_LINES[guardian.interactionCount % DARK_CORE_MEMORY_LINES.length];
+              guardian.dialogueUntilTick = state.ticks + 210;
               guardian.interactionCount += 1;
             },
           };
@@ -5229,9 +5241,8 @@ export function MissionGame({
         ctx.restore();
       });
 
-      // Chapter 2's neutral core guardian is never part of enemy damage or
-      // death logic. Its subdued halo and infinity marker communicate that it
-      // is an interaction character, not a target to defeat.
+      // Chapter 2's residual memory is never part of enemy damage or death
+      // logic. It is a static story echo beside the first dark core.
       if (stage === "PLAYING" && state.darkCoreGuardian) {
         const guardian = state.darkCoreGuardian as DarkCoreGuardian;
         const guardImage = enemySpriteImagesRef.current.stalker;
@@ -5263,21 +5274,32 @@ export function MissionGame({
         }
         ctx.restore();
         ctx.save();
-        ctx.fillStyle = "rgba(8, 47, 73, 0.88)";
-        ctx.strokeStyle = "rgba(103, 232, 249, 0.82)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(guardian.x, guardian.y - guardian.radius - 11, 10, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#cffafe";
-        ctx.font = "bold 14px monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("∞", guardian.x, guardian.y - guardian.radius - 10);
+        if (guardian.dialogueText && state.ticks < guardian.dialogueUntilTick) {
+          ctx.font = "bold 10px monospace";
+          const bubbleWidth = Math.max(104, ctx.measureText(guardian.dialogueText).width + 22);
+          const bubbleX = guardian.x - bubbleWidth / 2;
+          const bubbleY = guardian.y - guardian.radius - 47;
+          ctx.fillStyle = "rgba(8, 47, 73, 0.94)";
+          ctx.strokeStyle = "rgba(103, 232, 249, 0.82)";
+          ctx.lineWidth = 1;
+          ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 24);
+          ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 24);
+          ctx.beginPath();
+          ctx.moveTo(guardian.x - 4, bubbleY + 24);
+          ctx.lineTo(guardian.x + 4, bubbleY + 24);
+          ctx.lineTo(guardian.x, bubbleY + 30);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#e0f2fe";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(guardian.dialogueText, guardian.x, bubbleY + 12);
+        }
         if (nearGuardian) {
           ctx.font = "bold 10px monospace";
           ctx.fillStyle = "#e0f2fe";
+          ctx.textAlign = "center";
           ctx.fillText("按 Z／互動", guardian.x, guardian.y + guardian.radius + 22);
         }
         ctx.restore();
