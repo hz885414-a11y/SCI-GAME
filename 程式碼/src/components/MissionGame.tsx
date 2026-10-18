@@ -117,6 +117,13 @@ interface DarkCoreEntity {
   purifiedVariant: number;
 }
 
+interface DarkCoreGuardian {
+  x: number;
+  y: number;
+  radius: number;
+  interactionCount: number;
+}
+
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
 );
@@ -962,6 +969,7 @@ export function MissionGame({
     enemies: [] as EnemyEntity[],
     enemyDeathEffects: [] as EnemyDeathEffect[],
     darkCores: [] as DarkCoreEntity[],
+    darkCoreGuardian: null as DarkCoreGuardian | null,
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
@@ -1460,6 +1468,7 @@ export function MissionGame({
       enemies: [],
       enemyDeathEffects: [],
       darkCores: [],
+      darkCoreGuardian: null,
       collectibles: [],
       particles: [],
       bullets: [],
@@ -1543,6 +1552,22 @@ export function MissionGame({
           initialVariant: index % 2,
           purifiedVariant: index % 2,
         });
+      }
+      // The first core is watched by a neutral, unkillable sentinel. It is
+      // deliberately separate from `enemies`, so light damage, overtime
+      // multipliers and enemy-death cleanup can never remove it.
+      const guardedCore = corePositions[0];
+      if (guardedCore) {
+        const guardSpawn = findWalkableSpawn(20, guardedCore, 104) || {
+          x: guardedCore.x + 72,
+          y: guardedCore.y,
+        };
+        engineRef.current.darkCoreGuardian = {
+          x: guardSpawn.x,
+          y: guardSpawn.y,
+          radius: 22,
+          interactionCount: 0,
+        };
       }
     }
 
@@ -1738,6 +1763,7 @@ export function MissionGame({
       enemies: [],
       enemyDeathEffects: [],
       darkCores: [],
+      darkCoreGuardian: null,
       collectibles: [],
       particles: [],
       bullets: [],
@@ -3529,7 +3555,16 @@ export function MissionGame({
           }
         });
 
-        if (nearestCore) {
+        const guardian = state.darkCoreGuardian as DarkCoreGuardian | null;
+        const guardianDistance = guardian ? Math.hypot(guardian.x - player.x, guardian.y - player.y) : Infinity;
+        if (guardian && guardianDistance <= DARK_CORE_INTERACTION_RANGE && guardianDistance < nearestDistance) {
+          interactionTargetRef.current = {
+            label: "不滅守衛：『光會熄滅，但我不會。』",
+            onTap: () => {
+              guardian.interactionCount += 1;
+            },
+          };
+        } else if (nearestCore) {
           const targetCore = nearestCore;
           interactionTargetRef.current = {
             label: targetCore.phase === "purifying"
@@ -5193,6 +5228,60 @@ export function MissionGame({
         ctx.stroke();
         ctx.restore();
       });
+
+      // Chapter 2's neutral core guardian is never part of enemy damage or
+      // death logic. Its subdued halo and infinity marker communicate that it
+      // is an interaction character, not a target to defeat.
+      if (stage === "PLAYING" && state.darkCoreGuardian) {
+        const guardian = state.darkCoreGuardian as DarkCoreGuardian;
+        const guardImage = enemySpriteImagesRef.current.stalker;
+        const hover = Math.sin(state.ticks * 0.07 + guardian.x) * 2;
+        const nearGuardian = Math.hypot(guardian.x - player.x, guardian.y - player.y) <= DARK_CORE_INTERACTION_RANGE;
+        ctx.save();
+        const aura = ctx.createRadialGradient(guardian.x, guardian.y, 4, guardian.x, guardian.y, 46);
+        aura.addColorStop(0, "rgba(125, 211, 252, 0.18)");
+        aura.addColorStop(0.62, "rgba(88, 28, 135, 0.12)");
+        aura.addColorStop(1, "rgba(24, 24, 27, 0)");
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(guardian.x, guardian.y, 46, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.translate(guardian.x, guardian.y + hover);
+        ctx.imageSmoothingEnabled = false;
+        ctx.shadowColor = "rgba(165, 243, 252, 0.65)";
+        ctx.shadowBlur = 10;
+        if (guardImage?.complete && guardImage.naturalWidth > 0) {
+          const aspect = guardImage.naturalWidth / guardImage.naturalHeight;
+          const width = aspect >= 1 ? 60 : 60 * aspect;
+          const height = aspect >= 1 ? 60 / aspect : 60;
+          ctx.drawImage(guardImage, -width / 2, -height / 2, width, height);
+        } else {
+          ctx.fillStyle = "#312e81";
+          ctx.beginPath();
+          ctx.arc(0, 0, guardian.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = "rgba(8, 47, 73, 0.88)";
+        ctx.strokeStyle = "rgba(103, 232, 249, 0.82)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(guardian.x, guardian.y - guardian.radius - 11, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#cffafe";
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("∞", guardian.x, guardian.y - guardian.radius - 10);
+        if (nearGuardian) {
+          ctx.font = "bold 10px monospace";
+          ctx.fillStyle = "#e0f2fe";
+          ctx.fillText("按 Z／互動", guardian.x, guardian.y + guardian.radius + 22);
+        }
+        ctx.restore();
+      }
 
       // E. Draw Boss (if active)
       // AUTOMECHANIKA missile targets render independently from the aircraft,
