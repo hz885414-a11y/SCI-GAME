@@ -123,6 +123,7 @@ const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
 const DARK_CORE_COUNT = 3;
 const DARK_CORE_PURIFICATION_TICKS = 180; // 3 seconds at the fixed 60 Hz simulation step.
 const DARK_CORE_INTERACTION_RANGE = 88;
+const EVACUATION_LAUNCH_MS = 180;
 
 const C2_932_PUNCHES_REQUIRED = 3;
 const C2_932_FIELD_DURATION_MS = 3000;
@@ -1612,7 +1613,7 @@ export function MissionGame({
         evacuationTimerRef.current = null;
         if (engineRef.current.player.hp <= 0) return;
         enterReport();
-      }, 760);
+      }, EVACUATION_LAUNCH_MS);
     }, 2000);
   };
 
@@ -5548,31 +5549,29 @@ export function MissionGame({
           // The successful evacuation swaps the agent sprite for a compact
           // light sphere that accelerates vertically out of the map.
           const startedAt = evacuationLaunchStartedRef.current ?? performance.now();
-          const flight = Math.min(1, Math.max(0, (performance.now() - startedAt) / 760));
-          const lift = flight * flight * 380;
+          const flight = Math.min(1, Math.max(0, (performance.now() - startedAt) / EVACUATION_LAUNCH_MS));
+          const lift = flight * flight * 540;
           const orbX = player.x;
           const orbY = player.y - lift;
-          const orbRadius = 15 + flight * 13;
+          const coreWidth = Math.max(2, 26 * (1 - flight));
+          const coreHeight = 26 + flight * 88;
           ctx.save();
-          ctx.globalAlpha = Math.max(0, 1 - flight * 0.45);
-          const trail = ctx.createLinearGradient(orbX, player.y + 36, orbX, orbY - orbRadius * 2);
+          ctx.globalAlpha = Math.max(0, 1 - flight * 0.28);
+          const trail = ctx.createLinearGradient(orbX, player.y + 44, orbX, orbY - coreHeight);
           trail.addColorStop(0, "rgba(34, 211, 238, 0)");
-          trail.addColorStop(0.48, "rgba(103, 232, 249, 0.26)");
+          trail.addColorStop(0.48, "rgba(103, 232, 249, 0.42)");
           trail.addColorStop(1, "rgba(254, 240, 138, 0)");
           ctx.fillStyle = trail;
-          ctx.fillRect(orbX - (11 + flight * 13), orbY - 8, 22 + flight * 26, lift + 44);
-          const orb = ctx.createRadialGradient(orbX - orbRadius * 0.24, orbY - orbRadius * 0.26, 2, orbX, orbY, orbRadius * 1.55);
-          orb.addColorStop(0, "#ffffff");
-          orb.addColorStop(0.25, "#fef08a");
-          orb.addColorStop(0.58, "#67e8f9");
+          ctx.fillRect(orbX - Math.max(3, coreWidth * 0.7), orbY - coreHeight, Math.max(6, coreWidth * 1.4), lift + coreHeight + 44);
+          const orb = ctx.createLinearGradient(orbX, orbY - coreHeight / 2, orbX, orbY + coreHeight / 2);
+          orb.addColorStop(0, "rgba(255,255,255,0)");
+          orb.addColorStop(0.18, "#ffffff");
+          orb.addColorStop(0.5, "#fef08a");
+          orb.addColorStop(0.82, "#67e8f9");
           orb.addColorStop(1, "rgba(34, 211, 238, 0)");
           ctx.fillStyle = orb;
           ctx.beginPath();
-          ctx.arc(orbX, orbY, orbRadius * 1.55, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#ecfeff";
-          ctx.beginPath();
-          ctx.arc(orbX, orbY, orbRadius * 0.48, 0, Math.PI * 2);
+          ctx.ellipse(orbX, orbY, coreWidth, coreHeight, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         } else {
