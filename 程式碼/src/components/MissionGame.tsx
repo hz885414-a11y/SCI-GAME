@@ -3391,6 +3391,23 @@ export function MissionGame({
             }
           }
 
+          // A purified core remains a visible light source. Emit only a tiny,
+          // staggered stream so three completed cores stay atmospheric without
+          // flooding the bounded mobile particle pool.
+          if (core.phase === "purified" && (state.ticks + core.initialVariant * 7) % 18 === 0) {
+            spawnParticle(state, {
+              x: core.x + (Math.random() - 0.5) * 32,
+              y: core.y + 32 + (Math.random() - 0.5) * 18,
+              vx: (Math.random() - 0.5) * 0.65,
+              vy: -0.45 - Math.random() * 0.65,
+              radius: 1.2 + Math.random() * 1.5,
+              color: Math.random() > 0.45 ? "#67e8f9" : "#fef08a",
+              life: 0,
+              maxLife: 34 + Math.floor(Math.random() * 18),
+              alpha: 0.78,
+            });
+          }
+
           if (core.phase !== "purified" && distance <= DARK_CORE_INTERACTION_RANGE && distance < nearestDistance) {
             nearestCore = core;
             nearestDistance = distance;
@@ -4702,8 +4719,8 @@ export function MissionGame({
           const coreImage = darkCoreImagesRef.current[imageIndex];
           // Core art is a tall containment object. Keep its authored 1:2
           // footprint rather than squeezing it into the material-pickup size.
-          const coreWidth = 100;
-          const coreHeight = 200;
+          const coreWidth = 50;
+          const coreHeight = 100;
           const bob = core.phase === "corrupted" ? Math.sin((state.ticks + core.x) * 0.08) * 3 : 0;
           const pulse = (Math.sin(state.ticks * 0.11 + core.x) + 1) / 2;
 
@@ -4713,48 +4730,48 @@ export function MissionGame({
           // place, purification projects a vertical beam, and success leaves
           // a calm cyan seal. All effects are tied to the existing draw pass.
           if (core.phase === "corrupted") {
-            const aura = ctx.createRadialGradient(core.x, core.y, 10, core.x, core.y, 72 + pulse * 10);
+            const aura = ctx.createRadialGradient(core.x, core.y, 8, core.x, core.y, 40 + pulse * 6);
             aura.addColorStop(0, `rgba(168, 85, 247, ${0.2 + pulse * 0.12})`);
             aura.addColorStop(0.55, `rgba(88, 28, 135, ${0.16 + pulse * 0.08})`);
             aura.addColorStop(1, "rgba(24, 24, 27, 0)");
             ctx.fillStyle = aura;
             ctx.beginPath();
-            ctx.arc(core.x, core.y, 82, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y, 46, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = `rgba(217, 70, 239, ${0.24 + pulse * 0.24})`;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 5]);
             ctx.lineDashOffset = -state.ticks * 0.75;
             ctx.beginPath();
-            ctx.arc(core.x, core.y + 54, 42 + pulse * 3, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y + 27, 23 + pulse * 2, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
           } else if (core.phase === "purifying") {
-            const beam = ctx.createLinearGradient(core.x, core.y - 145, core.x, core.y + 110);
+            const beam = ctx.createLinearGradient(core.x, core.y - 72, core.x, core.y + 58);
             beam.addColorStop(0, "rgba(207, 250, 254, 0)");
             beam.addColorStop(0.32, "rgba(103, 232, 249, 0.24)");
             beam.addColorStop(0.72, "rgba(34, 211, 238, 0.16)");
             beam.addColorStop(1, "rgba(207, 250, 254, 0)");
             ctx.fillStyle = beam;
-            ctx.fillRect(core.x - 42, core.y - 145, 84, 255);
+            ctx.fillRect(core.x - 24, core.y - 72, 48, 130);
             ctx.strokeStyle = "rgba(165, 243, 252, 0.62)";
             ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.arc(core.x, core.y + 64, 28 + (1 - core.progress) * 22, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y + 31, 16 + (1 - core.progress) * 12, 0, Math.PI * 2);
             ctx.stroke();
           } else {
-            const seal = ctx.createRadialGradient(core.x, core.y + 48, 6, core.x, core.y + 48, 64);
+            const seal = ctx.createRadialGradient(core.x, core.y + 25, 5, core.x, core.y + 25, 36);
             seal.addColorStop(0, "rgba(254, 240, 138, 0.42)");
             seal.addColorStop(0.45, "rgba(34, 211, 238, 0.18)");
             seal.addColorStop(1, "rgba(34, 211, 238, 0)");
             ctx.fillStyle = seal;
             ctx.beginPath();
-            ctx.arc(core.x, core.y + 48, 64, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y + 25, 36, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = "rgba(103, 232, 249, 0.5)";
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(core.x, core.y + 48, 38, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y + 25, 22, 0, Math.PI * 2);
             ctx.stroke();
           }
           if (coreImage?.complete && coreImage.naturalWidth > 0) {
@@ -4771,7 +4788,7 @@ export function MissionGame({
 
           if (core.phase === "purifying") {
             const barWidth = 68;
-            const barY = core.y + 112;
+            const barY = core.y + 60;
             ctx.fillStyle = "rgba(9, 9, 11, 0.82)";
             ctx.fillRect(core.x - barWidth / 2, barY, barWidth, 7);
             ctx.fillStyle = "#67e8f9";
@@ -4787,7 +4804,7 @@ export function MissionGame({
             ctx.fillStyle = "#fef3c7";
             ctx.font = "bold 10px monospace";
             ctx.textAlign = "center";
-            ctx.fillText("按 E／互動淨化", core.x, core.y + 122);
+            ctx.fillText("按 E／互動淨化", core.x, core.y + 68);
           }
           ctx.restore();
         });
