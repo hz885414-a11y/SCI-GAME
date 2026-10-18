@@ -4721,7 +4721,11 @@ export function MissionGame({
           // footprint rather than squeezing it into the material-pickup size.
           const coreWidth = 50;
           const coreHeight = 100;
-          const bob = core.phase === "corrupted" ? Math.sin((state.ticks + core.x) * 0.08) * 3 : 0;
+          // All core states hover subtly; purification settles the movement so
+          // the progress meter remains easy to read, while a finished core
+          // keeps a calm, living presence on the map.
+          const bobAmount = core.phase === "purifying" ? 1 : core.phase === "purified" ? 1.6 : 3;
+          const bob = Math.sin((state.ticks + core.x) * 0.08) * bobAmount;
           const pulse = (Math.sin(state.ticks * 0.11 + core.x) + 1) / 2;
 
           ctx.save();
@@ -4760,13 +4764,16 @@ export function MissionGame({
             ctx.arc(core.x, core.y + 31, 16 + (1 - core.progress) * 12, 0, Math.PI * 2);
             ctx.stroke();
           } else {
-            const seal = ctx.createRadialGradient(core.x, core.y + 25, 5, core.x, core.y + 25, 36);
+            // A quiet locator light around a successful core, intentionally
+            // smaller than the corrupted aura so it guides without obscuring
+            // the construction-site map.
+            const seal = ctx.createRadialGradient(core.x, core.y + 25, 5, core.x, core.y + 25, 48);
             seal.addColorStop(0, "rgba(254, 240, 138, 0.42)");
             seal.addColorStop(0.45, "rgba(34, 211, 238, 0.18)");
             seal.addColorStop(1, "rgba(34, 211, 238, 0)");
             ctx.fillStyle = seal;
             ctx.beginPath();
-            ctx.arc(core.x, core.y + 25, 36, 0, Math.PI * 2);
+            ctx.arc(core.x, core.y + 25, 48, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = "rgba(103, 232, 249, 0.5)";
             ctx.lineWidth = 1;
