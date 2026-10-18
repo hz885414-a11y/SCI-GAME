@@ -132,6 +132,12 @@ const DARK_CORE_MEMORY_LINES = [
   "不是說好了 ...",
 ] as const;
 
+const DARK_CORE_PLAYER_FOLLOW_UP_LINES = [
+  "咦？ 這個是？",
+  "還是先完成淨化任務",
+  "等等回去實驗室找大家討論好了",
+] as const;
+
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
 );
@@ -387,6 +393,9 @@ export function MissionGame({
   const [interactionFeedback, setInteractionFeedback] = useState<string | null>(null);
   const [evacuationProgress, setEvacuationProgress] = useState<number | null>(null);
   const [evacuationPhase, setEvacuationPhase] = useState<"upload" | "launch" | null>(null);
+  // This is intentionally React state: it is a one-off story gate rather than
+  // simulation data, and changing it must pause the fixed-step game loop.
+  const [memoryFollowUpStep, setMemoryFollowUpStep] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
   const [score, setScore] = useState<number>(0);
@@ -1117,8 +1126,22 @@ export function MissionGame({
     });
   };
 
+  const advanceMemoryFollowUp = () => {
+    setMemoryFollowUpStep((step) => {
+      if (step === null) return step;
+      return step >= DARK_CORE_PLAYER_FOLLOW_UP_LINES.length - 1 ? null : step + 1;
+    });
+    triggerSound("click");
+  };
+
   const triggerInteraction = (kind: "tap" | "hold") => {
     if (stage !== "PLAYING") return;
+    // The interaction button doubles as the mobile-friendly "continue" key
+    // while the memory scene freezes the mission.
+    if (memoryFollowUpStep !== null) {
+      advanceMemoryFollowUp();
+      return;
+    }
     const target = interactionTargetRef.current;
     if (target) {
       (kind === "hold" && target.onHold ? target.onHold : target.onTap)();
@@ -1283,7 +1306,7 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, onClose]);
+  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, onClose]);
 
   useEffect(() => {
     if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
@@ -1404,6 +1427,7 @@ export function MissionGame({
     setIsGamePaused(false);
     setIsMobileGameMenuOpen(false);
     cancelEvacuation();
+    setMemoryFollowUpStep(null);
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -1907,7 +1931,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -3574,6 +3598,13 @@ export function MissionGame({
               guardian.dialogueText = DARK_CORE_MEMORY_LINES[guardian.interactionCount % DARK_CORE_MEMORY_LINES.length];
               guardian.dialogueUntilTick = state.ticks + 210;
               guardian.interactionCount += 1;
+              if (guardian.interactionCount === DARK_CORE_MEMORY_LINES.length) {
+                // The third echo reveals a clue. Replace its bubble with the
+                // player's response and freeze only this mission simulation.
+                guardian.dialogueText = null;
+                interactionTargetRef.current = null;
+                setMemoryFollowUpStep(0);
+              }
             },
           };
         } else if (nearestCore) {
@@ -6089,6 +6120,43 @@ export function MissionGame({
 
       ctx.restore();
 
+      // A story response belongs to the player, not the residual memory. It
+      // remains in world space so it follows the camera on both desktop and
+      // mobile, while the fixed-step simulation is paused behind it.
+      if (stage === "PLAYING" && memoryFollowUpStep !== null) {
+        const line = DARK_CORE_PLAYER_FOLLOW_UP_LINES[memoryFollowUpStep];
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.font = "bold 11px monospace";
+        const bubbleWidth = Math.max(142, Math.min(255, ctx.measureText(line).width + 30));
+        const bubbleHeight = 31;
+        const bubbleX = player.x - bubbleWidth / 2;
+        const bubbleY = player.y - 76;
+        ctx.fillStyle = "rgba(9, 14, 24, 0.96)";
+        ctx.strokeStyle = "#fef3c7";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "rgba(250, 204, 21, 0.38)";
+        ctx.shadowBlur = 9;
+        ctx.fillRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+        ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fef3c7";
+        ctx.beginPath();
+        ctx.moveTo(player.x - 5, bubbleY + bubbleHeight);
+        ctx.lineTo(player.x + 5, bubbleY + bubbleHeight);
+        ctx.lineTo(player.x, bubbleY + bubbleHeight + 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.font = "bold 11px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(line, player.x, bubbleY + bubbleHeight / 2);
+        ctx.font = "bold 8px monospace";
+        ctx.fillStyle = "#a5f3fc";
+        ctx.fillText("按 Z 繼續", player.x, bubbleY - 9);
+        ctx.restore();
+      }
+
       if (
         stage === "BOSSBATTLE" &&
         robotSelectionRef.current?.robotId === "c2_932" &&
@@ -6343,7 +6411,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
