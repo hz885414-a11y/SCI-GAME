@@ -370,6 +370,7 @@ export function MissionGame({
   const [batteryMode, setBatteryMode] = useState<"OFF" | "LOW" | "HIGH">("OFF");
   const [interactionFeedback, setInteractionFeedback] = useState<string | null>(null);
   const [evacuationProgress, setEvacuationProgress] = useState<number | null>(null);
+  const [evacuationPhase, setEvacuationPhase] = useState<"upload" | "launch" | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
@@ -447,6 +448,7 @@ export function MissionGame({
   const interactionFeedbackTimerRef = useRef<number | null>(null);
   const evacuationTimerRef = useRef<number | null>(null);
   const evacuationProgressTimerRef = useRef<number | null>(null);
+  const evacuationLaunchStartedRef = useRef<number | null>(null);
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1073,7 +1075,9 @@ export function MissionGame({
     if (evacuationProgressTimerRef.current) window.clearInterval(evacuationProgressTimerRef.current);
     evacuationTimerRef.current = null;
     evacuationProgressTimerRef.current = null;
+    evacuationLaunchStartedRef.current = null;
     setEvacuationProgress(null);
+    setEvacuationPhase(null);
   };
 
   useEffect(() => () => {
@@ -1588,6 +1592,7 @@ export function MissionGame({
     if (stage !== "PLAYING" || evacuationTimerRef.current !== null) return;
     const startedAt = performance.now();
     setEvacuationProgress(0);
+    setEvacuationPhase("upload");
     setInteractionFeedback("撤離訊號傳送中：保持生存 2 秒");
     triggerSound("power");
     evacuationProgressTimerRef.current = window.setInterval(() => {
@@ -1598,10 +1603,16 @@ export function MissionGame({
       if (evacuationProgressTimerRef.current) window.clearInterval(evacuationProgressTimerRef.current);
       evacuationProgressTimerRef.current = null;
       if (engineRef.current.player.hp <= 0) return;
-      setEvacuationProgress(null);
-      setInteractionFeedback("撤離成功，正在返回基地");
+      setEvacuationProgress(1);
+      setEvacuationPhase("launch");
+      evacuationLaunchStartedRef.current = performance.now();
+      setInteractionFeedback("傳輸完成，光球撤離中");
       triggerSound("success");
-      enterReport();
+      evacuationTimerRef.current = window.setTimeout(() => {
+        evacuationTimerRef.current = null;
+        if (engineRef.current.player.hp <= 0) return;
+        enterReport();
+      }, 760);
     }, 2000);
   };
 
@@ -5533,10 +5544,42 @@ export function MissionGame({
       }
 
       if (stage === "PLAYING") {
-        const individualWalkFrames = playerWalkFrameRefs.current;
-        const usesIndividualWalkFrames = individualWalkFrames.length === 5;
-        const spriteImg = playerSpriteImgRef.current;
-        if (spriteImg && spriteLoaded) {
+        if (evacuationPhase === "launch") {
+          // The successful evacuation swaps the agent sprite for a compact
+          // light sphere that accelerates vertically out of the map.
+          const startedAt = evacuationLaunchStartedRef.current ?? performance.now();
+          const flight = Math.min(1, Math.max(0, (performance.now() - startedAt) / 760));
+          const lift = flight * flight * 380;
+          const orbX = player.x;
+          const orbY = player.y - lift;
+          const orbRadius = 15 + flight * 13;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - flight * 0.45);
+          const trail = ctx.createLinearGradient(orbX, player.y + 36, orbX, orbY - orbRadius * 2);
+          trail.addColorStop(0, "rgba(34, 211, 238, 0)");
+          trail.addColorStop(0.48, "rgba(103, 232, 249, 0.26)");
+          trail.addColorStop(1, "rgba(254, 240, 138, 0)");
+          ctx.fillStyle = trail;
+          ctx.fillRect(orbX - (11 + flight * 13), orbY - 8, 22 + flight * 26, lift + 44);
+          const orb = ctx.createRadialGradient(orbX - orbRadius * 0.24, orbY - orbRadius * 0.26, 2, orbX, orbY, orbRadius * 1.55);
+          orb.addColorStop(0, "#ffffff");
+          orb.addColorStop(0.25, "#fef08a");
+          orb.addColorStop(0.58, "#67e8f9");
+          orb.addColorStop(1, "rgba(34, 211, 238, 0)");
+          ctx.fillStyle = orb;
+          ctx.beginPath();
+          ctx.arc(orbX, orbY, orbRadius * 1.55, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ecfeff";
+          ctx.beginPath();
+          ctx.arc(orbX, orbY, orbRadius * 0.48, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else {
+          const individualWalkFrames = playerWalkFrameRefs.current;
+          const usesIndividualWalkFrames = individualWalkFrames.length === 5;
+          const spriteImg = playerSpriteImgRef.current;
+          if (spriteImg && spriteLoaded) {
           // Decide animation frame based on movement
           const isMoving = dx !== 0 || dy !== 0;
           let frameIndex = 0; // idle frame (index 0)
@@ -5580,7 +5623,7 @@ export function MissionGame({
             drawHeight
           );
           ctx.restore();
-        } else {
+          } else {
           // Draw the Cute chosen Agent
           ctx.fillStyle = selectedAgent.color;
           ctx.beginPath();
@@ -5603,6 +5646,7 @@ export function MissionGame({
           ctx.beginPath();
           ctx.arc(player.x + baseSize * 0.15, player.y + baseSize * 0.2, baseSize * 0.06, 0, Math.PI * 2);
           ctx.fill();
+          }
         }
 
       } else {
@@ -6139,7 +6183,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -6719,9 +6763,9 @@ export function MissionGame({
 
           {evacuationProgress !== null && (
             <div className="pointer-events-none absolute left-1/2 top-20 z-50 w-56 -translate-x-1/2 rounded border border-emerald-400/70 bg-zinc-950/90 p-2 shadow-[0_0_20px_rgba(16,185,129,.25)] backdrop-blur-sm">
-              <div className="mb-1 flex items-center justify-between font-mono text-[10px] font-black text-emerald-200"><span>撤離傳輸中</span><span>{Math.round(evacuationProgress * 100)}%</span></div>
+              <div className="mb-1 flex items-center justify-between font-mono text-[10px] font-black text-emerald-200"><span>{evacuationPhase === "launch" ? "光球撤離中" : "撤離傳輸中"}</span><span>{Math.round(evacuationProgress * 100)}%</span></div>
               <div className="h-1.5 overflow-hidden rounded bg-zinc-800"><div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-300 transition-[width] duration-75" style={{ width: `${evacuationProgress * 100}%` }} /></div>
-              <p className="mt-1 text-center text-[9px] text-zinc-400">保持生存，傳輸完成後返回基地</p>
+              <p className="mt-1 text-center text-[9px] text-zinc-400">{evacuationPhase === "launch" ? "光束正在把特工帶回基地" : "保持生存，傳輸完成後返回基地"}</p>
             </div>
           )}
 
