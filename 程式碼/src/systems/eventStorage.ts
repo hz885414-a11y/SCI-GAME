@@ -4,6 +4,7 @@ export const EVENT_STORAGE_KEYS = {
   ownedCards: "sci_knowledge_owned_cards",
   pendingEvents: "sci_knowledge_pending_events",
   pendingCardRewards: "sci_card_reward_queue",
+  missionCardBatch: "sci_mission_card_batch_v1",
 } as const;
 
 export const EVENT_SYSTEM_CHANGED = "sci:event-system-changed";

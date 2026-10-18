@@ -1,11 +1,13 @@
 import type { KnowledgeCardDefinition } from "../data/cardDatabase";
 import type { GameEventDefinition } from "../data/eventConfig";
-import { enqueueCardRewards } from "./eventManager";
+import { enqueueCardRewards, getTriggeredEvents } from "./eventManager";
 import type { ManagedCard } from "../card-events/types";
 import { getAllCardDefinitions, saveCustomCardDefinition } from "../data/cardDatabase";
 import { getAllEventDefinitions } from "../data/eventConfig";
 import { getPlayerStats } from "./playerStats";
+import { hasCard } from "./playerCollection";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
+import { EVENT_STORAGE_KEYS, readStoredValue, writeStoredValue } from "./eventStorage";
 
 export type GameEventType =
   | "enter_area"
@@ -34,6 +36,11 @@ export interface CardReward {
 }
 
 const UID_KEY = "sci_card_event_uid";
+interface MissionCardBatch {
+  candidateEventIds: string[];
+  resolved: boolean;
+}
+const EMPTY_MISSION_CARD_BATCH: MissionCardBatch = { candidateEventIds: [], resolved: false };
 // Card eligibility is evaluated on the server as events arrive. Keep one
 // client-side lane so a terminal event (gameOver/stagesCleared) can never
 // overtake the Boss outcome or another action that happened just before it.
@@ -48,6 +55,11 @@ function getCardEventUid(): string {
 }
 
 export async function resetCardEventPlayer(): Promise<void> {
+  // The public static site owns this small per-browser transaction state.
+  // Resetting player progress must clear it even though GitHub Pages has no
+  // server route to delete.
+  writeStoredValue(EVENT_STORAGE_KEYS.missionCardBatch, EMPTY_MISSION_CARD_BATCH);
+  if (isStaticPublicBuild()) return;
   const uid = getCardEventUid();
   try {
     await fetch(`/api/card-events/${encodeURIComponent(uid)}`, { method: "DELETE" });
@@ -107,10 +119,10 @@ function isConfiguredEventSatisfied(definition: GameEventDefinition, event: Game
   }
 }
 
-function evaluateFirebaseConfiguredEvent(event: GameEvent): CardReward[] {
+function configuredRewardsForEventIds(eventIds: string[]): CardReward[] {
   const cards = new Map(getAllCardDefinitions().map((card) => [card.id, card]));
   return getAllEventDefinitions()
-    .filter((definition) => isConfiguredEventSatisfied(definition, event))
+    .filter((definition) => eventIds.includes(definition.id))
     .map((definition) => {
       const card = cards.get(definition.rewardCard);
       return card ? {
@@ -120,6 +132,63 @@ function evaluateFirebaseConfiguredEvent(event: GameEvent): CardReward[] {
       } : null;
     })
     .filter((reward): reward is CardReward => Boolean(reward));
+}
+
+/**
+ * Browser implementation of the server's mission transaction. Firebase's
+ * gameConfig supplies cards, conditions and priority; this device stores only
+ * the in-progress candidate list and resolves exactly one reward at mission
+ * end. This makes static hosting and the future API follow the same rule.
+ */
+function evaluateFirebaseConfiguredMissionEvent(event: GameEvent): CardReward[] {
+  const action = typeof event.data.action === "string" ? event.data.action : "";
+  // Admin preview is deliberately outside gameplay and must remain immediate.
+  if (event.eventType === "debug_trigger") {
+    return configuredRewardsForEventIds(
+      getAllEventDefinitions()
+        .filter((definition) => isConfiguredEventSatisfied(definition, event))
+        .map((definition) => definition.id),
+    );
+  }
+  if (action === "startMission") {
+    writeStoredValue(EVENT_STORAGE_KEYS.missionCardBatch, EMPTY_MISSION_CARD_BATCH);
+    return [];
+  }
+
+  const batch = readStoredValue<MissionCardBatch>(EVENT_STORAGE_KEYS.missionCardBatch, EMPTY_MISSION_CARD_BATCH);
+  const triggered = new Set(getTriggeredEvents());
+  const qualified = getAllEventDefinitions().filter((definition) => (
+    !batch.resolved
+    && !triggered.has(definition.id)
+    && !hasCard(definition.rewardCard)
+    && isConfiguredEventSatisfied(definition, event)
+  ));
+  const candidateEventIds = [...new Set([
+    ...batch.candidateEventIds,
+    ...qualified.map((definition) => definition.id),
+  ])];
+  const missionEnded = action === "gameOver" || action === "stagesCleared";
+
+  if (!missionEnded || batch.resolved) {
+    writeStoredValue(EVENT_STORAGE_KEYS.missionCardBatch, { candidateEventIds, resolved: batch.resolved });
+    return [];
+  }
+
+  const definitionsById = new Map(getAllEventDefinitions().map((definition) => [definition.id, definition]));
+  const winner = candidateEventIds
+    .map((id) => definitionsById.get(id))
+    .filter((definition): definition is GameEventDefinition => Boolean(definition))
+    .filter((definition) => !triggered.has(definition.id) && !hasCard(definition.rewardCard))
+    .sort((left, right) => (
+      (Number(right.priority) || 0) - (Number(left.priority) || 0)
+      || left.id.localeCompare(right.id)
+    ))[0];
+
+  // Always close the transaction at a terminal mission event. A reward popup
+  // may stay queued until the player collects it, but it cannot be replaced
+  // by a second event from the same adventure.
+  writeStoredValue(EVENT_STORAGE_KEYS.missionCardBatch, { candidateEventIds, resolved: true });
+  return winner ? configuredRewardsForEventIds([winner.id]) : [];
 }
 
 export async function emitGameEvent<TData extends Record<string, unknown>>(
@@ -156,7 +225,7 @@ export async function emitGameEvent<TData extends Record<string, unknown>>(
 
   try {
     if (isStaticPublicBuild()) {
-      const rewards = evaluateFirebaseConfiguredEvent(event);
+      const rewards = evaluateFirebaseConfiguredMissionEvent(event);
       enqueueCardRewards(rewards);
       return rewards;
     }
@@ -179,7 +248,7 @@ export async function emitGameEvent<TData extends Record<string, unknown>>(
     // A temporary server outage should not stop a public Firebase-configured
     // card from being earned. This is also useful for preview hosts which do
     // not expose the optional Express API.
-    const rewards = evaluateFirebaseConfiguredEvent(event);
+    const rewards = evaluateFirebaseConfiguredMissionEvent(event);
     if (rewards.length > 0) {
       console.warn("Game-event API unavailable; using Firebase-configured browser evaluation.", error);
       enqueueCardRewards(rewards);
