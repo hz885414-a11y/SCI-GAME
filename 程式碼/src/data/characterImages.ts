@@ -35,6 +35,16 @@ export const characterImages = {
   }
 } as const;
 
+// Dialogue portraits from the art repository are 6667 × 9167 PNGs.  They are
+// excellent source art, but decoding three at once costs hundreds of MB on a
+// phone. These faithful, transparent WebP derivatives are selected only by a
+// mobile <picture> source; desktop keeps the full expression artwork.
+export const MOBILE_CHARACTER_DIALOGUE_IMAGES = {
+  claire: `${import.meta.env.BASE_URL}assets/mobile/claire-dialog-mobile.webp`,
+  ethan: `${import.meta.env.BASE_URL}assets/mobile/ethan-dialog-mobile.webp`,
+  leo: `${import.meta.env.BASE_URL}assets/mobile/leo-dialog-mobile.webp`,
+} as const;
+
 export type CharacterName = keyof typeof characterImages;
 
 export type CharacterMood = keyof typeof characterImages.claire;

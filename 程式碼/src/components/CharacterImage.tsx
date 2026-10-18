@@ -13,6 +13,7 @@ interface CharacterImageProps {
   priority?: boolean;
   style?: React.CSSProperties;
   src?: string;
+  mobileSrc?: string;
 }
 
 export const CharacterImage: React.FC<CharacterImageProps> = ({
@@ -22,7 +23,8 @@ export const CharacterImage: React.FC<CharacterImageProps> = ({
   className,
   priority = false,
   style,
-  src
+  src,
+  mobileSrc
 }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -57,8 +59,7 @@ export const CharacterImage: React.FC<CharacterImageProps> = ({
     );
   }
 
-  return (
-    <img
+  const image = <img
       src={imageUrl}
       alt={alt ?? `${character} ${mood}`}
       className={className}
@@ -68,6 +69,15 @@ export const CharacterImage: React.FC<CharacterImageProps> = ({
       {...({ fetchPriority: "auto" })}
       onError={() => setHasError(true)}
       referrerPolicy="no-referrer"
-    />
-  );
+    />;
+
+  // On phones, let the browser choose the compact source before it requests
+  // the desktop PNG fallback. The image itself retains the caller's absolute
+  // layout styles, so adding <picture> does not alter positioning.
+  return mobileSrc ? (
+    <picture>
+      <source media="(max-width: 767px)" srcSet={mobileSrc} type="image/webp" />
+      {image}
+    </picture>
+  ) : image;
 }

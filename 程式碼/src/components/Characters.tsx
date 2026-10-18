@@ -2,7 +2,7 @@ import React from "react";
 import { Character } from "../data/responses";
 import { playSound } from "../utils/audio";
 import { CharacterImage } from "./CharacterImage";
-import { characterImages, CharacterName, CharacterMood } from "../data/characterImages";
+import { characterImages, CharacterName, CharacterMood, MOBILE_CHARACTER_DIALOGUE_IMAGES } from "../data/characterImages";
 import type { CharacterLayoutValue } from "../config/types";
 // @ts-ignore
 import claireNormalImg from "../claire_normal.png";
@@ -150,6 +150,17 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   layout: configuredLayout,
 }) => {
   const [useFallback, setUseFallback] = React.useState(false);
+  const [isMobileViewport, setIsMobileViewport] = React.useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
+
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const syncViewport = () => setIsMobileViewport(media.matches);
+    syncViewport();
+    media.addEventListener("change", syncViewport);
+    return () => media.removeEventListener("change", syncViewport);
+  }, []);
 
   React.useEffect(() => {
     setUseFallback(false);
@@ -195,8 +206,14 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   const imageWidth = configuredLayout ? "auto" : fallbackLayout.imageWidth;
   const speakingScale = isSpeaking ? 1.045 : 1;
   const translateY = isSpeaking ? -12 : 0;
-  const visualOpacity = isAnySpeaking && !isSpeaking ? 0.72 : 1;
+  const visualOpacity = isAnySpeaking && !isSpeaking ? (isMobileViewport ? 0.66 : 0.72) : 1;
   const visualBrightness = isAnySpeaking && !isSpeaking ? 0.65 : 1;
+  const mobileSrc = customImages ? undefined : MOBILE_CHARACTER_DIALOGUE_IMAGES[character.id as CharacterName];
+  const beamColor = character.id === "claire"
+    ? "from-rose-950 via-rose-900/30 to-transparent"
+    : character.id === "ethan"
+      ? "from-sky-950 via-sky-900/30 to-transparent"
+      : "from-amber-950 via-amber-900/30 to-transparent";
 
   return (
     <div
@@ -208,24 +225,22 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
         height: `${layout.baseHeightPx ?? Math.round((layout.baseHeightVh ?? 88) * 9)}px`,
         zIndex: isSpeaking ? 30 : 10,
         opacity: visualOpacity,
-        filter: `brightness(${visualBrightness}) drop-shadow(0 18px 18px rgba(0,0,0,.62))`,
+        // Filters can promote each large transparent portrait to a costly GPU
+        // layer. On mobile opacity and transform retain the speaking cue.
+        filter: isMobileViewport ? "none" : `brightness(${visualBrightness}) drop-shadow(0 18px 18px rgba(0,0,0,.62))`,
         transform: `translateX(-50%) translateY(${translateY}px) scale(${layout.scale * speakingScale})`,
         transformOrigin: "bottom center",
-        transition: "transform 220ms ease, opacity 220ms ease, filter 220ms ease",
+        transition: isMobileViewport
+          ? "transform 160ms ease, opacity 160ms ease"
+          : "transform 220ms ease, opacity 220ms ease, filter 220ms ease",
       }}
     >
       {/* Light Beam Effect under character */}
       {isSpeaking && (
         <div
-          className={`absolute bottom-20 sm:bottom-24 w-20 sm:w-36 h-64 sm:h-96 bg-gradient-to-t blur-2xl opacity-40 -z-10 animate-pulse transition-all duration-500
-            ${
-              character.id === "claire"
-                ? "from-rose-950 via-rose-900/30 to-transparent"
-                : character.id === "ethan"
-                  ? "from-sky-950 via-sky-900/30 to-transparent"
-                  : "from-amber-950 via-amber-900/30 to-transparent"
-            }
-          `}
+          className={isMobileViewport
+            ? `absolute bottom-24 h-20 w-16 bg-gradient-to-t opacity-35 -z-10 ${beamColor}`
+            : `absolute bottom-20 sm:bottom-24 w-20 sm:w-36 h-64 sm:h-96 bg-gradient-to-t blur-2xl opacity-40 -z-10 animate-pulse transition-all duration-500 ${beamColor}`}
         />
       )}
 
@@ -258,6 +273,7 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
                 transform: "translateX(-50%)",
               }}
               src={customImages ? customImages[emotion] || undefined : undefined}
+              mobileSrc={mobileSrc}
               priority={isSpeaking}
             />
       </div>

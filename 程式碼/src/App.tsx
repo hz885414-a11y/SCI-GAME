@@ -169,6 +169,7 @@ export default function App() {
   const [testEndingSummary, setTestEndingSummary] = useState<StageEndingSummary | null>(null);
   const [missionActive, setMissionActive] = useState(false);
   const desiredTrackRef = useRef<"theme" | "normal" | "mission">("theme");
+  const labDiagnosticInteractionRef = useRef(0);
 
   // Coins and Upgrades Systems
   const [coins, setCoins] = useState<number>(() => {
@@ -231,6 +232,32 @@ export default function App() {
     }
   });
 
+  // Open the lab with ?labPerf=1 to collect a compact, browser-side snapshot.
+  // It is intentionally console-only: normal players do not pay for a visual
+  // overlay, while testers can record DOM, decoded dimensions, animation count
+  // and Chrome's optional JS heap indicator during a 100-tap run.
+  const reportLabPerformance = (interactionCount = 0) => {
+    if (typeof window === "undefined" || new URLSearchParams(window.location.search).get("labPerf") !== "1") return;
+    window.requestAnimationFrame(() => {
+      const portraitImages = Array.from(document.querySelectorAll<HTMLImageElement>(".dialogue-character img"));
+      const memory = (performance as Performance & {
+        memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
+      }).memory;
+      console.info("[SCI LAB PERF]", {
+        interactionCount,
+        dialogueCharacterCount: document.querySelectorAll(".dialogue-character").length,
+        portraitImageCount: portraitImages.length,
+        portraitNaturalSizes: portraitImages.map((image) => `${image.naturalWidth}×${image.naturalHeight}`),
+        activeAnimations: document.getAnimations().length,
+        jsHeap: memory && {
+          usedMB: Math.round(memory.usedJSHeapSize / 1024 / 1024),
+          totalMB: Math.round(memory.totalJSHeapSize / 1024 / 1024),
+          limitMB: Math.round(memory.jsHeapSizeLimit / 1024 / 1024),
+        },
+      });
+    });
+  };
+
   // Keep localStorage updated when state changes
   useEffect(() => {
     const syncCharacterBreakpoint = () => setCharacterBreakpoint(window.innerWidth < 640 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop");
@@ -281,6 +308,9 @@ export default function App() {
   const [isTutorialActive, setIsTutorialActive] = useState(false);
   // Current active area: lab, technology R&D, mobile operations, or supply
   const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
+  useEffect(() => {
+    if (currentScene === "lab") reportLabPerformance(labDiagnosticInteractionRef.current);
+  }, [currentScene, characterBreakpoint]);
 
   // Remember the last visited division while always showing the entry screen
   // on a fresh page load.
@@ -328,7 +358,7 @@ export default function App() {
       // Waiting for three large portrait decodes made the entrance stutter on
       // mid-range devices; mounted image elements load them after the scene
       // has become interactive.
-      targetAssets.push({ label: "勇氣實驗室背景", url: BACKGROUND_ASSETS.lab });
+      targetAssets.push({ label: "勇氣實驗室背景", url: isMobileViewport ? BACKGROUND_ASSETS.labMobile : BACKGROUND_ASSETS.lab });
     } else if (targetScene === "tech") {
       targetAssets.push(
         { label: "技術研發部背景", url: BACKGROUND_ASSETS.tech },
@@ -662,6 +692,9 @@ export default function App() {
     // A character tap is an intentional, manual ambient-dialogue trigger.
     // It never competes with the formal counseling dialogue.
     if (gameMode === "idle") {
+      labDiagnosticInteractionRef.current += 1;
+      const interactionCount = labDiagnosticInteractionRef.current;
+      if (interactionCount === 1 || interactionCount % 10 === 0) reportLabPerformance(interactionCount);
       if (ambient.advance()) return true;
       const playedDialogue = ambient.triggerCharacter(charId);
       if (playedDialogue) return true;
@@ -922,7 +955,7 @@ export default function App() {
             backgroundRepeat: "no-repeat",
             backgroundImage:
               currentScene === "lab"
-                ? `url(${BACKGROUND_ASSETS.lab})`
+                ? `url(${characterBreakpoint === "mobile" ? BACKGROUND_ASSETS.labMobile : BACKGROUND_ASSETS.lab})`
                 : currentScene === "tech"
                 ? `url(${BACKGROUND_ASSETS.tech})`
                 : currentScene === "ops"
