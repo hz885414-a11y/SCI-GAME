@@ -5,9 +5,10 @@ import { canPlay, getAmbientState, saveAmbientState } from "./storage";
 import type { AmbientDialogue, AmbientDialogueConfig, AmbientDialogueLine } from "./types";
 import { DEFAULT_AMBIENT_DIALOGUES } from "./defaults";
 
-// Mobile touch can produce very dense repeated click events. One advance per
-// 180ms remains responsive while preventing rapid dialogue/image/audio churn.
-const MANUAL_TAP_GUARD_MS = 180;
+// Mobile touch can produce very dense repeated click events. Keeping one
+// accepted action per 350ms makes dialogue readable and prevents rapid UI
+// churn while large portrait images are still resident in mobile memory.
+const MANUAL_TAP_GUARD_MS = 350;
 
 export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocked: boolean }) {
   const [config, setConfig] = useState<AmbientDialogueConfig>(DEFAULT_AMBIENT_DIALOGUES);

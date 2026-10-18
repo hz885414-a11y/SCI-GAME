@@ -1187,6 +1187,12 @@ export default function App() {
               }
 
               const customImagesObj = char.id === "claire" ? customClaire : char.id === "ethan" ? customEthan : customLeo;
+              // Remote portrait PNGs are intentionally high resolution. On a
+              // phone, switching expression art repeatedly can retain several
+              // decoded bitmaps at once and cause the browser to terminate the
+              // tab. Keep one stable dialogue portrait per character there;
+              // tablet and desktop continue to use the full expression system.
+              const renderedEmotion: EmotionType = characterBreakpoint === "mobile" ? "dialog" : currentEmotion;
 
               return (
                 <CharacterStandee
@@ -1197,7 +1203,7 @@ export default function App() {
                   isAnySpeaking={activeSpeakerId !== null || Boolean(ambient.line)}
                   onInteraction={() => handleCharacterInteraction(char.id)}
                   customImages={customImagesObj}
-                  emotion={currentEmotion}
+                  emotion={renderedEmotion}
                   layout={gameConfig.characterLayouts?.[char.id as "claire" | "ethan" | "leo"]?.[characterBreakpoint]}
                 />
               );
