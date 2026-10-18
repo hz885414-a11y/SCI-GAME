@@ -31,6 +31,12 @@ export interface GameplayConfig {
   spawnStartInterval: number;
   spawnMinInterval: number;
   maxEnemies: number;
+  stealthLowLightDetectionRange: number;
+  stealthHighLightDetectionRange: number;
+  stealthProximityDetectionRange: number;
+  stealthAlertDelayTicks: number;
+  stealthLostSightTicks: number;
+  stealthSearchTicks: number;
   rangeLowDamage: number;
   rangeHighDamage: number;
   laserHighDamage: number;

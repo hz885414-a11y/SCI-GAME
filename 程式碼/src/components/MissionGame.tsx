@@ -2847,11 +2847,21 @@ export function MissionGame({
           // Normal mission enemies only acquire the player while illuminated.
           // This is intentionally distance-based, keeping the stealth system
           // predictable and inexpensive on mobile devices.
-          const detectionRange = isHigh ? 360 : 230;
+          const detectionRange = isHigh
+            ? gameplayConfig.stealthHighLightDetectionRange
+            : gameplayConfig.stealthLowLightDetectionRange;
+          // A close player can still be heard or sensed in darkness. Scale the
+          // threshold to collision bodies so larger enemies feel fair rather
+          // than needing the player to overlap them before reacting.
+          const proximityDetectionRange = Math.max(
+            gameplayConfig.stealthProximityDetectionRange,
+            player.radius + enemy.radius + 30,
+          );
+          const proximityDetected = d <= proximityDetectionRange;
           const playerIsLit = !isLightOff && d <= detectionRange;
           const aiState = enemy.aiState || "dormant";
 
-          if (playerIsLit) {
+          if (playerIsLit || proximityDetected) {
             enemy.lastSeenX = player.x;
             enemy.lastSeenY = player.y;
             enemy.lostSightTicks = 0;
@@ -2865,21 +2875,23 @@ export function MissionGame({
           if (enemy.aiState === "alerted") {
             enemy.alertTicks = (enemy.alertTicks || 0) + 1;
             // A short readable beat after the exclamation mark before chase.
-            if (!isLightOff && enemy.alertTicks >= 24) enemy.aiState = "pursuing";
-            if (isLightOff) enemy.aiState = "searching";
+            if ((!isLightOff || proximityDetected) && enemy.alertTicks >= gameplayConfig.stealthAlertDelayTicks) enemy.aiState = "pursuing";
+            if (isLightOff && !proximityDetected) enemy.aiState = "searching";
           } else if (enemy.aiState === "pursuing") {
-            if (isLightOff) {
+            if (isLightOff && !proximityDetected) {
               enemy.lostSightTicks = (enemy.lostSightTicks || 0) + 1;
               // Keep chasing from memory for 1.5 seconds after the lamp dies.
-              if (enemy.lostSightTicks >= 90) {
+              if (enemy.lostSightTicks >= gameplayConfig.stealthLostSightTicks) {
                 enemy.aiState = "searching";
                 enemy.searchTicks = 0;
               }
+            } else {
+              enemy.lostSightTicks = 0;
             }
           } else if (enemy.aiState === "searching") {
             enemy.searchTicks = (enemy.searchTicks || 0) + 1;
             // Search the last lit location briefly, then return to dormancy.
-            if (enemy.searchTicks >= 150) enemy.aiState = "dormant";
+            if (enemy.searchTicks >= gameplayConfig.stealthSearchTicks) enemy.aiState = "dormant";
           }
 
           const targetX = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff)
