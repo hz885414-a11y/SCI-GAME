@@ -373,6 +373,7 @@ export function MissionGame({
   const [evacuationProgress, setEvacuationProgress] = useState<number | null>(null);
   const [evacuationPhase, setEvacuationPhase] = useState<"upload" | "launch" | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
+  const [isOvertime, setIsOvertime] = useState(false);
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
 
@@ -1406,6 +1407,7 @@ export function MissionGame({
     setBatteryPercent(100);
     setBatteryMode("OFF");
     setTimeLeft(isDemoMode ? 30 : 90);
+    setIsOvertime(false);
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
     setCollectedMaterials(createEmptyMaterialInventory());
@@ -1920,11 +1922,47 @@ export function MissionGame({
           });
         }
 
-      // 1. UPDATE GAME TIMER (For Survivors mode only)
+      // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
+      // instead of silently completing the mission; V evacuation is the
+      // player's successful exit route.
       if (stage === "PLAYING" && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev <= 1) {
-            enterReport();
+            if (!state.overtime) {
+              state.overtime = true;
+              state.enemies.forEach((enemy: EnemyEntity) => {
+                enemy.hp *= 2;
+                enemy.maxHp *= 2;
+                enemy.aiState = "pursuing";
+                enemy.lastSeenX = player.x;
+                enemy.lastSeenY = player.y;
+              });
+              // Double the active crowd immediately as well as raising the
+              // ongoing spawn cap. New copies enter from valid distant ground
+              // instead of appearing on top of the player.
+              const existingEnemies = [...state.enemies] as EnemyEntity[];
+              existingEnemies.forEach((enemy, index) => {
+                const spawn = findWalkableSpawn(enemy.radius, player, 480 + (index % 3) * 30);
+                if (!spawn) return;
+                state.enemies.push({
+                  ...enemy,
+                  x: spawn.x,
+                  y: spawn.y,
+                  hp: enemy.maxHp,
+                  maxHp: enemy.maxHp,
+                  facingLeft: spawn.x > player.x,
+                  aiState: "pursuing",
+                  alertTicks: gameplayConfig.stealthAlertDelayTicks,
+                  lostSightTicks: 0,
+                  searchTicks: 0,
+                  lastSeenX: player.x,
+                  lastSeenY: player.y,
+                });
+              });
+              setIsOvertime(true);
+              setInteractionFeedback("倒數結束：暗影暴走！敵群、血量、攻擊力 ×2，請撤離");
+              triggerSound("bossImpact");
+            }
             return 0;
           }
           return prev - 1;
@@ -2860,8 +2898,10 @@ export function MissionGame({
       // Spawn enemies in survivors mode
       if (stage === "PLAYING") {
         state.spawnTimer++;
+        const overtimeMultiplier = state.overtime ? 2 : 1;
         const spawnLimit = Math.max(gameplayConfig.spawnMinInterval, gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150));
-        if (state.spawnTimer >= spawnLimit && state.enemies.length < gameplayConfig.maxEnemies) {
+        const enemyCap = gameplayConfig.maxEnemies * overtimeMultiplier;
+        if (state.spawnTimer >= spawnLimit && state.enemies.length < enemyCap) {
           state.spawnTimer = 0;
           
           // Spawn near the edge of the visible area, but only on white mask pixels.
@@ -2871,20 +2911,20 @@ export function MissionGame({
           if (spawn) {
             const rand = Math.random();
             let type: EnemyType = "mote";
-            let hpVal = (gameplayConfig.moteBaseHp + selectedChapter * gameplayConfig.moteHpPerChapter) * gameplayConfig.monsterHpMultiplier;
+            let hpVal = (gameplayConfig.moteBaseHp + selectedChapter * gameplayConfig.moteHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
             let spd = 0.6 + Math.random() * 0.3; // Slower walking
             let radius = 10;
             let col = "rgba(168, 85, 247, 0.7)"; // purple blob
 
             if (rand > 0.8) {
               type = "clumper";
-              hpVal = (gameplayConfig.clumperBaseHp + selectedChapter * gameplayConfig.clumperHpPerChapter) * gameplayConfig.monsterHpMultiplier;
+              hpVal = (gameplayConfig.clumperBaseHp + selectedChapter * gameplayConfig.clumperHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
               spd = 0.35; // Slower walking
               radius = 18;
               col = "rgba(107, 114, 128, 0.85)"; // heavy grey blob
             } else if (rand > 0.6) {
               type = "stalker";
-              hpVal = (gameplayConfig.stalkerBaseHp + selectedChapter * gameplayConfig.stalkerHpPerChapter) * gameplayConfig.monsterHpMultiplier;
+              hpVal = (gameplayConfig.stalkerBaseHp + selectedChapter * gameplayConfig.stalkerHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
               spd = 1.1; // Slower walking
               radius = 8;
               col = "rgba(239, 68, 68, 0.8)"; // red shadow crawler
@@ -2901,12 +2941,12 @@ export function MissionGame({
               type: type,
               points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
               facingLeft: spawn.x > player.x,
-              aiState: "dormant",
+              aiState: state.overtime ? "pursuing" : "dormant",
               alertTicks: 0,
               lostSightTicks: 0,
               searchTicks: 0,
-              lastSeenX: spawn.x,
-              lastSeenY: spawn.y,
+              lastSeenX: state.overtime ? player.x : spawn.x,
+              lastSeenY: state.overtime ? player.y : spawn.y,
             });
           }
         }
@@ -2996,6 +3036,15 @@ export function MissionGame({
           const playerIsLit = !isLightOff && d <= detectionRange;
           const aiState = enemy.aiState || "dormant";
 
+          if (state.overtime) {
+            // Overtime ignores lamp stealth: every living enemy continually
+            // updates the player's position and actively hunts them.
+            enemy.aiState = "pursuing";
+            enemy.lastSeenX = player.x;
+            enemy.lastSeenY = player.y;
+            enemy.lostSightTicks = 0;
+            enemy.searchTicks = 0;
+          } else {
           if (playerIsLit || proximityDetected) {
             enemy.lastSeenX = player.x;
             enemy.lastSeenY = player.y;
@@ -3028,11 +3077,12 @@ export function MissionGame({
             // Search the last lit location briefly, then return to dormancy.
             if (enemy.searchTicks >= gameplayConfig.stealthSearchTicks) enemy.aiState = "dormant";
           }
+          }
 
-          const targetX = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff)
+          const targetX = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff && !state.overtime)
             ? (enemy.lastSeenX ?? enemy.x)
             : player.x;
-          const targetY = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff)
+          const targetY = enemy.aiState === "searching" || (enemy.aiState === "pursuing" && isLightOff && !state.overtime)
             ? (enemy.lastSeenY ?? enemy.y)
             : player.y;
           const dxToTarget = targetX - enemy.x;
@@ -3058,7 +3108,7 @@ export function MissionGame({
           recordAction("takeDamage");
           const contactDamage = enemy.isBossMinion
             ? enemy.bossMinionKind === "nut" ? 16 : 11
-            : 1;
+            : state.overtime ? 2 : 1;
           const actualDamage = player.isShieldActive ? Math.ceil(contactDamage * 0.2) : contactDamage;
           player.hp = Math.max(0, (player.hp ?? 3) - actualDamage);
           setHp(player.hp);
@@ -6594,9 +6644,9 @@ export function MissionGame({
             <div className="flex items-center justify-center">
               <div className="px-3 py-1 bg-zinc-900/90 border border-zinc-800 rounded flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden sm:inline">核心集結倒數:</span>
-                <span className="text-xs sm:text-sm font-black text-white tracking-widest font-mono">
-                  {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+                <span className={`text-[10px] font-bold uppercase tracking-wider hidden sm:inline ${isOvertime ? "text-rose-300" : "text-zinc-400"}`}>{isOvertime ? "暗影暴走：" : "核心集結倒數:"}</span>
+                <span className={`text-xs sm:text-sm font-black tracking-widest font-mono ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}>
+                  {isOvertime ? "OVERTIME ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}
                 </span>
               </div>
             </div>
@@ -6781,7 +6831,7 @@ export function MissionGame({
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] leading-4 shadow-lg backdrop-blur-[6px]">
                 <span className="text-amber-400">🪙 {sessionCoins}</span><span className="text-orange-300">◆ {score}</span>
                 <span className="text-cyan-300">LV.{level} {Math.floor(Math.min(100, (exp / expNeeded) * 100))}%</span>
-                <span className="font-black text-white"><Clock className="mr-0.5 inline h-2.5 w-2.5" />{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
+                <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>
               </div>
               <div className="relative">
                 <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-500/60 bg-[rgba(10,10,14,0.78)] text-orange-400 backdrop-blur-[6px]" aria-label="任務選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
