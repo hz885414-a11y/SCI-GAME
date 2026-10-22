@@ -665,6 +665,7 @@ export default function App() {
     // Reset custom exhibition URLs to defaults as part of full system reset
     localStorage.removeItem("sci_exhibition_urls");
     localStorage.removeItem("light_crew_boot_complete");
+    localStorage.removeItem("squad_chapter_one_shelter_cleared");
     localStorage.removeItem(APP_LAST_SCENE_KEY);
 
     // Reset the event system alongside the rest of the player's progress.
@@ -1571,6 +1572,18 @@ export default function App() {
             setPendingBossChapter(null);
             setMissionEntrySource("adventure");
             setCurrentScene("ops");
+            handleMissionOpenChange(false);
+          }}
+          onChapterOneShelterCleared={() => {
+            setPendingBossChapter(null);
+            setMissionEntrySource("adventure");
+            setCurrentScene("ops");
+            setStoryLines([
+              { speakerId: "narrator", text: "【任務完成】成功清除工業區避難所湧出的暗物質怪物。" },
+              { speakerId: "leo", text: "工業區避難所已轉為安全據點。之後再進入時，不會有怪物、戰鬥或倒數；那裡會留給其他 NPC 登場。" },
+            ]);
+            setCurrentDialogueIndex(0);
+            setGameMode("counseling");
             handleMissionOpenChange(false);
           }}
           onReturnToLab={(chapter) => {

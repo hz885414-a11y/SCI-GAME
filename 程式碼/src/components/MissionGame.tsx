@@ -43,6 +43,8 @@ import {
 } from "../utils/gameFeedback";
 interface MissionGameProps {
   onClose: () => void;
+  /** Returns to base after Chapter 1's one-time 60-second survival sequence. */
+  onChapterOneShelterCleared: () => void;
   onReturnToLab: (chapter: number) => void;
   onReturnToExhibition: () => void;
   entrySource?: "adventure" | "exhibition";
@@ -146,6 +148,8 @@ const CHAPTER_ONE_NPC_LINES = [
   "未知研究員：你們終於到了。我一直在等能照亮這裡的人。",
   "這裡之後會成為其他協力 NPC 登場與交換情報的安全據點。",
 ] as const;
+
+const CHAPTER_ONE_SHELTER_CLEARED_KEY = "squad_chapter_one_shelter_cleared";
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
@@ -329,6 +333,7 @@ const LIGHT_ATTACK_PROFILES = {
 
 export function MissionGame({ 
   onClose, 
+  onChapterOneShelterCleared,
   onReturnToLab,
   onReturnToExhibition,
   entrySource = "adventure",
@@ -468,6 +473,7 @@ export function MissionGame({
   const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
   const chapterOnePeacefulRef = useRef(false);
+  const chapterOneJustClearedRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -1447,12 +1453,16 @@ export function MissionGame({
 
   const startGame = () => {
     if (!missionMapReady) return;
+    const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
+      try { return localStorage.getItem(CHAPTER_ONE_SHELTER_CLEARED_KEY) === "true"; } catch { return false; }
+    })();
     setIsGamePaused(false);
     setIsMobileGameMenuOpen(false);
     cancelEvacuation();
     setMemoryFollowUpStep(null);
     setChapterOneNpcEventStep(null);
-    chapterOnePeacefulRef.current = false;
+    chapterOnePeacefulRef.current = chapterOneAlreadyCleared;
+    chapterOneJustClearedRef.current = false;
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -1471,9 +1481,9 @@ export function MissionGame({
     setExpNeeded(100);
     setBatteryPercent(100);
     setBatteryMode("OFF");
-    // Chapter one always reaches its NPC encounter at the authored 60-second
-    // mark. Other chapters retain their existing quick-test / regular timers.
-    setTimeLeft(selectedChapter === 1 ? 60 : isDemoMode ? 30 : 90);
+    // After the first clear, Chapter 1 is a peaceful NPC space: no timer,
+    // combat intro, or hostile spawns. Other chapters keep their timers.
+    setTimeLeft(selectedChapter === 1 ? (chapterOneAlreadyCleared ? 0 : 60) : isDemoMode ? 30 : 90);
     setIsOvertime(false);
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
@@ -1633,9 +1643,17 @@ export function MissionGame({
     }
 
     setStage("PLAYING");
-    setShowTipModal(true);
+    setShowTipModal(!chapterOneAlreadyCleared);
     setStartTitleActive(false);
   };
+
+  // The result screen belongs at base, not over the chapter map. Waiting for
+  // the state update keeps the final enemy cleanup from racing the unmount.
+  useEffect(() => {
+    if (!chapterOneJustClearedRef.current) return;
+    chapterOneJustClearedRef.current = false;
+    onChapterOneShelterCleared();
+  }, [timeLeft, onChapterOneShelterCleared]);
 
   // Assembly Sequence transition
   const enterAssembly = () => {
@@ -2012,16 +2030,17 @@ export function MissionGame({
       // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
       // instead of silently completing the mission; V evacuation is the
       // player's successful exit route.
-      if (stage === "PLAYING" && state.ticks % 60 === 0) {
+      if (stage === "PLAYING" && !chapterOnePeacefulRef.current && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             if (selectedChapter === 1 && !chapterOnePeacefulRef.current) {
               chapterOnePeacefulRef.current = true;
+              chapterOneJustClearedRef.current = true;
               state.enemies = [];
               state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
               state.spawnTimer = 0;
-              setChapterOneNpcEventStep(0);
-              setInteractionFeedback("避難所安全訊號已建立：未知研究員請求通訊");
+              try { localStorage.setItem(CHAPTER_ONE_SHELTER_CLEARED_KEY, "true"); } catch { /* local progress is optional */ }
+              setInteractionFeedback("工業區避難所已清除：正在返回營運機動部");
               triggerSound("success");
               return 0;
             }
@@ -2187,7 +2206,7 @@ export function MissionGame({
       }
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
-      if (stage === "PLAYING") {
+      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
         const drainRate = batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
           : 0.03;
@@ -6839,8 +6858,8 @@ export function MissionGame({
               </div>
             </div>
 
-            {/* Center Column: Timer Countdown */}
-            <div className="flex items-center justify-center">
+            {/* The cleared Chapter 1 shelter is an NPC space, not a timed battle. */}
+            {!(selectedChapter === 1 && chapterOnePeacefulRef.current) && <div className="flex items-center justify-center">
               <div className="px-3 py-1 bg-zinc-900/90 border border-zinc-800 rounded flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
                 <span className={`text-[10px] font-bold uppercase tracking-wider hidden sm:inline ${isOvertime ? "text-rose-300" : "text-zinc-400"}`}>{isOvertime ? "暗影暴走：" : "核心集結倒數:"}</span>
@@ -6848,7 +6867,7 @@ export function MissionGame({
                   {isOvertime ? "OVERTIME ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}
                 </span>
               </div>
-            </div>
+            </div>}
 
             {/* Right Column: Battery Meter & Mode Controls */}
             <div className="flex items-center gap-2">
@@ -7030,7 +7049,7 @@ export function MissionGame({
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] leading-4 shadow-lg backdrop-blur-[6px]">
                 <span className="text-amber-400">🪙 {sessionCoins}</span><span className="text-orange-300">◆ {score}</span>
                 <span className="text-cyan-300">LV.{level} {Math.floor(Math.min(100, (exp / expNeeded) * 100))}%</span>
-                <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>
+                {!(selectedChapter === 1 && chapterOnePeacefulRef.current) && <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>}
               </div>
               <div className="relative">
                 <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-500/60 bg-[rgba(10,10,14,0.78)] text-orange-400 backdrop-blur-[6px]" aria-label="任務選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
