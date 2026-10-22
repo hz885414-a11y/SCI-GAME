@@ -1059,6 +1059,8 @@ export function MissionGame({
     darkCores: [] as DarkCoreEntity[],
     darkCoreGuardian: null as DarkCoreGuardian | null,
     chapterTwoGate: null as ChapterTwoGate | null,
+    playerDialogueText: null as string | null,
+    playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
@@ -1612,6 +1614,8 @@ export function MissionGame({
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
+      playerDialogueText: null,
+      playerDialogueUntilTick: 0,
       shelterNpcs: [],
       collectibles: [],
       particles: [],
@@ -1967,6 +1971,8 @@ export function MissionGame({
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
+      playerDialogueText: null,
+      playerDialogueUntilTick: 0,
       collectibles: [],
       particles: [],
       bullets: [],
@@ -3880,7 +3886,14 @@ export function MissionGame({
                   triggerSound("power");
                 },
               }
-            : { label: "上方鐵門鎖定・需淨化 3 個暗黑核心", onTap: () => triggerSound("click") };
+            : {
+                label: "上方鐵門鎖定・需淨化 3 個暗黑核心",
+                onTap: () => {
+                  state.playerDialogueText = "我們要先把三個暗黑核心淨化完成，才可以開啟鐵門。";
+                  state.playerDialogueUntilTick = state.ticks + 135;
+                  triggerSound("click");
+                },
+              };
         } else {
         const guardian = state.darkCoreGuardian as DarkCoreGuardian | null;
         const guardianDistance = guardian ? Math.hypot(guardian.x - player.x, guardian.y - player.y) : Infinity;
@@ -6600,6 +6613,27 @@ export function MissionGame({
           ctx.fillText("淨化完成", core.x, core.y - 72);
           ctx.restore();
         });
+      }
+      if (stage === "PLAYING" && state.playerDialogueText && state.ticks < state.playerDialogueUntilTick) {
+        ctx.save();
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const bubbleWidth = Math.min(280, Math.max(166, ctx.measureText(state.playerDialogueText).width + 26));
+        const bubbleX = player.x - bubbleWidth / 2;
+        const bubbleY = player.y - player.radius - 64;
+        ctx.fillStyle = "rgba(12, 18, 35, 0.98)";
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "rgba(251, 191, 36, .7)";
+        ctx.shadowBlur = 10;
+        ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 31);
+        ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 31);
+        ctx.shadowBlur = 0;
+        ctx.beginPath(); ctx.moveTo(player.x - 5, bubbleY + 31); ctx.lineTo(player.x + 5, bubbleY + 31); ctx.lineTo(player.x, bubbleY + 37); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#fef3c7";
+        ctx.fillText(state.playerDialogueText, player.x, bubbleY + 15.5);
+        ctx.restore();
       }
 
       ctx.restore(); // matches camera translate
