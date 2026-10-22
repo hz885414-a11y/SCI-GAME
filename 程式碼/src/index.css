@@ -704,7 +704,7 @@
 @keyframes blackTideTitleImpact {
   0% { opacity: 0; transform: scale(1.38) skewX(-8deg); }
   16% { opacity: 1; transform: scale(.94) skewX(3deg); }
-  32%, 80% { opacity: 1; transform: scale(1); }
+  32%, 90% { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(.98); }
 }
 .black-tide-fog {
@@ -717,4 +717,4 @@
 }
 .black-tide-light-flicker { background: rgba(150, 20, 72, .24); mix-blend-mode: screen; animation: blackTideLightFlicker 1.15s steps(2, end) infinite; }
 .black-tide-countdown { animation: blackTideBorderPulse .72s steps(2, end) infinite; }
-.black-tide-title-card { animation: blackTideTitleImpact 1.15s steps(2, end) both; }
+.black-tide-title-card { animation: blackTideTitleImpact 2s steps(2, end) both; }

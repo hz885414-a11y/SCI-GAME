@@ -1131,7 +1131,7 @@ export function MissionGame({
   // overtime begins without obscuring combat controls for more than a beat.
   useEffect(() => {
     if (tideAlert !== "rising") return;
-    const timer = window.setTimeout(() => setTideAlert("idle"), 1150);
+    const timer = window.setTimeout(() => setTideAlert("idle"), 2000);
     return () => window.clearTimeout(timer);
   }, [tideAlert]);
 
