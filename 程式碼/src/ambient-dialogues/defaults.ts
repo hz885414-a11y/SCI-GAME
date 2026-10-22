@@ -1,6 +1,6 @@
 import type { AmbientDialogueConfig } from "./types";
 const now = "local-default";
-export const DEFAULT_AMBIENT_DIALOGUES: AmbientDialogueConfig = { version: 1, updatedAt: now, defaultLineDurationMs: 3000, idleDelayMs: 12000, dialogues: [
+export const DEFAULT_AMBIENT_DIALOGUES: AmbientDialogueConfig = { version: 1, updatedAt: now, defaultLineDurationMs: 3000, idleDelayMs: 10000, dialogues: [
   { id: "ambient_warmup", name: "開工前的小默契", category: "ambient", enabled: true, priority: 0, weight: 1, cooldownMs: 90000, maxTriggers: 0, lines: [
     { speaker: "claire", text: "今天的實驗室好安靜喔。", expression: "normal", durationMs: 3000 },
     { speaker: "ethan", text: "安靜代表設備運轉效率正常。", expression: "happy", durationMs: 3000 },

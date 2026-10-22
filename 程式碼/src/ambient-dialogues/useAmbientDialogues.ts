@@ -125,7 +125,9 @@ export function useAmbientDialogues({ inLab, blocked }: { inLab: boolean; blocke
   }, [inLab, choose, stop]);
   useEffect(() => {
     if (!inLab || blocked || !autoEnabled || busy.current) return;
-    idleTimer.current = window.setTimeout(() => { choose("lab_idle") || choose(); }, config.idleDelayMs);
+    // Keep the lab's daily chatter responsive even when an older remote
+    // configuration still carries the former 12-second value.
+    idleTimer.current = window.setTimeout(() => { choose("lab_idle") || choose(); }, 10_000);
     return () => { if (idleTimer.current !== null) window.clearTimeout(idleTimer.current); };
   }, [inLab, blocked, autoEnabled, config.idleDelayMs, choose, line]);
 
