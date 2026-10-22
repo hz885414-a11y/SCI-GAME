@@ -163,6 +163,9 @@ export default function App() {
   const [isMusicMuted, setIsMusicMuted] = useState(false);
   const [isSupplyVideoOpen, setIsSupplyVideoOpen] = useState(false);
   const [musicVolume, setMusicVolumeState] = useState(50);
+  // A cleared Chapter 1 is a peaceful shelter rather than a combat mission,
+  // so it retains the base's everyday music when revisited.
+  const [missionUsesBaseMusic, setMissionUsesBaseMusic] = useState(false);
   const [characterBreakpoint, setCharacterBreakpoint] = useState<"desktop" | "tablet" | "mobile">(() => getCharacterBreakpoint(window.innerWidth));
 
   // Standee visual style customization (photo default as requested)
@@ -548,7 +551,9 @@ export default function App() {
 
   // Manage Background Music (BGM) loop based on isMusicMuted, video playback,
   // user gesture, and app phase.
-  const desiredTrack = appPhase === "start" || appPhase === "booting" || appPhase === "prologue" ? "theme" : missionActive ? "mission" : "normal";
+  const desiredTrack = appPhase === "start" || appPhase === "booting" || appPhase === "prologue"
+    ? "theme"
+    : missionActive ? (missionUsesBaseMusic ? "normal" : "mission") : "normal";
   desiredTrackRef.current = desiredTrack;
   useEffect(() => {
     if (isMusicMuted || isSupplyVideoOpen) {
@@ -581,9 +586,11 @@ export default function App() {
   const handleMissionOpenChange = (open: boolean) => {
     setMissionActive(open);
     setIsGameOpen(open);
-    desiredTrackRef.current = open ? "mission" : "normal";
+    if (!open) setMissionUsesBaseMusic(false);
+    const nextTrack = open && !missionUsesBaseMusic ? "mission" : "normal";
+    desiredTrackRef.current = nextTrack;
     if (!isMusicMuted && !isSupplyVideoOpen) {
-      startBackgroundMusic(open ? "mission" : "normal");
+      startBackgroundMusic(nextTrack);
     }
   };
 
@@ -1586,6 +1593,7 @@ export default function App() {
             setGameMode("counseling");
             handleMissionOpenChange(false);
           }}
+          onMissionMusicModeChange={(useBaseMusic) => setMissionUsesBaseMusic(useBaseMusic)}
           onReturnToLab={(chapter) => {
             setPendingBossChapter(chapter);
             setMissionEntrySource("adventure");

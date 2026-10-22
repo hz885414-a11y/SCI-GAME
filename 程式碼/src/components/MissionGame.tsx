@@ -45,6 +45,8 @@ interface MissionGameProps {
   onClose: () => void;
   /** Returns to base after Chapter 1's one-time 60-second survival sequence. */
   onChapterOneShelterCleared: () => void;
+  /** A revisited, purified Chapter 1 keeps the base's peaceful BGM. */
+  onMissionMusicModeChange: (useBaseMusic: boolean) => void;
   onReturnToLab: (chapter: number) => void;
   onReturnToExhibition: () => void;
   entrySource?: "adventure" | "exhibition";
@@ -391,6 +393,7 @@ const LIGHT_ATTACK_PROFILES = {
 export function MissionGame({ 
   onClose, 
   onChapterOneShelterCleared,
+  onMissionMusicModeChange,
   onReturnToLab,
   onReturnToExhibition,
   entrySource = "adventure",
@@ -1558,6 +1561,7 @@ export function MissionGame({
     const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
       try { return localStorage.getItem(CHAPTER_ONE_SHELTER_CLEARED_KEY) === "true"; } catch { return false; }
     })();
+    onMissionMusicModeChange(chapterOneAlreadyCleared);
     setIsGamePaused(false);
     setIsMobileGameMenuOpen(false);
     cancelEvacuation();
