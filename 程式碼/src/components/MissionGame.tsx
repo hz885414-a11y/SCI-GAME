@@ -5498,20 +5498,6 @@ export function MissionGame({
           ctx.fillStyle = "#e0f2fe";
           ctx.fillText(npc.name, npc.x, npc.y + 43);
           if (nearNpc) ctx.fillText("按 Z／互動", npc.x, npc.y + 58);
-          if (npc.dialogueText && state.ticks < npc.dialogueUntilTick) {
-            const bubbleWidth = Math.max(142, ctx.measureText(npc.dialogueText).width + 24);
-            const bubbleX = npc.x - bubbleWidth / 2;
-            const bubbleY = npc.y - npc.radius - 56;
-            ctx.fillStyle = "rgba(8, 47, 73, 0.96)";
-            ctx.strokeStyle = npc.color;
-            ctx.lineWidth = 1.5;
-            ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 27);
-            ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 27);
-            ctx.beginPath(); ctx.moveTo(npc.x - 5, bubbleY + 27); ctx.lineTo(npc.x + 5, bubbleY + 27); ctx.lineTo(npc.x, bubbleY + 33); ctx.closePath(); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = "#f8fafc";
-            ctx.textBaseline = "middle";
-            ctx.fillText(npc.dialogueText, npc.x, bubbleY + 13.5);
-          }
           ctx.restore();
         });
       }
@@ -6390,6 +6376,34 @@ export function MissionGame({
         }
       });
       ctx.globalAlpha = 1.0; // reset alpha
+
+      // Foreground dialogue layer: speech is rendered after every world
+      // entity and particle, so it always remains readable above the scene.
+      if (stage === "PLAYING" && isPeacefulShelter) {
+        (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
+          if (!npc.dialogueText || state.ticks >= npc.dialogueUntilTick) return;
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.font = "bold 10px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const bubbleWidth = Math.max(142, ctx.measureText(npc.dialogueText).width + 24);
+          const bubbleX = npc.x - bubbleWidth / 2;
+          const bubbleY = npc.y - npc.radius - 56;
+          ctx.fillStyle = "rgba(8, 47, 73, 0.98)";
+          ctx.strokeStyle = npc.color;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = npc.color;
+          ctx.shadowBlur = 10;
+          ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 27);
+          ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 27);
+          ctx.shadowBlur = 0;
+          ctx.beginPath(); ctx.moveTo(npc.x - 5, bubbleY + 27); ctx.lineTo(npc.x + 5, bubbleY + 27); ctx.lineTo(npc.x, bubbleY + 33); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = "#f8fafc";
+          ctx.fillText(npc.dialogueText, npc.x, bubbleY + 13.5);
+          ctx.restore();
+        });
+      }
 
       ctx.restore(); // matches camera translate
 
