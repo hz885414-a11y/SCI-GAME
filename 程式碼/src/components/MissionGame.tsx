@@ -7836,17 +7836,6 @@ export function MissionGame({
         <div className="flex-1 w-full overflow-hidden p-3 sm:p-6 select-none animate-fade-in text-center flex flex-col justify-center">
           <div className="flex flex-col items-center justify-center space-y-3 sm:space-y-6 max-w-md mx-auto py-1">
             <div className="text-4xl sm:text-6xl animate-bounce">🏆</div>
-            <SpriteAnimator
-              src={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].src}
-              totalFrames={6}
-              idleFrame={0}
-              animationFrames={[1, 2, 3, 4, 5]}
-              frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets}
-              fps={7}
-              playing={true}
-              width={80}
-              className="my-2"
-            />
             <div className="space-y-1">
               <h1 className="text-xl sm:text-3xl font-black text-green-400 tracking-wider">
                 黑暗核心已被驅除！
