@@ -11,6 +11,7 @@ interface KnowledgeBookModalProps {
 }
 
 const CARDS_PER_SPREAD = 4;
+type ArchiveView = "industry" | "mission";
 const CATEGORY_STYLE: Record<KnowledgeCardDefinition["category"], { label: string; accent: string; glow: string }> = {
   lighting: { label: "LIGHTING", accent: "text-amber-300", glow: "from-amber-400/25" },
   energy: { label: "ENERGY", accent: "text-yellow-300", glow: "from-yellow-400/25" },
@@ -54,16 +55,29 @@ function CardSlot({ card, owned, onOpen, number }: { card: KnowledgeCardDefiniti
   );
 }
 
+// Mission cards already participate in the same collection and event system.
+// This UI-only classifier simply gives Boss rewards and story-emphasis cards a
+// dedicated shelf without changing their IDs, unlock conditions, or effects.
+function isMissionStoryCard(card: KnowledgeCardDefinition) {
+  return Boolean(card.bossEffect) || card.storyEffect === "important" || card.storyEffect === "critical";
+}
+
 export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: KnowledgeBookModalProps) {
-  const cards = getAllCardDefinitions();
+  const allCards = getAllCardDefinitions();
+  const [archiveView, setArchiveView] = useState<ArchiveView>("industry");
   const [spread, setSpread] = useState(0);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCardDefinition | null>(null);
+  const cards = useMemo(
+    () => allCards.filter((card) => archiveView === "mission" ? isMissionStoryCard(card) : !isMissionStoryCard(card)),
+    [allCards, archiveView],
+  );
   const totalSpreads = Math.max(1, Math.ceil(cards.length / CARDS_PER_SPREAD));
   const visibleCards = useMemo(() => cards.slice(spread * CARDS_PER_SPREAD, spread * CARDS_PER_SPREAD + CARDS_PER_SPREAD), [spread, cards.length]);
-  const collectedPercent = cards.length ? Math.round((ownedCards.length / cards.length) * 100) : 0;
+  const ownedInView = cards.filter((card) => ownedCards.includes(card.id)).length;
+  const collectedPercent = cards.length ? Math.round((ownedInView / cards.length) * 100) : 0;
 
   useEffect(() => {
-    if (!isOpen) { setSpread(0); setSelectedCard(null); }
+    if (!isOpen) { setArchiveView("industry"); setSpread(0); setSelectedCard(null); }
   }, [isOpen]);
   useEffect(() => {
     if (!isOpen) return;
@@ -82,6 +96,14 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
     setSpread((page) => Math.max(0, Math.min(totalSpreads - 1, page + direction)));
   };
 
+  const selectArchiveView = (view: ArchiveView) => {
+    if (view === archiveView) return;
+    playSound("click");
+    setArchiveView(view);
+    setSpread(0);
+    setSelectedCard(null);
+  };
+
   return <div className="fixed inset-0 z-[80] grid place-items-center bg-[#02050b]/90 p-2 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label="產業知識卡圖鑑">
     <div className="relative flex h-[min(760px,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-cyan-300/20 bg-[#070d17] shadow-[0_0_80px_rgba(0,0,0,.9)]">
       <div className="absolute inset-0 pointer-events-none opacity-20 [background-image:linear-gradient(rgba(53,198,255,.13)_1px,transparent_1px),linear-gradient(90deg,rgba(53,198,255,.1)_1px,transparent_1px)] [background-size:32px_32px]" />
@@ -96,8 +118,17 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
         <button type="button" onClick={() => { playSound("click"); onClose(); }} className="ml-3 grid h-9 w-9 shrink-0 place-items-center rounded border border-white/10 bg-white/[.03] text-slate-400 transition hover:border-rose-400/70 hover:bg-rose-500/10 hover:text-white" aria-label="關閉知識卡圖鑑"><X className="h-5 w-5" /></button>
       </header>
 
+      <nav className="relative flex shrink-0 gap-2 border-b border-cyan-300/15 bg-[#08111e]/90 px-3 py-2 sm:px-5" aria-label="卡片圖鑑分類">
+        <button type="button" onClick={() => selectArchiveView("industry")} aria-pressed={archiveView === "industry"} className={`min-h-9 border px-3 text-[10px] font-black tracking-wide transition sm:px-4 sm:text-xs ${archiveView === "industry" ? "border-cyan-300/70 bg-cyan-400/15 text-cyan-100" : "border-white/10 bg-white/[.02] text-slate-400 hover:border-cyan-300/35 hover:text-cyan-200"}`}>
+          產業知識卡片圖鑑
+        </button>
+        <button type="button" onClick={() => selectArchiveView("mission")} aria-pressed={archiveView === "mission"} className={`min-h-9 border px-3 text-[10px] font-black tracking-wide transition sm:px-4 sm:text-xs ${archiveView === "mission" ? "border-amber-300/70 bg-amber-400/15 text-amber-100" : "border-white/10 bg-white/[.02] text-slate-400 hover:border-amber-300/35 hover:text-amber-200"}`}>
+          任務劇情事件卡片
+        </button>
+      </nav>
+
       <div className="relative shrink-0 border-b border-white/[.07] bg-black/20 px-4 py-3 sm:px-5">
-        <div className="flex items-center justify-between font-mono text-[9px] tracking-[.12em]"><span className="text-slate-400">ARCHIVE COMPLETION</span><span className="text-cyan-300">{ownedCards.length} / {cards.length} · {collectedPercent}%</span></div>
+        <div className="flex items-center justify-between font-mono text-[9px] tracking-[.12em]"><span className="text-slate-400">{archiveView === "mission" ? "MISSION ARCHIVE COMPLETION" : "ARCHIVE COMPLETION"}</span><span className="text-cyan-300">{ownedInView} / {cards.length} · {collectedPercent}%</span></div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.08]"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-emerald-300 shadow-[0_0_12px_rgba(34,211,238,.7)] transition-all duration-500" style={{ width: `${collectedPercent}%` }} /></div>
       </div>
 
@@ -105,6 +136,7 @@ export function KnowledgeBookModal({ isOpen, onClose, ownedCards, playSound }: K
         <div className="mb-3 flex items-center justify-between px-1"><p className="font-mono text-[9px] tracking-[.16em] text-cyan-200/65">DATA SHEET {String(spread + 1).padStart(2, "0")}</p><p className="flex items-center gap-1 font-mono text-[8px] text-slate-500"><ScanLine className="h-3 w-3" /> TAP UNLOCKED CARD TO INSPECT</p></div>
         <div className="grid gap-3 md:h-[calc(100%-28px)] md:grid-cols-2 md:grid-rows-2">
           {visibleCards.map((card, index) => <React.Fragment key={card.id}><CardSlot card={card} number={spread * CARDS_PER_SPREAD + index + 1} owned={ownedCards.includes(card.id)} onOpen={() => { playSound("click"); setSelectedCard(card); }} /></React.Fragment>)}
+          {cards.length === 0 && <div className="col-span-full grid min-h-48 place-items-center border border-dashed border-white/10 bg-black/20 p-6 text-center"><div><BookOpen className="mx-auto h-7 w-7 text-slate-600" /><p className="mt-3 text-sm font-black text-slate-400">尚無任務劇情事件卡片</p><p className="mt-1 text-[11px] leading-relaxed text-slate-600">完成後續任務事件後，資料將會自動同步至此分類。</p></div></div>}
         </div>
       </main>
 
