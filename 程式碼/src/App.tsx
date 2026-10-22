@@ -587,7 +587,6 @@ export default function App() {
     }
   };
 
-
   // Save mute settings
   const handleMuteToggle = (muted: boolean) => {
     setIsMuted(muted);
