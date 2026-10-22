@@ -166,6 +166,7 @@ const SHELTER_ROAMER_SEEDS = [
   { id: "volunteer", name: "救援志工", color: "#86efac", dialogueLines: ["有需要幫忙的地方請告訴我。"] },
 ] as const;
 const SHELTER_NPC_INTERACTION_RANGE = 94;
+const BLACK_TIDE_SPEED_MULTIPLIER = 1.8;
 
 const DARK_CORE_MEMORY_LINES = [
   "等了好久好久 ...",
@@ -2134,6 +2135,7 @@ export function MissionGame({
               state.enemies.forEach((enemy: EnemyEntity) => {
                 enemy.hp *= 2;
                 enemy.maxHp *= 2;
+                enemy.speed *= BLACK_TIDE_SPEED_MULTIPLIER;
                 enemy.aiState = "pursuing";
                 enemy.lastSeenX = player.x;
                 enemy.lastSeenY = player.y;
@@ -3099,6 +3101,9 @@ export function MissionGame({
       // 5. UPDATE ENEMIES
       // Spawn enemies in survivors mode
       if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
+        // Black tide is intentionally hard to outlast: a low, repeated shake
+        // sells the unstable world without locking the player's controls.
+        if (state.overtime && state.ticks % 12 === 0) triggerCameraShake(state, 3.4);
         state.spawnTimer++;
         const overtimeMultiplier = state.overtime ? 2 : 1;
         const spawnLimit = Math.max(gameplayConfig.spawnMinInterval, gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150));
@@ -3131,6 +3136,7 @@ export function MissionGame({
               radius = 8;
               col = "rgba(239, 68, 68, 0.8)"; // red shadow crawler
             }
+            if (state.overtime) spd *= BLACK_TIDE_SPEED_MULTIPLIER;
 
             state.enemies.push({
               x: spawn.x,
