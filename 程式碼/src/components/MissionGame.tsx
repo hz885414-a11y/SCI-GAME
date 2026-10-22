@@ -149,9 +149,9 @@ interface ShelterNpc {
 }
 
 const SHELTER_NPC_SEEDS = [
-  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", x: 160, y: 160, movement: "corner", dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
+  { id: "liaison", name: "奔騰物流-奔奔", color: "#67e8f9", x: 160, y: 160, movement: "corner", dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
   { id: "engineer", name: "維修工程師", color: "#fbbf24", x: 1640, y: 160, movement: "corner", dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
-  { id: "scout", name: "前線觀測員", color: "#a7f3d0", x: 160, y: 1040, movement: "corner", dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
+  { id: "scout", name: "yokohama-好濱友", color: "#a7f3d0", x: 160, y: 1040, movement: "corner", dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
   { id: "medic", name: "現場醫護員", color: "#f9a8d4", x: 1640, y: 1040, movement: "corner", dialogueLines: ["大家都平安，這是最重要的事。", "需要補給或休息，請告訴我。"] },
 ] as const;
 const SHELTER_ROAMER_SEEDS = [
