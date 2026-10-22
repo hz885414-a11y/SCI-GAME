@@ -63,6 +63,10 @@ interface MissionGameProps {
 
 type GameStage = "START" | "PLAYING" | "REPORT" | "ASSEMBLY" | "ROBOT_DEPLOYMENT" | "BOSS_WARNING" | "BOSSBATTLE" | "VICTORY" | "GAMEOVER" | "ENDING";
 type EnemyType = MissionEnemyType;
+const STORY_CHAPTER_TITLES: Record<number, string> = {
+  2: "第二章：遺失的聲音", 3: "第三章：不願熄滅的光", 4: "第四章：光輝城",
+  5: "第五章：被遺忘的實驗", 6: "第六章：黑暗的盡頭",
+};
 
 interface EnemyEntity {
   x: number;
@@ -449,6 +453,7 @@ export function MissionGame({
   const [chapterOneCompletionComm, setChapterOneCompletionComm] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
+  const [tideAlert, setTideAlert] = useState<"idle" | "countdown" | "rising">("idle");
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
 
@@ -527,6 +532,7 @@ export function MissionGame({
   const evacuationTimerRef = useRef<number | null>(null);
   const evacuationProgressTimerRef = useRef<number | null>(null);
   const evacuationLaunchStartedRef = useRef<number | null>(null);
+  const tideCountdownAnnouncedRef = useRef(false);
   const mouseRef = useRef<{ x: number; y: number; clicked: boolean }>({ x: 0, y: 0, clicked: false });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1121,6 +1127,14 @@ export function MissionGame({
     }
   }, [bossIntroPhase]);
 
+  // The full-screen title is deliberately brief: it marks the exact instant
+  // overtime begins without obscuring combat controls for more than a beat.
+  useEffect(() => {
+    if (tideAlert !== "rising") return;
+    const timer = window.setTimeout(() => setTideAlert("idle"), 1150);
+    return () => window.clearTimeout(timer);
+  }, [tideAlert]);
+
   // The canvas simulation owns the robot HP. Mirror a clear hit reaction into
   // both the simulation and the DOM HUD whenever that HP drops during a Boss fight.
   useEffect(() => {
@@ -1521,6 +1535,8 @@ export function MissionGame({
     // combat intro, or hostile spawns. Other chapters keep their timers.
     setTimeLeft(selectedChapter === 1 ? (chapterOneAlreadyCleared ? 0 : 60) : isDemoMode ? 30 : 90);
     setIsOvertime(false);
+    setTideAlert("idle");
+    tideCountdownAnnouncedRef.current = false;
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
     setCollectedMaterials(createEmptyMaterialInventory());
@@ -2091,6 +2107,12 @@ export function MissionGame({
       // player's successful exit route.
       if (stage === "PLAYING" && !chapterOnePeacefulRef.current && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
+          if (prev === 11 && selectedChapter !== 1 && !tideCountdownAnnouncedRef.current) {
+            tideCountdownAnnouncedRef.current = true;
+            setTideAlert("countdown");
+            setInteractionFeedback("警報：黑潮能量即將突破臨界值");
+            triggerSound("countdown");
+          }
           if (prev <= 1) {
             if (selectedChapter === 1 && !chapterOnePeacefulRef.current) {
               chapterOnePeacefulRef.current = true;
@@ -2140,7 +2162,8 @@ export function MissionGame({
                 });
               });
               setIsOvertime(true);
-              setInteractionFeedback("倒數結束：暗影暴走！敵群、血量、攻擊力 ×2，請撤離");
+              setTideAlert("rising");
+              triggerCameraShake(state, 19);
               triggerSound("bossImpact");
             }
             return 0;
@@ -6900,7 +6923,7 @@ export function MissionGame({
                               <span className="text-[8px] sm:text-[9px] px-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded">CH.{ch.id}</span>
                             )}
                           </div>
-                          <h4 className={`text-[10px] sm:text-xs font-black mt-0.5 ${isLocked ? "text-zinc-500" : "text-white"}`}>{ch.name}</h4>
+                          <h4 className={`text-[10px] sm:text-xs font-black mt-0.5 ${isLocked ? "text-zinc-500" : "text-white"}`}>{entrySource === "adventure" ? STORY_CHAPTER_TITLES[ch.id] || ch.name : ch.name}</h4>
                           {isLocked && (
                             <div className="text-[8px] text-orange-500/90 font-bold font-sans mt-0.5">
                               需通關 CH.{ch.id - 1} 解鎖
@@ -7101,6 +7124,24 @@ export function MissionGame({
                     : "h-auto w-full max-h-full max-w-[1400px] aspect-[14/9] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
                 }
               />
+              {tideAlert !== "idle" && selectedChapter !== 1 && !chapterOnePeacefulRef.current && <div className="pointer-events-none absolute inset-0 z-[45] overflow-hidden" aria-live="assertive">
+                <div className="black-tide-fog absolute inset-0" aria-hidden="true" />
+                <div className="black-tide-light-flicker absolute inset-0" aria-hidden="true" />
+                {tideAlert === "countdown" && <div className="black-tide-countdown absolute left-1/2 top-3 w-[min(94%,540px)] -translate-x-1/2 border-2 border-rose-500 bg-[#16060e]/95 px-3 py-2 text-center shadow-[0_0_28px_rgba(225,29,72,.55)] sm:top-5 sm:px-5">
+                  <div className="flex items-center justify-center gap-2 font-mono text-[10px] font-black tracking-[.16em] text-rose-200 sm:text-xs"><AlertTriangle className="h-4 w-4 animate-pulse text-rose-400" /><span>黑潮來襲前警報 · {timeLeft} 秒</span><AlertTriangle className="h-4 w-4 animate-pulse text-violet-400" /></div>
+                  <div className="mt-1 h-1 overflow-hidden bg-violet-950"><div className="h-full bg-gradient-to-r from-rose-600 via-violet-500 to-rose-600" style={{ width: `${Math.max(5, timeLeft * 10)}%` }} /></div>
+                  <p className="mt-1 font-mono text-[8px] tracking-[.22em] text-violet-200/85">DARK MATTER SURGE DETECTED</p>
+                </div>}
+                {tideAlert === "rising" && <div className="black-tide-title-card absolute inset-0 grid place-items-center px-4">
+                  <div className="relative w-[min(94%,680px)] border-4 border-rose-600 bg-[#10030b]/95 px-4 py-6 text-center shadow-[0_0_0_5px_rgba(76,5,25,.7),0_0_48px_rgba(220,38,38,.75)] sm:px-8 sm:py-9">
+                    <span className="absolute left-2 top-2 h-2 w-8 bg-rose-500" /><span className="absolute bottom-2 right-2 h-2 w-8 bg-violet-500" />
+                    <p className="font-mono text-[10px] font-black tracking-[.34em] text-rose-300 sm:text-sm">⚠ EMERGENCY ALERT ⚠</p>
+                    <h2 className="mt-3 font-pixel text-[clamp(34px,9vw,76px)] font-black leading-none tracking-[.03em] text-rose-500 [text-shadow:3px_3px_0_#24040d,-2px_-2px_0_#7e1d3a,0_0_20px_#dc2626]">黑潮來襲</h2>
+                    <p className="mt-3 font-mono text-[clamp(12px,2.8vw,20px)] font-black tracking-[.28em] text-violet-200">BLACK TIDE RISING</p>
+                    <p className="mt-3 font-mono text-[10px] font-bold tracking-wider text-rose-200">敵群、血量、攻擊力 ×2　請立即撤離</p>
+                  </div>
+                </div>}
+              </div>}
             </div>
           </div>
 

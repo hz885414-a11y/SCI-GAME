@@ -683,3 +683,38 @@
 .card-template-slot:active { cursor: grabbing; }
 .card-template-slot > span { position: absolute; left: 0; top: -20px; padding: 2px 5px; background: #083344; color: #cffafe; font: 700 10px sans-serif; white-space: nowrap; pointer-events: none; }
 .card-template-slot > button { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: #0e7490; cursor: nwse-resize; }
+
+@keyframes blackTideBorderPulse {
+  0%, 100% { border-color: #e11d48; box-shadow: 0 0 18px rgba(225,29,72,.38), inset 0 0 28px rgba(88,28,135,.2); }
+  50% { border-color: #8b5cf6; box-shadow: 0 0 36px rgba(139,92,246,.7), inset 0 0 42px rgba(127,29,29,.34); }
+}
+@keyframes blackTideFogCreep {
+  0%, 100% { opacity: .42; transform: scale(1); }
+  50% { opacity: .82; transform: scale(1.035); }
+}
+@keyframes blackTideLightFlicker {
+  0%, 100% { opacity: 0; }
+  19% { opacity: .03; }
+  21% { opacity: .23; }
+  23% { opacity: .04; }
+  62% { opacity: .04; }
+  64% { opacity: .18; }
+  66% { opacity: 0; }
+}
+@keyframes blackTideTitleImpact {
+  0% { opacity: 0; transform: scale(1.38) skewX(-8deg); }
+  16% { opacity: 1; transform: scale(.94) skewX(3deg); }
+  32%, 80% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.98); }
+}
+.black-tide-fog {
+  background:
+    radial-gradient(ellipse at -8% 50%, rgba(17,3,28,.98), transparent 35%),
+    radial-gradient(ellipse at 108% 48%, rgba(35,2,18,.98), transparent 35%),
+    radial-gradient(ellipse at 50% -15%, rgba(31,2,31,.72), transparent 31%),
+    radial-gradient(ellipse at 50% 115%, rgba(10,2,17,.75), transparent 31%);
+  animation: blackTideFogCreep 1.15s ease-in-out infinite;
+}
+.black-tide-light-flicker { background: rgba(150, 20, 72, .24); mix-blend-mode: screen; animation: blackTideLightFlicker 1.15s steps(2, end) infinite; }
+.black-tide-countdown { animation: blackTideBorderPulse .72s steps(2, end) infinite; }
+.black-tide-title-card { animation: blackTideTitleImpact 1.15s steps(2, end) both; }
