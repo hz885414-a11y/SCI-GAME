@@ -465,6 +465,7 @@ export function MissionGame({
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
   const [tideAlert, setTideAlert] = useState<"idle" | "countdown" | "rising">("idle");
+  const [areaTransition, setAreaTransition] = useState<string | null>(null);
   const [score, setScore] = useState<number>(0);
   const [sessionCoins, setSessionCoins] = useState<number>(0);
 
@@ -1147,6 +1148,12 @@ export function MissionGame({
     return () => window.clearTimeout(timer);
   }, [tideAlert]);
 
+  useEffect(() => {
+    if (!areaTransition) return;
+    const timer = window.setTimeout(() => setAreaTransition(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [areaTransition]);
+
   // The canvas simulation owns the robot HP. Mirror a clear hit reaction into
   // both the simulation and the DOM HUD whenever that HP drops during a Boss fight.
   useEffect(() => {
@@ -1548,6 +1555,7 @@ export function MissionGame({
     setTimeLeft(selectedChapter === 1 ? (chapterOneAlreadyCleared ? 0 : 60) : isDemoMode ? 30 : 90);
     setIsOvertime(false);
     setTideAlert("idle");
+    setAreaTransition(null);
     tideCountdownAnnouncedRef.current = false;
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
@@ -3830,14 +3838,28 @@ export function MissionGame({
         if (chapterTwoGate && gateDistance <= CHAPTER_TWO_GATE_INTERACTION_RANGE) {
           interactionTargetRef.current = chapterTwoGate.unlocked
             ? {
-                label: chapterTwoGate.entered ? "返回上層新區域" : "穿越上方鐵門・進入新區域",
+                label: chapterTwoGate.entered ? "返回廢棄工廠 2" : "穿越上方鐵門・進入廢棄工廠 2",
                 onTap: () => {
+                  const isFirstEntry = !chapterTwoGate.entered;
                   player.x = chapterTwoGate.destinationX;
                   player.y = chapterTwoGate.destinationY;
                   chapterTwoGate.entered = true;
+                  // The upper factory sector begins a fresh survival cycle.
+                  // Remove the previous sector's escalated crowd rather than
+                  // carrying Black Tide's doubled stats through the doorway.
+                  if (isFirstEntry) {
+                    state.enemies = [];
+                    state.spawnTimer = 0;
+                    state.overtime = false;
+                    setIsOvertime(false);
+                    setTimeLeft(isDemoMode ? 30 : 90);
+                    setTideAlert("idle");
+                    tideCountdownAnnouncedRef.current = false;
+                    setAreaTransition("廢棄工廠 2");
+                  }
                   state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
                   state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
-                  setInteractionFeedback("已進入：上層封鎖區");
+                  setInteractionFeedback(isFirstEntry ? "已進入：廢棄工廠 2・黑潮倒數已重置" : "已返回：廢棄工廠 2");
                   triggerSound("power");
                 },
               }
@@ -5175,7 +5197,7 @@ export function MissionGame({
         ctx.fillStyle = chapterTwoGate.unlocked ? "#cffafe" : "#a1a1aa";
         ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText(chapterTwoGate.unlocked ? "↑ 上層封鎖區" : "🔒 上方鐵門", 0, -60);
+        ctx.fillText(chapterTwoGate.unlocked ? "↑ 廢棄工廠 2" : "🔒 上方鐵門", 0, -60);
         if (chapterTwoGate.unlocked && Math.hypot(chapterTwoGate.x - player.x, chapterTwoGate.y - player.y) <= CHAPTER_TWO_GATE_INTERACTION_RANGE) {
           ctx.fillStyle = "#fef3c7";
           ctx.fillText("點擊互動進入", 0, 40);
@@ -7218,6 +7240,13 @@ export function MissionGame({
                     : "h-auto w-full max-h-full max-w-[1400px] aspect-[14/9] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
                 }
               />
+              {areaTransition && <div className="factory-area-transition pointer-events-none absolute inset-0 z-[46] grid place-items-center px-4" aria-live="assertive">
+                <div className="w-[min(92%,620px)] border-4 border-amber-400 bg-[#120f09]/95 px-5 py-7 text-center shadow-[0_0_0_5px_rgba(69,50,8,.72),0_0_48px_rgba(245,158,11,.7)] sm:px-9 sm:py-10">
+                  <p className="font-mono text-[10px] font-black tracking-[.3em] text-amber-200 sm:text-sm">CHAPTER 02 · NEW AREA UNLOCKED</p>
+                  <h2 className="mt-3 font-pixel text-[clamp(36px,10vw,80px)] font-black leading-none text-amber-300 [text-shadow:3px_3px_0_#422006,0_0_20px_#f59e0b]">{areaTransition}</h2>
+                  <p className="mt-3 font-mono text-[11px] font-bold tracking-[.18em] text-cyan-100">BLACK TIDE TIMER RESET · 重新開始倒數</p>
+                </div>
+              </div>}
               {tideAlert !== "idle" && selectedChapter !== 1 && !chapterOnePeacefulRef.current && <div className="pointer-events-none absolute inset-0 z-[45] overflow-hidden" aria-live="assertive">
                 <div className="black-tide-fog absolute inset-0" aria-hidden="true" />
                 <div className="black-tide-light-flicker absolute inset-0" aria-hidden="true" />
