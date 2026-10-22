@@ -7395,7 +7395,7 @@ export function MissionGame({
                     <p className="font-mono text-[10px] font-black tracking-[.34em] text-rose-300 sm:text-sm">⚠ EMERGENCY ALERT ⚠</p>
                     <h2 className="pixel-title-outline mt-3 font-pixel text-[clamp(34px,9vw,76px)] font-black leading-none tracking-[.03em] text-rose-500">黑潮來襲</h2>
                     <p className="mt-3 font-mono text-[clamp(12px,2.8vw,20px)] font-black tracking-[.28em] text-violet-200">BLACK TIDE RISING</p>
-                    <p className="mt-3 font-mono text-[10px] font-bold tracking-wider text-rose-200">敵群、血量、攻擊力 ×2　請立即撤離</p>
+                    <p className="mt-3 font-mono text-[10px] font-bold tracking-wider text-rose-200">暗物質即將失控　請盡速撤離</p>
                   </div>
                 </div>}
               </div>}
