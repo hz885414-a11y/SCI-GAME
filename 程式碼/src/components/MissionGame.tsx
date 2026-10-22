@@ -132,6 +132,15 @@ interface DarkCoreGuardian {
   dialogueUntilTick: number;
 }
 
+interface ChapterTwoGate {
+  x: number;
+  y: number;
+  destinationX: number;
+  destinationY: number;
+  unlocked: boolean;
+  entered: boolean;
+}
+
 interface ShelterNpc {
   id: string;
   name: string;
@@ -167,6 +176,7 @@ const SHELTER_ROAMER_SEEDS = [
 ] as const;
 const SHELTER_NPC_INTERACTION_RANGE = 94;
 const BLACK_TIDE_SPEED_MULTIPLIER = 1.8;
+const CHAPTER_TWO_GATE_INTERACTION_RANGE = 104;
 
 const DARK_CORE_MEMORY_LINES = [
   "等了好久好久 ...",
@@ -1046,6 +1056,7 @@ export function MissionGame({
     enemyDeathEffects: [] as EnemyDeathEffect[],
     darkCores: [] as DarkCoreEntity[],
     darkCoreGuardian: null as DarkCoreGuardian | null,
+    chapterTwoGate: null as ChapterTwoGate | null,
     shelterNpcs: [] as ShelterNpc[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
@@ -1591,6 +1602,7 @@ export function MissionGame({
       enemyDeathEffects: [],
       darkCores: [],
       darkCoreGuardian: null,
+      chapterTwoGate: null,
       shelterNpcs: [],
       collectibles: [],
       particles: [],
@@ -1715,6 +1727,32 @@ export function MissionGame({
           dialogueUntilTick: 0,
         };
       }
+
+      // The gate is anchored to the highest walkable part of the authored
+      // map. It does not alter the collision mask; crossing it transports the
+      // player into the newly accessible upper sector only after all cores are
+      // purified.
+      const findUpperWalkable = (minimumY: number, maximumY: number) => {
+        for (let y = minimumY; y <= maximumY; y += 20) {
+          for (let offset = 0; offset <= 820; offset += 20) {
+            for (const x of offset === 0 ? [900] : [900 - offset, 900 + offset]) {
+              if (x > 32 && x < MISSION_MAP_CONFIG.worldSize.width - 32 && isMissionPositionWalkable(x, y, 22)) return { x, y };
+            }
+          }
+        }
+        return null;
+      };
+      const gatePosition = findUpperWalkable(80, 520) || findWalkableSpawn(22) || { x: 900, y: 180 };
+      const upperSectorPosition = findUpperWalkable(40, Math.max(40, gatePosition.y - 100))
+        || findWalkableSpawn(18, gatePosition, 260)
+        || gatePosition;
+      engineRef.current.chapterTwoGate = {
+        ...gatePosition,
+        destinationX: upperSectorPosition.x,
+        destinationY: upperSectorPosition.y,
+        unlocked: false,
+        entered: false,
+      };
     }
 
     setStage("PLAYING");
@@ -1918,6 +1956,7 @@ export function MissionGame({
       enemyDeathEffects: [],
       darkCores: [],
       darkCoreGuardian: null,
+      chapterTwoGate: null,
       collectibles: [],
       particles: [],
       bullets: [],
@@ -3735,7 +3774,16 @@ export function MissionGame({
             if (core.progress >= 1) {
               core.phase = "purified";
               triggerSound("corePurifyComplete");
-              setInteractionFeedback("暗黑核心已淨化");
+              const allCoresPurified = state.darkCores.length === DARK_CORE_COUNT && state.darkCores.every((item: DarkCoreEntity) => item.phase === "purified");
+              const chapterTwoGate = state.chapterTwoGate as ChapterTwoGate | null;
+              if (allCoresPurified && chapterTwoGate && !chapterTwoGate.unlocked) {
+                chapterTwoGate.unlocked = true;
+                triggerCameraShake(state, 9);
+                triggerSound("success");
+                setInteractionFeedback("三個暗黑核心已淨化：上方鐵門已開啟");
+              } else {
+                setInteractionFeedback("暗黑核心已淨化");
+              }
               if (interactionFeedbackTimerRef.current) window.clearTimeout(interactionFeedbackTimerRef.current);
               interactionFeedbackTimerRef.current = window.setTimeout(() => setInteractionFeedback(null), 1800);
               for (let index = 0; index < 18; index++) {
@@ -3777,6 +3825,24 @@ export function MissionGame({
           }
         });
 
+        const chapterTwoGate = state.chapterTwoGate as ChapterTwoGate | null;
+        const gateDistance = chapterTwoGate ? Math.hypot(chapterTwoGate.x - player.x, chapterTwoGate.y - player.y) : Infinity;
+        if (chapterTwoGate && gateDistance <= CHAPTER_TWO_GATE_INTERACTION_RANGE) {
+          interactionTargetRef.current = chapterTwoGate.unlocked
+            ? {
+                label: chapterTwoGate.entered ? "返回上層新區域" : "穿越上方鐵門・進入新區域",
+                onTap: () => {
+                  player.x = chapterTwoGate.destinationX;
+                  player.y = chapterTwoGate.destinationY;
+                  chapterTwoGate.entered = true;
+                  state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
+                  state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
+                  setInteractionFeedback("已進入：上層封鎖區");
+                  triggerSound("power");
+                },
+              }
+            : { label: "上方鐵門鎖定・需淨化 3 個暗黑核心", onTap: () => triggerSound("click") };
+        } else {
         const guardian = state.darkCoreGuardian as DarkCoreGuardian | null;
         const guardianDistance = guardian ? Math.hypot(guardian.x - player.x, guardian.y - player.y) : Infinity;
         if (guardian && guardianDistance <= DARK_CORE_INTERACTION_RANGE && guardianDistance < nearestDistance) {
@@ -3810,6 +3876,7 @@ export function MissionGame({
           };
         } else {
           interactionTargetRef.current = null;
+        }
         }
       } else {
         interactionTargetRef.current = null;
@@ -5093,6 +5160,28 @@ export function MissionGame({
 
       // Chapter 2 dark-core objective. Artwork is selected by phase: CORE 1–2
       // idle, CORE 3–7 across purification progress, and CORE 8–9 on success.
+      const chapterTwoGate = state.chapterTwoGate as ChapterTwoGate | null;
+      if (stage === "PLAYING" && chapterTwoGate) {
+        const gatePulse = (Math.sin(state.ticks * 0.12) + 1) / 2;
+        ctx.save();
+        ctx.translate(chapterTwoGate.x, chapterTwoGate.y);
+        ctx.fillStyle = chapterTwoGate.unlocked ? `rgba(34, 211, 238, ${0.16 + gatePulse * 0.16})` : "rgba(20, 12, 22, .88)";
+        ctx.fillRect(-44, -48, 88, 72);
+        ctx.strokeStyle = chapterTwoGate.unlocked ? "#67e8f9" : "#71717a";
+        ctx.lineWidth = chapterTwoGate.unlocked ? 3 : 2;
+        ctx.strokeRect(-44, -48, 88, 72);
+        ctx.strokeStyle = chapterTwoGate.unlocked ? "rgba(165, 243, 252, .9)" : "#3f3f46";
+        ctx.beginPath(); ctx.moveTo(-29, -48); ctx.lineTo(-29, 24); ctx.moveTo(0, -48); ctx.lineTo(0, 24); ctx.moveTo(29, -48); ctx.lineTo(29, 24); ctx.stroke();
+        ctx.fillStyle = chapterTwoGate.unlocked ? "#cffafe" : "#a1a1aa";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(chapterTwoGate.unlocked ? "↑ 上層封鎖區" : "🔒 上方鐵門", 0, -60);
+        if (chapterTwoGate.unlocked && Math.hypot(chapterTwoGate.x - player.x, chapterTwoGate.y - player.y) <= CHAPTER_TWO_GATE_INTERACTION_RANGE) {
+          ctx.fillStyle = "#fef3c7";
+          ctx.fillText("點擊互動進入", 0, 40);
+        }
+        ctx.restore();
+      }
       if (stage === "PLAYING" && state.darkCores) {
         state.darkCores.forEach((core: DarkCoreEntity) => {
           const imageIndex = core.phase === "corrupted"
