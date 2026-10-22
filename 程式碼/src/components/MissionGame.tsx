@@ -204,6 +204,7 @@ const CHAPTER_ONE_NPC_LINES = [
 ] as const;
 
 const CHAPTER_ONE_SHELTER_CLEARED_KEY = "squad_chapter_one_shelter_cleared";
+const CHAPTER_ONE_SHIELD_REWARD_KEY = "squad_chapter_one_shield_materials_awarded";
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
@@ -495,6 +496,7 @@ export function MissionGame({
   const [collectedMaterials, setCollectedMaterials] = useState<MaterialInventory>(createEmptyMaterialInventory);
   const materialsBankedRef = useRef(false);
   const missionCoinsBankedRef = useRef(false);
+  const chapterOneShieldRewardGrantedRef = useRef(false);
 
   // Upgrades overlay choice
   const [showUpgradeChoice, setShowUpgradeChoice] = useState<boolean>(false);
@@ -1526,6 +1528,29 @@ export function MissionGame({
     });
   };
 
+  const grantChapterOneShieldMaterials = () => {
+    if (chapterOneShieldRewardGrantedRef.current) return false;
+    try {
+      if (localStorage.getItem(CHAPTER_ONE_SHIELD_REWARD_KEY) === "true") {
+        chapterOneShieldRewardGrantedRef.current = true;
+        return false;
+      }
+      localStorage.setItem(CHAPTER_ONE_SHIELD_REWARD_KEY, "true");
+    } catch { /* keep the in-session reward available if storage is blocked */ }
+    chapterOneShieldRewardGrantedRef.current = true;
+    const reward = createEmptyMaterialInventory();
+    // Exactly covers the first Energy Shield upgrade: 2 mounting kits + 2 batteries.
+    reward.defense_module = 2;
+    reward.energy_core = 2;
+    onMaterialsEarned(reward);
+    setCollectedMaterials((current) => ({
+      ...current,
+      defense_module: current.defense_module + reward.defense_module,
+      energy_core: current.energy_core + reward.energy_core,
+    }));
+    return true;
+  };
+
   const startGame = () => {
     if (!missionMapReady) return;
     const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
@@ -1566,6 +1591,9 @@ export function MissionGame({
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
     setCollectedMaterials(createEmptyMaterialInventory());
+    // Migration-safe: players who cleared Chapter 1 before this reward was
+    // introduced still receive the one-time shield starter kit on re-entry.
+    if (chapterOneAlreadyCleared) grantChapterOneShieldMaterials();
     materialsBankedRef.current = false;
     missionCoinsBankedRef.current = false;
     setRobotSelection(null);
@@ -2203,13 +2231,16 @@ export function MissionGame({
               state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
               state.spawnTimer = 0;
               try { localStorage.setItem(CHAPTER_ONE_SHELTER_CLEARED_KEY, "true"); } catch { /* local progress is optional */ }
+              const shieldMaterialsAwarded = grantChapterOneShieldMaterials();
               if (!missionCompletionRecordedRef.current) {
                 missionCompletionRecordedRef.current = true;
                 recordAction("stagesCleared");
               }
               setUnlockedChapters((current) => current.includes(2) ? current : [...current, 2].sort((a, b) => a - b));
               setChapterOneCompletionComm(true);
-              setInteractionFeedback("工業區避難所已清除：通訊與傳送程序啟動");
+              setInteractionFeedback(shieldMaterialsAwarded
+                ? "工業區避難所已清除：獲得能量護盾素材（電池 ×2、固定支架與螺絲 ×2）"
+                : "工業區避難所已清除：通訊與傳送程序啟動");
               triggerSound("success");
               return 0;
             }
