@@ -373,10 +373,12 @@ const WEAPONS_INFO: Record<string, WeaponInfo> = {
 
 const LIGHT_ATTACK_PROFILES = {
   LOW: {
-    range: 140,
-    fanSize: Math.PI / 2.4,
-    lightRange: 300,
-    lightFanSize: Math.PI / 2.2,
+    // Low light is the player's sustainable exploration tool. Give it a
+    // comfortably usable cone while keeping High mode meaningfully broader.
+    range: 200,
+    fanSize: Math.PI / 2.05,
+    lightRange: 380,
+    lightFanSize: Math.PI / 1.95,
   },
   HIGH: {
     range: 280,
