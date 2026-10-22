@@ -2110,7 +2110,6 @@ export function MissionGame({
           if (prev === 11 && selectedChapter !== 1 && !tideCountdownAnnouncedRef.current) {
             tideCountdownAnnouncedRef.current = true;
             setTideAlert("countdown");
-            setInteractionFeedback("警報：黑潮能量即將突破臨界值");
             triggerSound("countdown");
           }
           if (prev <= 1) {
