@@ -121,6 +121,7 @@ interface DarkCoreEntity {
   progress: number;
   initialVariant: number;
   purifiedVariant: number;
+  completionUntilTick: number;
 }
 
 interface DarkCoreGuardian {
@@ -1715,6 +1716,7 @@ export function MissionGame({
           progress: 0,
           initialVariant: index % 2,
           purifiedVariant: index % 2,
+          completionUntilTick: 0,
         });
       }
       // The first core is watched by a neutral, unkillable sentinel. It is
@@ -3781,6 +3783,7 @@ export function MissionGame({
             }
             if (core.progress >= 1) {
               core.phase = "purified";
+              core.completionUntilTick = state.ticks + 90;
               triggerSound("corePurifyComplete");
               const allCoresPurified = state.darkCores.length === DARK_CORE_COUNT && state.darkCores.every((item: DarkCoreEntity) => item.phase === "purified");
               const chapterTwoGate = state.chapterTwoGate as ChapterTwoGate | null;
@@ -3851,6 +3854,20 @@ export function MissionGame({
                     state.enemies = [];
                     state.spawnTimer = 0;
                     state.overtime = false;
+                    state.darkCores = [];
+                    state.darkCoreGuardian = null;
+                    const factoryTwoPositions: Array<{ x: number; y: number }> = [];
+                    for (let index = 0; index < DARK_CORE_COUNT; index++) {
+                      let spawn: { x: number; y: number } | null = null;
+                      for (let attempt = 0; attempt < 18; attempt++) {
+                        const candidate = findWalkableSpawn(26, player, 190 + index * 72);
+                        if (!candidate) continue;
+                        if (factoryTwoPositions.every((placed) => Math.hypot(candidate.x - placed.x, candidate.y - placed.y) > 180)) { spawn = candidate; break; }
+                      }
+                      if (!spawn) continue;
+                      factoryTwoPositions.push(spawn);
+                      state.darkCores.push({ id: `factory-two-core-${index}`, ...spawn, radius: 28, phase: "corrupted", progress: 0, initialVariant: index % 2, purifiedVariant: index % 2, completionUntilTick: 0 });
+                    }
                     setIsOvertime(false);
                     setTimeLeft(isDemoMode ? 30 : 90);
                     setTideAlert("idle");
@@ -5604,28 +5621,6 @@ export function MissionGame({
         }
         ctx.restore();
         ctx.save();
-        if (guardian.dialogueText && state.ticks < guardian.dialogueUntilTick) {
-          ctx.font = "bold 10px monospace";
-          const bubbleWidth = Math.max(104, ctx.measureText(guardian.dialogueText).width + 22);
-          const bubbleX = guardian.x - bubbleWidth / 2;
-          const bubbleY = guardian.y - guardian.radius - 47;
-          ctx.fillStyle = "rgba(8, 47, 73, 0.94)";
-          ctx.strokeStyle = "rgba(103, 232, 249, 0.82)";
-          ctx.lineWidth = 1;
-          ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 24);
-          ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 24);
-          ctx.beginPath();
-          ctx.moveTo(guardian.x - 4, bubbleY + 24);
-          ctx.lineTo(guardian.x + 4, bubbleY + 24);
-          ctx.lineTo(guardian.x, bubbleY + 30);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = "#e0f2fe";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(guardian.dialogueText, guardian.x, bubbleY + 12);
-        }
         if (nearGuardian) {
           ctx.font = "bold 10px monospace";
           ctx.fillStyle = "#e0f2fe";
@@ -6564,6 +6559,49 @@ export function MissionGame({
         });
       }
 
+      // Chapter 2 NPC dialogue and core-complete labels share the foreground
+      // layer, above every monster, player sprite, particle, and light effect.
+      if (stage === "PLAYING" && state.darkCoreGuardian) {
+        const guardian = state.darkCoreGuardian as DarkCoreGuardian;
+        if (guardian.dialogueText && state.ticks < guardian.dialogueUntilTick) {
+          ctx.save();
+          ctx.font = "bold 10px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const bubbleWidth = Math.max(142, ctx.measureText(guardian.dialogueText).width + 24);
+          const bubbleX = guardian.x - bubbleWidth / 2;
+          const bubbleY = guardian.y - guardian.radius - 56;
+          ctx.fillStyle = "rgba(8, 47, 73, 0.98)";
+          ctx.strokeStyle = "#67e8f9";
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "#67e8f9";
+          ctx.shadowBlur = 10;
+          ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 27);
+          ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 27);
+          ctx.shadowBlur = 0;
+          ctx.beginPath(); ctx.moveTo(guardian.x - 5, bubbleY + 27); ctx.lineTo(guardian.x + 5, bubbleY + 27); ctx.lineTo(guardian.x, bubbleY + 33); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = "#f8fafc";
+          ctx.fillText(guardian.dialogueText, guardian.x, bubbleY + 13.5);
+          ctx.restore();
+        }
+      }
+      if (stage === "PLAYING" && state.darkCores) {
+        (state.darkCores as DarkCoreEntity[]).forEach((core) => {
+          if (state.ticks >= core.completionUntilTick) return;
+          ctx.save();
+          ctx.font = "bold 14px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.strokeStyle = "#020617";
+          ctx.lineWidth = 4;
+          ctx.lineJoin = "round";
+          ctx.strokeText("淨化完成", core.x, core.y - 72);
+          ctx.fillStyle = "#fef08a";
+          ctx.fillText("淨化完成", core.x, core.y - 72);
+          ctx.restore();
+        });
+      }
+
       ctx.restore(); // matches camera translate
 
       // ==========================================
@@ -7241,9 +7279,9 @@ export function MissionGame({
                 }
               />
               {areaTransition && <div className="factory-area-transition pointer-events-none absolute inset-0 z-[46] grid place-items-center px-4" aria-live="assertive">
-                <div className="w-[min(92%,620px)] border-4 border-amber-400 bg-[#120f09]/95 px-5 py-7 text-center shadow-[0_0_0_5px_rgba(69,50,8,.72),0_0_48px_rgba(245,158,11,.7)] sm:px-9 sm:py-10">
+                <div className="text-center">
                   <p className="font-mono text-[10px] font-black tracking-[.3em] text-amber-200 sm:text-sm">CHAPTER 02 · NEW AREA UNLOCKED</p>
-                  <h2 className="mt-3 font-pixel text-[clamp(36px,10vw,80px)] font-black leading-none text-amber-300 [text-shadow:3px_3px_0_#422006,0_0_20px_#f59e0b]">{areaTransition}</h2>
+                  <h2 className="pixel-title-outline mt-3 font-pixel text-[clamp(36px,10vw,80px)] font-black leading-none text-amber-300">{areaTransition}</h2>
                   <p className="mt-3 font-mono text-[11px] font-bold tracking-[.18em] text-cyan-100">BLACK TIDE TIMER RESET · 重新開始倒數</p>
                 </div>
               </div>}
@@ -7256,10 +7294,9 @@ export function MissionGame({
                   <p className="mt-1 font-mono text-[8px] tracking-[.22em] text-violet-200/85">DARK MATTER SURGE DETECTED</p>
                 </div>}
                 {tideAlert === "rising" && <div className="black-tide-title-card absolute inset-0 grid place-items-center px-4">
-                  <div className="relative w-[min(94%,680px)] border-4 border-rose-600 bg-[#10030b]/95 px-4 py-6 text-center shadow-[0_0_0_5px_rgba(76,5,25,.7),0_0_48px_rgba(220,38,38,.75)] sm:px-8 sm:py-9">
-                    <span className="absolute left-2 top-2 h-2 w-8 bg-rose-500" /><span className="absolute bottom-2 right-2 h-2 w-8 bg-violet-500" />
+                  <div className="text-center">
                     <p className="font-mono text-[10px] font-black tracking-[.34em] text-rose-300 sm:text-sm">⚠ EMERGENCY ALERT ⚠</p>
-                    <h2 className="mt-3 font-pixel text-[clamp(34px,9vw,76px)] font-black leading-none tracking-[.03em] text-rose-500 [text-shadow:3px_3px_0_#24040d,-2px_-2px_0_#7e1d3a,0_0_20px_#dc2626]">黑潮來襲</h2>
+                    <h2 className="pixel-title-outline mt-3 font-pixel text-[clamp(34px,9vw,76px)] font-black leading-none tracking-[.03em] text-rose-500">黑潮來襲</h2>
                     <p className="mt-3 font-mono text-[clamp(12px,2.8vw,20px)] font-black tracking-[.28em] text-violet-200">BLACK TIDE RISING</p>
                     <p className="mt-3 font-mono text-[10px] font-bold tracking-wider text-rose-200">敵群、血量、攻擊力 ×2　請立即撤離</p>
                   </div>

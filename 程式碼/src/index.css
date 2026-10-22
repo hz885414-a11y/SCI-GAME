@@ -724,3 +724,4 @@
 .black-tide-countdown { animation: blackTideBorderPulse .72s steps(2, end) infinite; }
 .black-tide-title-card { animation: blackTideTitleImpact 2s steps(2, end) both; }
 .factory-area-transition { background: radial-gradient(ellipse, rgba(120,83,8,.24), rgba(0,0,0,.72) 68%); animation: factoryAreaTransition 2.2s steps(2, end) both; }
+.pixel-title-outline { -webkit-text-stroke: 2px #020202; text-shadow: 4px 0 #020202, -4px 0 #020202, 0 4px #020202, 0 -4px #020202, 3px 3px #020202, -3px -3px #020202, 0 0 18px currentColor; }
