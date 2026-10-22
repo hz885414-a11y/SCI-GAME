@@ -3438,6 +3438,10 @@ export function MissionGame({
             handleGameOver();
           }
           player.invincibleTime = 45; // invincible for 45 frames (~0.75s)
+          // Standard mission hits need a strong readable physical response;
+          // the invincibility window prevents this from repeatedly shaking
+          // the display while a monster remains in contact.
+          triggerCameraShake(state, state.overtime ? 14 : 11);
           triggerSound("hit");
 
           // Knockback player slightly
