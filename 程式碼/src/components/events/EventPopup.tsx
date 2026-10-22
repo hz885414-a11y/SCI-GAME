@@ -23,14 +23,14 @@ export function EventPopup({ reward, playSound }: EventPopupProps) {
   }, [event.id]);
 
   const revealCard = () => {
-    playSound("success");
+    playSound("cardAppear");
     setPhase("card");
   };
 
   const finish = async () => {
     if (isCollecting) return;
     setIsCollecting(true);
-    playSound("click");
+    playSound("cardCollect");
     const cardScene = cardSceneRef.current;
     const collectionButton = document.querySelector<HTMLElement>("[data-knowledge-book]");
     if (cardScene) {
@@ -97,7 +97,7 @@ export function EventPopup({ reward, playSound }: EventPopupProps) {
         </>}
         {phase === "card" && (
           <div ref={cardSceneRef} className="flex flex-col items-center gap-3 animate-scale-up will-change-transform">
-            <CardFlip data={cardData} resetKey={reward.rewardId} storyEffect={card.storyEffect} onFlip={() => playSound("click")} onFlippedChange={setCardFlipped} />
+            <CardFlip data={cardData} resetKey={reward.rewardId} storyEffect={card.storyEffect} onFlip={() => playSound("cardFlip")} onFlippedChange={setCardFlipped} />
             <p className="font-mono text-[10px] tracking-[0.18em] text-zinc-400">{cardFlipped ? "CARD DATA DECODED" : "點擊卡片翻面"}</p>
             {cardFlipped && <button type="button" onClick={finish} disabled={isCollecting} className="w-full max-w-[400px] border border-red-500/80 bg-red-950/80 px-5 py-3 text-sm font-black tracking-widest text-red-100 transition hover:bg-red-900 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60">{isCollecting ? "收納中…" : "收入收藏並繼續"}</button>}
           </div>

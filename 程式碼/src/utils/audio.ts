@@ -252,6 +252,34 @@ export function playSound(type: string) {
         tone(180, 0.18, 0.035, "sine", 720);
         break;
       }
+      case "cardAppear": {
+        // Warm decoding arpeggio: the card has just entered the scene.
+        [392, 523, 659].forEach((frequency, index) => tone(frequency, 0.18, 0.026, "triangle", frequency * 1.12));
+        break;
+      }
+      case "cardFlip": {
+        // A concise paper-like sweep makes the physical flip readable.
+        tone(780, 0.12, 0.028, "square", 240);
+        noiseBurst(0.05, 0.012, 2400);
+        break;
+      }
+      case "cardCollect": {
+        // Collection is deliberately richer than the reveal, confirming the
+        // card has actually been saved to the player's archive.
+        [523, 659, 784, 1047].forEach((frequency, index) => {
+          const startAt = now + index * 0.06;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(frequency, startAt);
+          gain.gain.setValueAtTime(0.032, startAt);
+          gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(startAt);
+          osc.stop(startAt + 0.16);
+        });
+        break;
+      }
       case "corePurifyStart": {
         // A restrained energy lock-on confirms that the player has begun
         // purifying a dark core, without competing with combat effects.
