@@ -128,6 +128,26 @@ interface DarkCoreGuardian {
   dialogueUntilTick: number;
 }
 
+interface ShelterNpc {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  dialogueLines: readonly string[];
+  interactionCount: number;
+  dialogueText: string | null;
+  dialogueUntilTick: number;
+}
+
+const SHELTER_NPC_SEEDS = [
+  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
+  { id: "engineer", name: "維修工程師", color: "#fbbf24", dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
+  { id: "scout", name: "前線觀測員", color: "#a7f3d0", dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
+] as const;
+const SHELTER_NPC_INTERACTION_RANGE = 94;
+
 const DARK_CORE_MEMORY_LINES = [
   "等了好久好久 ...",
   "什麼時候回來 ...",
@@ -1004,6 +1024,7 @@ export function MissionGame({
     enemyDeathEffects: [] as EnemyDeathEffect[],
     darkCores: [] as DarkCoreEntity[],
     darkCoreGuardian: null as DarkCoreGuardian | null,
+    shelterNpcs: [] as ShelterNpc[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
     bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
@@ -1538,6 +1559,7 @@ export function MissionGame({
       enemyDeathEffects: [],
       darkCores: [],
       darkCoreGuardian: null,
+      shelterNpcs: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -1552,6 +1574,9 @@ export function MissionGame({
       sessionCoins: 0
     };
 
+    // A cleared shelter is a story hub. It deliberately contains no floor
+    // loot, so the scene reads as a safe NPC space rather than a replay run.
+    if (!chapterOneAlreadyCleared) {
     // Spawn initial items & decorations
     for (let i = 0; i < 15; i++) {
       const spawn = findWalkableSpawn(8);
@@ -1593,6 +1618,15 @@ export function MissionGame({
         pulse: Math.random() * Math.PI
       });
     });
+    }
+
+    if (chapterOneAlreadyCleared) {
+      engineRef.current.shelterNpcs = SHELTER_NPC_SEEDS.map((seed, index) => {
+        const fallback = { x: initialPlayerPosition.x + 86 + index * 56, y: initialPlayerPosition.y + (index % 2 ? 72 : -58) };
+        const position = findWalkableSpawn(18, initialPlayerPosition, 108 + index * 22) || fallback;
+        return { ...seed, ...position, radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0 };
+      });
+    }
 
     // Chapter two introduces an immobile objective: three dark cores are
     // placed on valid map ground and remain where they spawned for the run.
@@ -3594,7 +3628,24 @@ export function MissionGame({
       // three-second meter stays smooth and does not cause a component render
       // every simulation step. Leaving range pauses purification; interacting
       // again beside the core resumes it from the displayed amount.
-      if (stage === "PLAYING" && state.darkCores) {
+      if (stage === "PLAYING" && selectedChapter === 1 && chapterOnePeacefulRef.current) {
+        const nearbyNpc = (state.shelterNpcs as ShelterNpc[]).reduce<ShelterNpc | null>((nearest, npc) => {
+          if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
+          return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
+        }, null);
+        if (nearbyNpc) {
+          interactionTargetRef.current = {
+            label: `與${nearbyNpc.name}交談`,
+            onTap: () => {
+              nearbyNpc.dialogueText = nearbyNpc.dialogueLines[nearbyNpc.interactionCount % nearbyNpc.dialogueLines.length];
+              nearbyNpc.dialogueUntilTick = state.ticks + 210;
+              nearbyNpc.interactionCount += 1;
+            },
+          };
+        } else {
+          interactionTargetRef.current = null;
+        }
+      } else if (stage === "PLAYING" && state.darkCores) {
         let nearestCore: DarkCoreEntity | null = null;
         let nearestDistance = Infinity;
 
@@ -5396,6 +5447,46 @@ export function MissionGame({
           ctx.fillText("按 Z／互動", guardian.x, guardian.y + guardian.radius + 22);
         }
         ctx.restore();
+      }
+
+      // Cleared Chapter 1 turns into a small, testable NPC hub. These are
+      // rendered in the world (not the HUD), so speech bubbles follow each NPC.
+      if (stage === "PLAYING" && isPeacefulShelter) {
+        (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
+          const nearNpc = Math.hypot(npc.x - player.x, npc.y - player.y) <= SHELTER_NPC_INTERACTION_RANGE;
+          const bob = Math.sin(state.ticks * 0.08 + npc.x * 0.02) * 2;
+          ctx.save();
+          ctx.translate(npc.x, npc.y + bob);
+          ctx.fillStyle = `${npc.color}33`;
+          ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = npc.color;
+          ctx.beginPath(); ctx.arc(0, -8, 11, 0, Math.PI * 2); ctx.fill();
+          ctx.fillRect(-10, 3, 20, 22);
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(-5, -10, 3, 3); ctx.fillRect(2, -10, 3, 3);
+          ctx.restore();
+          ctx.save();
+          ctx.font = "bold 10px monospace";
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#e0f2fe";
+          ctx.fillText(npc.name, npc.x, npc.y + 43);
+          if (nearNpc) ctx.fillText("按 Z／互動", npc.x, npc.y + 58);
+          if (npc.dialogueText && state.ticks < npc.dialogueUntilTick) {
+            const bubbleWidth = Math.max(142, ctx.measureText(npc.dialogueText).width + 24);
+            const bubbleX = npc.x - bubbleWidth / 2;
+            const bubbleY = npc.y - npc.radius - 56;
+            ctx.fillStyle = "rgba(8, 47, 73, 0.96)";
+            ctx.strokeStyle = npc.color;
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 27);
+            ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 27);
+            ctx.beginPath(); ctx.moveTo(npc.x - 5, bubbleY + 27); ctx.lineTo(npc.x + 5, bubbleY + 27); ctx.lineTo(npc.x, bubbleY + 33); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "#f8fafc";
+            ctx.textBaseline = "middle";
+            ctx.fillText(npc.dialogueText, npc.x, bubbleY + 13.5);
+          }
+          ctx.restore();
+        });
       }
 
       // E. Draw Boss (if active)
