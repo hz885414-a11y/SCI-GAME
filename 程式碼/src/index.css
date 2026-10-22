@@ -276,7 +276,7 @@
 /* The laboratory speech bubble changes often during dialogue. On mobile a
    backdrop filter forces expensive recomposition of the scene below it, so
    preserve readability with a plain translucent panel instead. */
-@media (max-width: 767px) {
+@media (max-width: 767.98px) {
   .lab-ambient-speech-bubble {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;

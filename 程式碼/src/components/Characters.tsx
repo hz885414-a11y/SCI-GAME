@@ -109,11 +109,11 @@ export const CharacterStandee: React.FC<CharacterStandeeProps> = ({
   layout: configuredLayout,
 }) => {
   const [isMobileViewport, setIsMobileViewport] = React.useState(() =>
-    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767.98px)").matches,
   );
 
   React.useEffect(() => {
-    const media = window.matchMedia("(max-width: 767px)");
+    const media = window.matchMedia("(max-width: 767.98px)");
     const syncViewport = () => setIsMobileViewport(media.matches);
     syncViewport();
     media.addEventListener("change", syncViewport);

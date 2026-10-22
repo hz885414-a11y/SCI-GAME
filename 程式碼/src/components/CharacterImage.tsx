@@ -76,7 +76,7 @@ export const CharacterImage: React.FC<CharacterImageProps> = ({
   // layout styles, so adding <picture> does not alter positioning.
   return mobileSrc ? (
     <picture>
-      <source media="(max-width: 767px)" srcSet={mobileSrc} type="image/webp" />
+      <source media="(max-width: 767.98px)" srcSet={mobileSrc} type="image/webp" />
       {image}
     </picture>
   ) : image;

@@ -62,6 +62,11 @@ import {
 type AppScene = "lab" | "tech" | "ops" | "supply";
 
 const APP_LAST_SCENE_KEY = "light_crew_last_scene";
+// All lab asset decisions must use the same threshold.  In particular, a
+// landscape phone between 640px and 767px must not receive desktop artwork.
+const MOBILE_BREAKPOINT_PX = 768;
+const getCharacterBreakpoint = (width: number): "desktop" | "tablet" | "mobile" =>
+  width < MOBILE_BREAKPOINT_PX ? "mobile" : width < 1024 ? "tablet" : "desktop";
 
 const loadLastScene = (): AppScene => {
   try {
@@ -76,21 +81,52 @@ const loadLastScene = (): AppScene => {
 
 // Helper to load saved images synchronously during initial state creation
 const loadSavedImages = (id: string) => {
-  const saved = localStorage.getItem(`custom_${id}_images`);
-  if (saved) {
-    try {
+  try {
+    const saved = localStorage.getItem(`custom_${id}_images`);
+    if (saved) {
       return JSON.parse(saved);
-    } catch (e) {
-      // ignore
     }
+    const legacy = localStorage.getItem(`custom_${id}`);
+    return {
+      happy: legacy || null,
+      serious: null,
+      sad: null,
+      excited: null
+    };
+  } catch {
+    // Storage can be disabled in Safari private browsing and embedded webviews.
+    // A missing custom portrait must never prevent the laboratory from mounting.
+    return { happy: null, serious: null, sad: null, excited: null };
   }
-  const legacy = localStorage.getItem(`custom_${id}`);
-  return {
-    happy: legacy || null,
-    serious: null,
-    sad: null,
-    excited: null
-  };
+};
+
+/**
+ * Custom images are persisted in localStorage.  A camera photo can otherwise
+ * occupy tens of MB once decoded on a phone, so compact locally supplied data
+ * URLs before they enter React state. Remote URLs are left untouched because
+ * cross-origin canvas reads are not reliably permitted.
+ */
+const compactCustomImage = async (url: string | null): Promise<string | null> => {
+  if (!url || !url.startsWith("data:image/")) return url;
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = url;
+    await image.decode();
+    const sourceMaxSide = Math.max(image.naturalWidth, image.naturalHeight);
+    if (!sourceMaxSide || sourceMaxSide <= 1280) return url;
+    const scale = 1280 / sourceMaxSide;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return url;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/webp", 0.82);
+  } catch {
+    // Keep the original if a browser cannot decode or encode WebP.
+    return url;
+  }
 };
 
 export default function App() {
@@ -102,7 +138,7 @@ export default function App() {
   // Decoding several large remote PNGs at once can make mobile browsers reload
   // the tab. Mobile starts with the first page the player will actually see
   // plus the three tutorial portraits; later pages load on demand.
-  const isMobileOpeningBoot = typeof window !== "undefined" && window.innerWidth < 640;
+  const isMobileOpeningBoot = typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT_PX;
   const prologuePagesToPreload = isMobileOpeningBoot ? gameConfig.prologue.slice(0, 1) : gameConfig.prologue;
   const openingSequenceAssets = shouldPreloadOpeningSequence ? [
     ...prologuePagesToPreload.flatMap((page, index) => [
@@ -127,7 +163,7 @@ export default function App() {
   const [isMusicMuted, setIsMusicMuted] = useState(false);
   const [isSupplyVideoOpen, setIsSupplyVideoOpen] = useState(false);
   const [musicVolume, setMusicVolumeState] = useState(50);
-  const [characterBreakpoint, setCharacterBreakpoint] = useState<"desktop" | "tablet" | "mobile">(() => window.innerWidth < 640 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop");
+  const [characterBreakpoint, setCharacterBreakpoint] = useState<"desktop" | "tablet" | "mobile">(() => getCharacterBreakpoint(window.innerWidth));
 
   // Standee visual style customization (photo default as requested)
   const [standeeStyle, setStandeeStyle] = useState<"svg" | "photo">("photo");
@@ -260,7 +296,7 @@ export default function App() {
 
   // Keep localStorage updated when state changes
   useEffect(() => {
-    const syncCharacterBreakpoint = () => setCharacterBreakpoint(window.innerWidth < 640 ? "mobile" : window.innerWidth < 1024 ? "tablet" : "desktop");
+    const syncCharacterBreakpoint = () => setCharacterBreakpoint(getCharacterBreakpoint(window.innerWidth));
     window.addEventListener("resize", syncCharacterBreakpoint);
     return () => window.removeEventListener("resize", syncCharacterBreakpoint);
   }, []);
@@ -352,7 +388,7 @@ export default function App() {
     // a jump back to the base screen. On phones, gate the transition on the
     // background only; the normal image elements then load portraits with the
     // browser's own memory scheduling after the Lab is already mounted.
-    const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+    const isMobileViewport = typeof window !== "undefined" && window.matchMedia("(max-width: 767.98px)").matches;
     if (targetScene === "lab") {
       // The lab background is the only asset required before navigation.
       // Waiting for three large portrait decodes made the entrance stutter on
@@ -655,9 +691,10 @@ export default function App() {
     localStorage.setItem("light_crew_standee_style", style);
   };
 
-  const handleCustomImageChange = (id: string, emotion: string, url: string | null) => {
+  const handleCustomImageChange = async (id: string, emotion: string, url: string | null) => {
+    const compactUrl = await compactCustomImage(url);
     if (id === "claire") {
-      const updated = { ...customClaire, [emotion]: url };
+      const updated = { ...customClaire, [emotion]: compactUrl };
       setCustomClaire(updated);
       try {
         localStorage.setItem("custom_claire_images", JSON.stringify(updated));
@@ -666,7 +703,7 @@ export default function App() {
       }
     }
     if (id === "ethan") {
-      const updated = { ...customEthan, [emotion]: url };
+      const updated = { ...customEthan, [emotion]: compactUrl };
       setCustomEthan(updated);
       try {
         localStorage.setItem("custom_ethan_images", JSON.stringify(updated));
@@ -675,7 +712,7 @@ export default function App() {
       }
     }
     if (id === "leo") {
-      const updated = { ...customLeo, [emotion]: url };
+      const updated = { ...customLeo, [emotion]: compactUrl };
       setCustomLeo(updated);
       try {
         localStorage.setItem("custom_leo_images", JSON.stringify(updated));
@@ -695,16 +732,23 @@ export default function App() {
       labDiagnosticInteractionRef.current += 1;
       const interactionCount = labDiagnosticInteractionRef.current;
       if (interactionCount === 1 || interactionCount % 10 === 0) reportLabPerformance(interactionCount);
-      // An ambient dialogue owns the interaction until its own timer finishes.
-      // In particular, a rapid sequence of character taps must never skip or
-      // restart its lines on a phone.
-      if (ambient.isPlaying()) return false;
+      // Let a character tap advance an active ambient dialogue through its
+      // own controller. `advance` clears the previous timer and applies the
+      // mobile tap guard, so repeated touches cannot create overlapping
+      // playback timers or skip several lines at once.
+      if (ambient.isPlaying()) return ambient.advance();
       const playedDialogue = ambient.triggerCharacter(charId);
       if (playedDialogue) return true;
       // 在手機版本上，點擊目前顯示的角色會循環切換至燈燈小隊的下一個隊員，增加互動感！
       const currentIndex = CHARACTERS.findIndex((c) => c.id === charId);
       const nextIndex = (currentIndex + 1) % CHARACTERS.length;
       setLastActiveSpeakerId(CHARACTERS[nextIndex].id);
+      return true;
+    }
+    // Counseling dialogue already has a single, timer-safe progression path.
+    // Reuse it here so tapping a character behaves exactly like NEXT / SKIP.
+    if (gameMode === "counseling" && storyLines.length > 0) {
+      handleDialogueNext();
       return true;
     }
     return false;
@@ -980,9 +1024,12 @@ export default function App() {
           }}
         />
 
-        {/* Glowing warm spotlights resembling high lumen lamps in the photo */}
-        <div className="absolute top-1/4 left-1/4 w-80 h-80 rounded-full bg-orange-500/5 blur-[90px] animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-amber-500/5 blur-[100px]" />
+        {/* These large blur layers require costly GPU compositing. Keep the
+            desktop atmosphere, but omit them in the phone laboratory view. */}
+        {characterBreakpoint !== "mobile" && <>
+          <div className="absolute left-1/4 top-1/4 h-80 w-80 rounded-full bg-orange-500/5 blur-[90px] animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 h-96 w-96 rounded-full bg-amber-500/5 blur-[100px]" />
+        </>}
       </div>
 
       {/* --- INDUSTRIAL LAB DECORATIVE OVERLAYS --- */}
