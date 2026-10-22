@@ -8332,18 +8332,15 @@ export function MissionGame({
         </div>
       )}
 
-      {/* Global Bottom Back Bar */}
-      {stage !== "PLAYING" && stage !== "BOSSBATTLE" && <div className="bg-zinc-950 border-t border-zinc-900 p-3.5 flex justify-between items-center text-[10px] text-zinc-500 font-sans z-10">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="hidden md:inline">勇敢の燈燈小隊 ── 攜手 SCI 工業照明科技 驅散一切未知的暗影</span>
-          <span className="font-mono text-zinc-400">⌨ 方向鍵/WASD 移動・Enter/Space 確認・P/Esc 暫停・R 重試</span>
-        </div>
+      {/* Selection screens keep one clear exit action instead of a keyboard-help bar. */}
+      {stage !== "PLAYING" && stage !== "BOSSBATTLE" && <div className="border-t border-zinc-900 bg-zinc-950 p-3 z-10">
         <button
+          type="button"
           onClick={onClose}
-          className="flex items-center gap-1 hover:text-orange-400 transition-colors cursor-pointer text-zinc-400 uppercase font-mono tracking-widest text-[10px]"
+          className="mx-auto flex min-h-11 w-full max-w-sm items-center justify-center gap-2 border border-orange-500/70 bg-orange-500/10 px-5 font-mono text-xs font-black tracking-[.16em] text-orange-200 transition hover:bg-orange-500 hover:text-zinc-950 active:scale-[.98]"
         >
-          <X className="w-3.5 h-3.5" />
-          <span>返回事業組基地 (EXIT MISSION)</span>
+          <X className="h-4 w-4" />
+          返回基地
         </button>
       </div>}
 
