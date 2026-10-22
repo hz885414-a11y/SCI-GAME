@@ -142,14 +142,12 @@ interface ShelterNpc {
 }
 
 const SHELTER_NPC_SEEDS = [
-  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
-  { id: "engineer", name: "維修工程師", color: "#fbbf24", dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
-  { id: "scout", name: "前線觀測員", color: "#a7f3d0", dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
-  { id: "medic", name: "現場醫護員", color: "#f9a8d4", dialogueLines: ["大家都平安，這是最重要的事。", "需要補給或休息，請告訴我。"] },
-  { id: "archivist", name: "資料記錄員", color: "#c4b5fd", dialogueLines: ["我正在整理這次清除行動的紀錄。", "避難所的故事，才正要重新開始。"] },
+  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", x: 160, y: 160, dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
+  { id: "engineer", name: "維修工程師", color: "#fbbf24", x: 1640, y: 160, dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
+  { id: "scout", name: "前線觀測員", color: "#a7f3d0", x: 160, y: 1040, dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
+  { id: "medic", name: "現場醫護員", color: "#f9a8d4", x: 1640, y: 1040, dialogueLines: ["大家都平安，這是最重要的事。", "需要補給或休息，請告訴我。"] },
 ] as const;
 const SHELTER_NPC_INTERACTION_RANGE = 94;
-const SHELTER_NPC_MIN_SPACING = 78;
 
 const DARK_CORE_MEMORY_LINES = [
   "等了好久好久 ...",
@@ -1624,35 +1622,7 @@ export function MissionGame({
     }
 
     if (chapterOneAlreadyCleared) {
-      const placedNpcPositions: Array<{ x: number; y: number }> = [];
-      engineRef.current.shelterNpcs = SHELTER_NPC_SEEDS.map((seed, index) => {
-        let position: { x: number; y: number } | null = null;
-        for (let attempt = 0; attempt < 28; attempt++) {
-          const candidate = findWalkableSpawn(18, initialPlayerPosition, 120 + (attempt % 4) * 28);
-          if (candidate && placedNpcPositions.every((placed) => Math.hypot(candidate.x - placed.x, candidate.y - placed.y) >= SHELTER_NPC_MIN_SPACING)) {
-            position = candidate;
-            break;
-          }
-        }
-        // A pentagon around the entry point is a deterministic, non-overlapping
-        // fallback if the collision mask cannot offer enough candidate ground.
-        if (!position) {
-          for (let attempt = 0; attempt < 12; attempt++) {
-            const angle = -Math.PI / 2 + (index + attempt * 0.37) * (Math.PI * 2 / SHELTER_NPC_SEEDS.length);
-            const radius = 170 + Math.floor(attempt / 5) * 68;
-            const fallback = { x: initialPlayerPosition.x + Math.cos(angle) * radius, y: initialPlayerPosition.y + Math.sin(angle) * radius };
-            if (placedNpcPositions.every((placed) => Math.hypot(fallback.x - placed.x, fallback.y - placed.y) >= SHELTER_NPC_MIN_SPACING)) {
-              position = fallback;
-              break;
-            }
-          }
-        }
-        // Every fallback ring is wider than the required separation, but keep
-        // a final deterministic position for defensive completeness.
-        position ||= { x: initialPlayerPosition.x + 420 + index * SHELTER_NPC_MIN_SPACING, y: initialPlayerPosition.y };
-        placedNpcPositions.push(position);
-        return { ...seed, ...position, radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0 };
-      });
+      engineRef.current.shelterNpcs = SHELTER_NPC_SEEDS.map((seed) => ({ ...seed, radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0 }));
     }
 
     // Chapter two introduces an immobile objective: three dark cores are
