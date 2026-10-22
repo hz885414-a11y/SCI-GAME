@@ -138,6 +138,15 @@ const DARK_CORE_PLAYER_FOLLOW_UP_LINES = [
   "等等回去實驗室找大家討論好了",
 ] as const;
 
+// Chapter one becomes a safe encounter space after its opening survival
+// sequence.  This is intentionally separate from the Boss system: it creates
+// a reliable place for story NPCs without affecting chapter progression.
+const CHAPTER_ONE_NPC_LINES = [
+  "警報解除。工業區避難所的外圍已沒有暗影反應。",
+  "未知研究員：你們終於到了。我一直在等能照亮這裡的人。",
+  "這裡之後會成為其他協力 NPC 登場與交換情報的安全據點。",
+] as const;
+
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
 );
@@ -221,8 +230,8 @@ interface Chapter {
 const CHAPTERS: Chapter[] = [
   {
     id: 1,
-    name: "第一章：都市停電區",
-    subtitle: "City Blackout",
+    name: "第一章：工業區避難所",
+    subtitle: "Industrial Shelter",
     bossName: "停電核心 (Blackout Core)",
     themeColor: "#f97316",
     groundColor: "#1e293b",
@@ -232,8 +241,8 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 2,
-    name: "第二章：夜間施工工地",
-    subtitle: "Night Construction Site",
+    name: "第二章：礦業小鎮",
+    subtitle: "Mining Town",
     bossName: "黑暗工程機甲 (Dark Mech)",
     themeColor: "#eab308",
     groundColor: "#27272a",
@@ -243,8 +252,8 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 3,
-    name: "第三章：港口貨櫃碼頭",
-    subtitle: "Port Terminal",
+    name: "第三章：被遺忘的研究所",
+    subtitle: "Forgotten Institute",
     bossName: "深海黑影 (Ocean Shadow)",
     themeColor: "#06b6d4",
     groundColor: "#1c2541",
@@ -254,8 +263,8 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 4,
-    name: "第四章：山區道路搶修",
-    subtitle: "Mountain Path",
+    name: "第四章：遙遠的地下基地",
+    subtitle: "Distant Underground Base",
     bossName: "山神黑獸 (Mountain Deity)",
     themeColor: "#10b981",
     groundColor: "#0b2b1a",
@@ -265,8 +274,8 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 5,
-    name: "第五章：地下捷運",
-    subtitle: "Metro Subway",
+    name: "第五章：曙光城－布萊梅",
+    subtitle: "Dawn City – Bremen",
     bossName: "暗影列車 (Shadow Train)",
     themeColor: "#8b5cf6",
     groundColor: "#2c2523",
@@ -276,8 +285,8 @@ const CHAPTERS: Chapter[] = [
   },
   {
     id: 6,
-    name: "第六章：SCI 實驗室",
-    subtitle: "SCI Laboratory",
+    name: "第六章：初始的中央核心",
+    subtitle: "The Original Central Core",
     bossName: "終極黑暗核心 (Dark Core)",
     themeColor: "#ec4899",
     groundColor: "#25172b",
@@ -396,6 +405,7 @@ export function MissionGame({
   // This is intentionally React state: it is a one-off story gate rather than
   // simulation data, and changing it must pause the fixed-step game loop.
   const [memoryFollowUpStep, setMemoryFollowUpStep] = useState<number | null>(null);
+  const [chapterOneNpcEventStep, setChapterOneNpcEventStep] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
   const [score, setScore] = useState<number>(0);
@@ -457,6 +467,7 @@ export function MissionGame({
   const previousMechaHpRef = useRef<number | null>(null);
   const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
+  const chapterOnePeacefulRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -1134,12 +1145,24 @@ export function MissionGame({
     triggerSound("click");
   };
 
+  const advanceChapterOneNpcEvent = () => {
+    setChapterOneNpcEventStep((step) => {
+      if (step === null) return step;
+      return step >= CHAPTER_ONE_NPC_LINES.length - 1 ? null : step + 1;
+    });
+    triggerSound("click");
+  };
+
   const triggerInteraction = (kind: "tap" | "hold") => {
     if (stage !== "PLAYING") return;
     // The interaction button doubles as the mobile-friendly "continue" key
     // while the memory scene freezes the mission.
     if (memoryFollowUpStep !== null) {
       advanceMemoryFollowUp();
+      return;
+    }
+    if (chapterOneNpcEventStep !== null) {
+      advanceChapterOneNpcEvent();
       return;
     }
     const target = interactionTargetRef.current;
@@ -1306,7 +1329,7 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, onClose]);
+  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, onClose]);
 
   useEffect(() => {
     if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
@@ -1428,6 +1451,8 @@ export function MissionGame({
     setIsMobileGameMenuOpen(false);
     cancelEvacuation();
     setMemoryFollowUpStep(null);
+    setChapterOneNpcEventStep(null);
+    chapterOnePeacefulRef.current = false;
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -1446,7 +1471,9 @@ export function MissionGame({
     setExpNeeded(100);
     setBatteryPercent(100);
     setBatteryMode("OFF");
-    setTimeLeft(isDemoMode ? 30 : 90);
+    // Chapter one always reaches its NPC encounter at the authored 60-second
+    // mark. Other chapters retain their existing quick-test / regular timers.
+    setTimeLeft(selectedChapter === 1 ? 60 : isDemoMode ? 30 : 90);
     setIsOvertime(false);
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
@@ -1931,7 +1958,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -1988,6 +2015,16 @@ export function MissionGame({
       if (stage === "PLAYING" && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev <= 1) {
+            if (selectedChapter === 1 && !chapterOnePeacefulRef.current) {
+              chapterOnePeacefulRef.current = true;
+              state.enemies = [];
+              state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
+              state.spawnTimer = 0;
+              setChapterOneNpcEventStep(0);
+              setInteractionFeedback("避難所安全訊號已建立：未知研究員請求通訊");
+              triggerSound("success");
+              return 0;
+            }
             if (!state.overtime) {
               state.overtime = true;
               state.enemies.forEach((enemy: EnemyEntity) => {
@@ -2132,7 +2169,7 @@ export function MissionGame({
       player.y = Math.max(player.radius, Math.min(state.mapSize.height - player.radius, player.y));
 
       // Camera tracking uses world coordinates in both exploration and the larger boss arena.
-      if (stage === "PLAYING") {
+      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
         state.camera.x = player.x - canvas.width / 2;
         state.camera.y = player.y - canvas.height / 2;
         // Clamp camera to map bounds
@@ -6411,7 +6448,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -6478,23 +6515,6 @@ export function MissionGame({
       } else {
         setStage("VICTORY");
       }
-
-    // Unlock next chapter if available
-    const nextCh = selectedChapter + 1;
-    if (nextCh <= 6) {
-      setUnlockedChapters((prev) => {
-        if (!prev.includes(nextCh)) {
-          const next = [...prev, nextCh].sort((a, b) => a - b);
-          try {
-            localStorage.setItem("squad_unlocked_chapters", JSON.stringify(next));
-          } catch (e) {
-            // fallback
-          }
-          return next;
-        }
-        return prev;
-      });
-    }
 
     // Award squad affection points +150 points to selected agent!
     setAffectionPoints((prev) => {
@@ -7797,6 +7817,21 @@ export function MissionGame({
                 <span>重新挑戰</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {stage === "PLAYING" && chapterOneNpcEventStep !== null && (
+        <div className="absolute inset-0 z-[75] flex items-end justify-center bg-black/55 p-4 pb-[max(24px,env(safe-area-inset-bottom))] sm:items-center sm:p-8" role="dialog" aria-modal="true" aria-label="工業區避難所事件">
+          <div className="w-full max-w-xl border border-cyan-400/60 bg-zinc-950/95 p-4 shadow-[0_0_48px_rgba(34,211,238,.18)] sm:p-6">
+            <p className="font-mono text-[10px] font-black tracking-[.26em] text-cyan-300">SHELTER SIGNAL // NPC ENCOUNTER</p>
+            <h2 className="mt-2 text-xl font-black tracking-wider text-white sm:text-2xl">工業區避難所：新的來訪者</h2>
+            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-200 sm:text-base">{CHAPTER_ONE_NPC_LINES[chapterOneNpcEventStep]}</p>
+            <p className="mt-3 text-[10px] leading-5 text-zinc-500">事件結束後，此區不再生成怪物，保留為後續 NPC 登場與劇情互動場所。</p>
+            <button type="button" onClick={advanceChapterOneNpcEvent} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-cyan-300 bg-cyan-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-cyan-200">
+              {chapterOneNpcEventStep >= CHAPTER_ONE_NPC_LINES.length - 1 ? "建立安全據點" : "繼續通訊"}
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       )}
