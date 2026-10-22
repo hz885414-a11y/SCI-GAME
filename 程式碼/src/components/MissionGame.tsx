@@ -411,6 +411,7 @@ export function MissionGame({
   // simulation data, and changing it must pause the fixed-step game loop.
   const [memoryFollowUpStep, setMemoryFollowUpStep] = useState<number | null>(null);
   const [chapterOneNpcEventStep, setChapterOneNpcEventStep] = useState<number | null>(null);
+  const [chapterOneCompletionComm, setChapterOneCompletionComm] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
   const [score, setScore] = useState<number>(0);
@@ -473,7 +474,6 @@ export function MissionGame({
   const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
   const chapterOnePeacefulRef = useRef(false);
-  const chapterOneJustClearedRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -1461,8 +1461,8 @@ export function MissionGame({
     cancelEvacuation();
     setMemoryFollowUpStep(null);
     setChapterOneNpcEventStep(null);
+    setChapterOneCompletionComm(false);
     chapterOnePeacefulRef.current = chapterOneAlreadyCleared;
-    chapterOneJustClearedRef.current = false;
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -1647,13 +1647,13 @@ export function MissionGame({
     setStartTitleActive(false);
   };
 
-  // The result screen belongs at base, not over the chapter map. Waiting for
-  // the state update keeps the final enemy cleanup from racing the unmount.
+  // The completion transmission is visible before the squad is transported
+  // home, so the 60-second result cannot be mistaken for a normal exit.
   useEffect(() => {
-    if (!chapterOneJustClearedRef.current) return;
-    chapterOneJustClearedRef.current = false;
-    onChapterOneShelterCleared();
-  }, [timeLeft, onChapterOneShelterCleared]);
+    if (!chapterOneCompletionComm) return;
+    const timer = window.setTimeout(onChapterOneShelterCleared, 2600);
+    return () => window.clearTimeout(timer);
+  }, [chapterOneCompletionComm, onChapterOneShelterCleared]);
 
   // Assembly Sequence transition
   const enterAssembly = () => {
@@ -1918,6 +1918,7 @@ export function MissionGame({
     let lastTimestamp: number | null = null;
     let accumulatedSeconds = FIXED_STEP_SECONDS;
     const activeChapter = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
+    const isPeacefulShelter = selectedChapter === 1 && chapterOnePeacefulRef.current;
     const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
 
     const isMobileDevice = window.innerWidth < 640;
@@ -1976,7 +1977,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -2035,12 +2036,17 @@ export function MissionGame({
           if (prev <= 1) {
             if (selectedChapter === 1 && !chapterOnePeacefulRef.current) {
               chapterOnePeacefulRef.current = true;
-              chapterOneJustClearedRef.current = true;
               state.enemies = [];
               state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
               state.spawnTimer = 0;
               try { localStorage.setItem(CHAPTER_ONE_SHELTER_CLEARED_KEY, "true"); } catch { /* local progress is optional */ }
-              setInteractionFeedback("工業區避難所已清除：正在返回營運機動部");
+              if (!missionCompletionRecordedRef.current) {
+                missionCompletionRecordedRef.current = true;
+                recordAction("stagesCleared");
+              }
+              setUnlockedChapters((current) => current.includes(2) ? current : [...current, 2].sort((a, b) => a - b));
+              setChapterOneCompletionComm(true);
+              setInteractionFeedback("工業區避難所已清除：通訊與傳送程序啟動");
               triggerSound("success");
               return 0;
             }
@@ -4894,7 +4900,7 @@ export function MissionGame({
       state.screenShake = shakeStrength > 0.15 ? shakeStrength * 0.78 : 0;
       ctx.translate(-state.camera.x + shakeX, -state.camera.y + shakeY);
 
-      ctx.fillStyle = activeChapter.groundColor;
+      ctx.fillStyle = isPeacefulShelter ? "#4f8195" : activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
 
       if (stage === "PLAYING" || stage === "BOSSBATTLE") {
@@ -4920,11 +4926,15 @@ export function MissionGame({
           );
           ctx.restore();
         }
+        if (isPeacefulShelter) {
+          ctx.fillStyle = "rgba(186, 230, 253, 0.40)";
+          ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
+        }
       }
 
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
       if (stage === "PLAYING") {
-        ctx.strokeStyle = activeChapter.gridColor;
+        ctx.strokeStyle = isPeacefulShelter ? "rgba(224, 242, 254, 0.48)" : activeChapter.gridColor;
         ctx.lineWidth = 1;
         const gridSize = 40;
         for (let x = 0; x < state.mapSize.width; x += gridSize) {
@@ -7836,6 +7846,19 @@ export function MissionGame({
                 <span>重新挑戰</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {stage === "PLAYING" && chapterOneCompletionComm && (
+        <div className="absolute inset-0 z-[76] flex items-center justify-center bg-sky-950/75 p-4 backdrop-blur-sm" role="status" aria-live="assertive" aria-label="避難所清除完成通訊">
+          <div className="w-full max-w-xl border border-cyan-200/80 bg-zinc-950/95 p-5 text-center shadow-[0_0_60px_rgba(125,211,252,.36)] sm:p-8">
+            <p className="font-mono text-[10px] font-black tracking-[.28em] text-cyan-200">SHELTER COMMS // CLEARANCE CONFIRMED</p>
+            <h2 className="mt-3 text-2xl font-black tracking-wider text-white sm:text-3xl">工業區避難所清除完成</h2>
+            <p className="mt-4 text-sm leading-7 text-cyan-50 sm:text-base">成功清除工業區避難所湧出的暗物質怪物。</p>
+            <p className="mt-3 text-xs leading-6 text-slate-300">安全訊號已建立。正在傳送小隊回到營運機動部，並觸發「避難所的清除」事件。</p>
+            <div className="mx-auto mt-5 h-1.5 max-w-xs overflow-hidden rounded-full bg-slate-800"><div className="h-full w-full animate-[pulse_1s_ease-in-out_infinite] bg-cyan-300" /></div>
+            <p className="mt-2 font-mono text-[10px] tracking-widest text-cyan-300">TRANSPORTING TO BASE…</p>
           </div>
         </div>
       )}
