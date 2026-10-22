@@ -178,6 +178,9 @@ const SHELTER_ROAMER_SEEDS = [
 const SHELTER_NPC_INTERACTION_RANGE = 94;
 const BLACK_TIDE_SPEED_MULTIPLIER = 1.8;
 const CHAPTER_TWO_GATE_INTERACTION_RANGE = 104;
+const CHAPTER_TWO_CORE_GATE_MIN_DISTANCE = 270;
+const CHAPTER_TWO_CORE_NPC_MIN_DISTANCE = 170;
+const CHAPTER_TWO_CORE_MIN_DISTANCE = 240;
 
 const DARK_CORE_MEMORY_LINES = [
   "等了好久好久 ...",
@@ -1767,6 +1770,31 @@ export function MissionGame({
         unlocked: false,
         entered: false,
       };
+      // Keep every interaction target in its own physical pocket. Without
+      // this buffer a core, guardian or gate can claim the same Z/interaction
+      // range, which makes one of them impossible to select on touch devices.
+      const gate = engineRef.current.chapterTwoGate!;
+      engineRef.current.darkCores.forEach((core: DarkCoreEntity, index: number, cores: DarkCoreEntity[]) => {
+        if (Math.hypot(core.x - gate.x, core.y - gate.y) >= CHAPTER_TWO_CORE_GATE_MIN_DISTANCE) return;
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const candidate = findWalkableSpawn(core.radius);
+          if (!candidate) continue;
+          const clearOfGate = Math.hypot(candidate.x - gate.x, candidate.y - gate.y) >= CHAPTER_TWO_CORE_GATE_MIN_DISTANCE;
+          const clearOfCores = cores.every((other, otherIndex) => otherIndex === index || Math.hypot(candidate.x - other.x, candidate.y - other.y) >= CHAPTER_TWO_CORE_MIN_DISTANCE);
+          if (clearOfGate && clearOfCores) { core.x = candidate.x; core.y = candidate.y; break; }
+        }
+      });
+      const guardian = engineRef.current.darkCoreGuardian;
+      const guardedCoreAfterSpacing = engineRef.current.darkCores[0];
+      if (guardian && guardedCoreAfterSpacing) {
+        for (let attempt = 0; attempt < 32; attempt++) {
+          const candidate = findWalkableSpawn(guardian.radius, guardedCoreAfterSpacing, CHAPTER_TWO_CORE_NPC_MIN_DISTANCE + attempt * 3);
+          if (!candidate) continue;
+          const clearOfGate = Math.hypot(candidate.x - gate.x, candidate.y - gate.y) >= CHAPTER_TWO_CORE_GATE_MIN_DISTANCE;
+          const clearOfAllCores = engineRef.current.darkCores.every((core: DarkCoreEntity) => Math.hypot(candidate.x - core.x, candidate.y - core.y) >= CHAPTER_TWO_CORE_NPC_MIN_DISTANCE);
+          if (clearOfGate && clearOfAllCores) { guardian.x = candidate.x; guardian.y = candidate.y; break; }
+        }
+      }
     }
 
     setStage("PLAYING");
@@ -3865,10 +3893,14 @@ export function MissionGame({
                     const factoryTwoPositions: Array<{ x: number; y: number }> = [];
                     for (let index = 0; index < DARK_CORE_COUNT; index++) {
                       let spawn: { x: number; y: number } | null = null;
-                      for (let attempt = 0; attempt < 18; attempt++) {
-                        const candidate = findWalkableSpawn(26, player, 190 + index * 72);
+                      for (let attempt = 0; attempt < 60; attempt++) {
+                        const candidate = attempt < 20
+                          ? findWalkableSpawn(26, player, 220 + index * 90)
+                          : findWalkableSpawn(26);
                         if (!candidate) continue;
-                        if (factoryTwoPositions.every((placed) => Math.hypot(candidate.x - placed.x, candidate.y - placed.y) > 180)) { spawn = candidate; break; }
+                        const clearOfOtherCores = factoryTwoPositions.every((placed) => Math.hypot(candidate.x - placed.x, candidate.y - placed.y) >= CHAPTER_TWO_CORE_MIN_DISTANCE);
+                        const clearOfGate = Math.hypot(candidate.x - chapterTwoGate.x, candidate.y - chapterTwoGate.y) >= CHAPTER_TWO_CORE_GATE_MIN_DISTANCE;
+                        if (clearOfOtherCores && clearOfGate) { spawn = candidate; break; }
                       }
                       if (!spawn) continue;
                       factoryTwoPositions.push(spawn);
