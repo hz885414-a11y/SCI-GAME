@@ -139,13 +139,27 @@ interface ShelterNpc {
   interactionCount: number;
   dialogueText: string | null;
   dialogueUntilTick: number;
+  movement: "corner" | "roam";
+  homeX: number;
+  homeY: number;
+  wanderRadius: number;
+  targetX: number;
+  targetY: number;
+  nextWanderTick: number;
 }
 
 const SHELTER_NPC_SEEDS = [
-  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", x: 160, y: 160, dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
-  { id: "engineer", name: "維修工程師", color: "#fbbf24", x: 1640, y: 160, dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
-  { id: "scout", name: "前線觀測員", color: "#a7f3d0", x: 160, y: 1040, dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
-  { id: "medic", name: "現場醫護員", color: "#f9a8d4", x: 1640, y: 1040, dialogueLines: ["大家都平安，這是最重要的事。", "需要補給或休息，請告訴我。"] },
+  { id: "liaison", name: "避難所聯絡員", color: "#67e8f9", x: 160, y: 160, movement: "corner", dialogueLines: ["清除紀錄已同步，謝謝你們。", "這裡終於能讓大家安心休息了。"] },
+  { id: "engineer", name: "維修工程師", color: "#fbbf24", x: 1640, y: 160, movement: "corner", dialogueLines: ["照明電網正在重啟。", "需要支援時，隨時來找我。"] },
+  { id: "scout", name: "前線觀測員", color: "#a7f3d0", x: 160, y: 1040, movement: "corner", dialogueLines: ["外圍沒有再偵測到暗物質反應。", "新的情報會在這裡交給你。"] },
+  { id: "medic", name: "現場醫護員", color: "#f9a8d4", x: 1640, y: 1040, movement: "corner", dialogueLines: ["大家都平安，這是最重要的事。", "需要補給或休息，請告訴我。"] },
+] as const;
+const SHELTER_ROAMER_SEEDS = [
+  { id: "courier", name: "補給傳遞員", color: "#fb7185", dialogueLines: ["我正在確認各區的補給狀態。"] },
+  { id: "resident", name: "避難居民", color: "#fdba74", dialogueLines: ["謝謝你們讓避難所恢復安靜。"] },
+  { id: "technician", name: "巡檢技師", color: "#60a5fa", dialogueLines: ["我會持續檢查照明迴路。"] },
+  { id: "researcher", name: "研究助理", color: "#d8b4fe", dialogueLines: ["暗物質樣本已經安全封存。"] },
+  { id: "volunteer", name: "救援志工", color: "#86efac", dialogueLines: ["有需要幫忙的地方請告訴我。"] },
 ] as const;
 const SHELTER_NPC_INTERACTION_RANGE = 94;
 
@@ -1622,7 +1636,20 @@ export function MissionGame({
     }
 
     if (chapterOneAlreadyCleared) {
-      engineRef.current.shelterNpcs = SHELTER_NPC_SEEDS.map((seed) => ({ ...seed, radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0 }));
+      const cornerNpcs = SHELTER_NPC_SEEDS.map((seed) => ({
+        ...seed, homeX: seed.x, homeY: seed.y, wanderRadius: 82,
+        targetX: seed.x, targetY: seed.y, nextWanderTick: 0,
+        radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0,
+      }));
+      const roamerNpcs = SHELTER_ROAMER_SEEDS.map((seed, index) => {
+        const position = findWalkableSpawn(18) || { x: 620 + index * 120, y: 420 + (index % 2) * 260 };
+        return {
+          ...seed, ...position, homeX: position.x, homeY: position.y, movement: "roam" as const,
+          wanderRadius: 0, targetX: position.x, targetY: position.y, nextWanderTick: 0,
+          radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0,
+        };
+      });
+      engineRef.current.shelterNpcs = [...cornerNpcs, ...roamerNpcs];
     }
 
     // Chapter two introduces an immobile objective: three dark cores are
@@ -3626,7 +3653,30 @@ export function MissionGame({
       // every simulation step. Leaving range pauses purification; interacting
       // again beside the core resumes it from the displayed amount.
       if (stage === "PLAYING" && selectedChapter === 1 && chapterOnePeacefulRef.current) {
-        const nearbyNpc = (state.shelterNpcs as ShelterNpc[]).reduce<ShelterNpc | null>((nearest, npc) => {
+        const shelterNpcs = state.shelterNpcs as ShelterNpc[];
+        shelterNpcs.forEach((npc) => {
+          const distanceToTarget = Math.hypot(npc.targetX - npc.x, npc.targetY - npc.y);
+          if (distanceToTarget < 4 || state.ticks >= npc.nextWanderTick) {
+            let destination: { x: number; y: number } | null = null;
+            if (npc.movement === "corner") {
+              for (let attempt = 0; attempt < 12; attempt++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 18 + Math.random() * (npc.wanderRadius - 18);
+                const candidate = { x: npc.homeX + Math.cos(angle) * radius, y: npc.homeY + Math.sin(angle) * radius };
+                if (isMissionPositionWalkable(candidate.x, candidate.y, npc.radius)) { destination = candidate; break; }
+              }
+            } else {
+              destination = findWalkableSpawn(npc.radius);
+            }
+            if (destination) { npc.targetX = destination.x; npc.targetY = destination.y; }
+            npc.nextWanderTick = state.ticks + 120 + Math.floor(Math.random() * 180);
+          }
+          if (distanceToTarget >= 4) {
+            const step = Math.min(distanceToTarget, npc.movement === "corner" ? 0.32 : 0.52);
+            moveWithinMissionMask(npc, (npc.targetX - npc.x) / distanceToTarget * step, (npc.targetY - npc.y) / distanceToTarget * step, npc.radius);
+          }
+        });
+        const nearbyNpc = shelterNpcs.reduce<ShelterNpc | null>((nearest, npc) => {
           if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
           return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
         }, null);
