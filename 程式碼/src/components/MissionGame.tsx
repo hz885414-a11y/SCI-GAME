@@ -2194,7 +2194,7 @@ export function MissionGame({
       player.y = Math.max(player.radius, Math.min(state.mapSize.height - player.radius, player.y));
 
       // Camera tracking uses world coordinates in both exploration and the larger boss arena.
-      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
+      if (stage === "PLAYING") {
         state.camera.x = player.x - canvas.width / 2;
         state.camera.y = player.y - canvas.height / 2;
         // Clamp camera to map bounds
@@ -3018,7 +3018,7 @@ export function MissionGame({
 
       // 5. UPDATE ENEMIES
       // Spawn enemies in survivors mode
-      if (stage === "PLAYING") {
+      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
         state.spawnTimer++;
         const overtimeMultiplier = state.overtime ? 2 : 1;
         const spawnLimit = Math.max(gameplayConfig.spawnMinInterval, gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150));
@@ -4900,7 +4900,7 @@ export function MissionGame({
       state.screenShake = shakeStrength > 0.15 ? shakeStrength * 0.78 : 0;
       ctx.translate(-state.camera.x + shakeX, -state.camera.y + shakeY);
 
-      ctx.fillStyle = isPeacefulShelter ? "#4f8195" : activeChapter.groundColor;
+      ctx.fillStyle = activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
 
       if (stage === "PLAYING" || stage === "BOSSBATTLE") {
@@ -4926,15 +4926,11 @@ export function MissionGame({
           );
           ctx.restore();
         }
-        if (isPeacefulShelter) {
-          ctx.fillStyle = "rgba(186, 230, 253, 0.40)";
-          ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
-        }
       }
 
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
       if (stage === "PLAYING") {
-        ctx.strokeStyle = isPeacefulShelter ? "rgba(224, 242, 254, 0.48)" : activeChapter.gridColor;
+        ctx.strokeStyle = activeChapter.gridColor;
         ctx.lineWidth = 1;
         const gridSize = 40;
         for (let x = 0; x < state.mapSize.width; x += gridSize) {
@@ -6282,7 +6278,9 @@ export function MissionGame({
       // ==========================================
       // H. REAL-TIME SUBTRACTIVE LIGHTING FOG OF WAR
       // ==========================================
-      if (stage === "PLAYING") {
+      // The cleared shelter uses its original map art without the Chapter 1
+      // darkness mask. Other chapters retain the normal light/fog mechanic.
+      if (stage === "PLAYING" && !isPeacefulShelter) {
         ctx.save();
         // Use cached offscreen canvas to avoid expensive DOM allocations on every frame (60fps)
         if (!offscreenCanvasRef.current) {
