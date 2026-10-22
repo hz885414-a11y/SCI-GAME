@@ -25,6 +25,11 @@ export interface KnowledgeCardDefinition {
   image: string;
   /** Visual emphasis for story-critical cards. Missing legacy values are standard. */
   storyEffect?: CardStoryEffect;
+  /**
+   * The knowledge archive is the default. World-node cards are a separate,
+   * future-facing collection shelf and do not change how a card is earned.
+   */
+  archiveShelf?: "world";
   bossEffect?: BossWeakeningEffect;
 }
 
