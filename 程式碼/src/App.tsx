@@ -674,6 +674,7 @@ export default function App() {
     localStorage.removeItem("light_crew_boot_complete");
     localStorage.removeItem("squad_chapter_one_shelter_cleared");
     localStorage.removeItem("squad_chapter_one_shield_materials_awarded");
+    localStorage.removeItem("squad_first_mission_light_guide_seen");
     localStorage.removeItem(APP_LAST_SCENE_KEY);
 
     // Reset the event system alongside the rest of the player's progress.

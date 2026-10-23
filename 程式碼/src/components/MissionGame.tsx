@@ -207,6 +207,15 @@ const CHAPTER_ONE_NPC_LINES = [
 
 const CHAPTER_ONE_SHELTER_CLEARED_KEY = "squad_chapter_one_shelter_cleared";
 const CHAPTER_ONE_SHIELD_REWARD_KEY = "squad_chapter_one_shield_materials_awarded";
+const FIRST_MISSION_LIGHT_GUIDE_KEY = "squad_first_mission_light_guide_seen";
+const FIRST_MISSION_LIGHT_GUIDE_LINES = [
+  "右下角的工作燈共有三段功能。",
+  "目前是關閉狀態，可以悄悄移動。",
+  "開啟一次後會切換成弱光模式。",
+  "再按一次是強光模式，會快速耗電！",
+  "光照到暗物質時，牠們就會發現你！",
+  "讓我們清除避難所的暗物質吧！",
+] as const;
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
@@ -427,6 +436,7 @@ export function MissionGame({
   const [showTipModal, setShowTipModal] = useState<boolean>(false);
   const [showBossTipModal, setShowBossTipModal] = useState<boolean>(false);
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
+  const [firstMissionLightGuideStep, setFirstMissionLightGuideStep] = useState<number | null>(null);
   const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "return" | "start" | null>(null);
   const [isGamePaused, setIsGamePaused] = useState<boolean>(false);
   const [isMobileGameMenuOpen, setIsMobileGameMenuOpen] = useState(false);
@@ -441,6 +451,11 @@ export function MissionGame({
     window.requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
     setTimeout(() => {
       setStartTitleActive(false);
+      if (firstMissionLightGuidePendingRef.current) {
+        firstMissionLightGuidePendingRef.current = false;
+        try { localStorage.setItem(FIRST_MISSION_LIGHT_GUIDE_KEY, "true"); } catch { /* local tutorial progress is optional */ }
+        setFirstMissionLightGuideStep(0);
+      }
     }, 1500);
   };
 
@@ -537,6 +552,7 @@ export function MissionGame({
   const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
   const chapterOnePeacefulRef = useRef(false);
+  const firstMissionLightGuidePendingRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -1135,6 +1151,29 @@ export function MissionGame({
     companionSkills: {} as Record<string, number>
   });
 
+  // The first deployment introduces the work light in short, readable
+  // speech bubbles above the player. It deliberately starts after the title
+  // card fades, so the guidance is never hidden under another overlay.
+  useEffect(() => {
+    if (firstMissionLightGuideStep === null) return;
+    const state = engineRef.current;
+    const line = FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep];
+    state.playerDialogueText = line;
+    state.playerDialogueUntilTick = Number.MAX_SAFE_INTEGER;
+    const timer = window.setTimeout(() => {
+      if (firstMissionLightGuideStep >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1) {
+        if (state.playerDialogueText === line) {
+          state.playerDialogueText = null;
+          state.playerDialogueUntilTick = 0;
+        }
+        setFirstMissionLightGuideStep(null);
+      } else {
+        setFirstMissionLightGuideStep(firstMissionLightGuideStep + 1);
+      }
+    }, 3800);
+    return () => window.clearTimeout(timer);
+  }, [firstMissionLightGuideStep]);
+
   useEffect(() => {
     if (bossIntroPhase === "entrance") {
       const timer = window.setTimeout(() => setBossIntroPhase("return"), 950);
@@ -1561,6 +1600,11 @@ export function MissionGame({
     const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
       try { return localStorage.getItem(CHAPTER_ONE_SHELTER_CLEARED_KEY) === "true"; } catch { return false; }
     })();
+    const isFirstMissionLightGuide = selectedChapter === 1 && !chapterOneAlreadyCleared && (() => {
+      try { return localStorage.getItem(FIRST_MISSION_LIGHT_GUIDE_KEY) !== "true"; } catch { return true; }
+    })();
+    firstMissionLightGuidePendingRef.current = isFirstMissionLightGuide;
+    setFirstMissionLightGuideStep(null);
     onMissionMusicModeChange(chapterOneAlreadyCleared);
     setIsGamePaused(false);
     setIsMobileGameMenuOpen(false);
