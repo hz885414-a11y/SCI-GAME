@@ -345,6 +345,7 @@ export default function App() {
   const [appPhase, setAppPhase] = useState<"start" | "prologue" | "booting" | "main">("start");
   const [isPrologueReplayOpen, setIsPrologueReplayOpen] = useState(false);
   const [isTutorialActive, setIsTutorialActive] = useState(false);
+  const [showFirstMissionGuide, setShowFirstMissionGuide] = useState(false);
   // Current active area: lab, technology R&D, mobile operations, or supply
   const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
   useEffect(() => {
@@ -681,6 +682,7 @@ export default function App() {
     clearCardCollection();
     clearPrologueSeen();
     clearTutorialCompleted();
+    setShowFirstMissionGuide(false);
     await resetCardEventPlayer();
 
     // Display a blocking alert (catch-safe for sandboxed iframes)
@@ -1420,6 +1422,8 @@ export default function App() {
           coins={coins}
           purchasedUpgrades={purchasedUpgrades}
           pendingBossChapter={pendingBossChapter}
+          showFirstMissionGuide={showFirstMissionGuide}
+          onFirstMissionGuideAcknowledged={() => setShowFirstMissionGuide(false)}
           openMissionCenterToken={openMissionCenterToken}
           onStartBossMission={(chapter) => {
             setMissionEntrySource("exhibition");
@@ -1767,6 +1771,8 @@ export default function App() {
         <TutorialOverlay characterLayouts={gameConfig.characterLayouts} characterBreakpoint={characterBreakpoint} onComplete={() => {
           markTutorialCompleted();
           setIsTutorialActive(false);
+          setCurrentScene("ops");
+          setShowFirstMissionGuide(true);
         }} />
       )}
     </div>

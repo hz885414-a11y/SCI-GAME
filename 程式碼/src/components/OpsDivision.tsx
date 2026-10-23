@@ -27,6 +27,8 @@ interface OpsDivisionProps {
   coins: number;
   purchasedUpgrades: Record<string, number>;
   pendingBossChapter: number | null;
+  showFirstMissionGuide: boolean;
+  onFirstMissionGuideAcknowledged: () => void;
   onStartBossMission: (chapter: number) => void;
   openMissionCenterToken: number;
 }
@@ -39,6 +41,8 @@ export function OpsDivision({
   coins,
   purchasedUpgrades,
   pendingBossChapter,
+  showFirstMissionGuide,
+  onFirstMissionGuideAcknowledged,
   onStartBossMission,
   openMissionCenterToken,
 }: OpsDivisionProps) {
@@ -126,6 +130,7 @@ export function OpsDivision({
 
   const toggleSectors = () => {
     playSound("click");
+    if (showFirstMissionGuide) onFirstMissionGuideAcknowledged();
     const next = !isGameOpen;
     setIsGameOpen(next);
     addLog(
@@ -419,7 +424,7 @@ export function OpsDivision({
           <div className="w-full sm:w-[148px]">
             <button
               onClick={toggleSectors}
-              className={`min-h-12 w-full border px-4 py-3 font-sans text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none sm:min-h-[34px] sm:w-full sm:px-3 sm:py-1.5 sm:text-[10px]
+              className={`relative min-h-12 w-full border px-4 py-3 font-sans text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer active:scale-95 rounded-none sm:min-h-[34px] sm:w-full sm:px-3 sm:py-1.5 sm:text-[10px]
                 ${isGameOpen 
                   ? "bg-orange-500 text-black border-orange-500 shadow-[0_0_10px_rgba(245,158,11,0.25)]" 
                   : pendingBossChapter !== null
@@ -428,6 +433,15 @@ export function OpsDivision({
                 }
               `}
             >
+              {showFirstMissionGuide && pendingBossChapter === null && (
+                <span
+                  className="absolute -top-4 left-1/2 z-20 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-rose-600 text-base font-black leading-none text-white shadow-[0_0_18px_rgba(244,63,94,.95)] animate-bounce"
+                  aria-label="新手引導：請按出發任務"
+                  title="下一步：按下出發任務"
+                >
+                  !
+                </span>
+              )}
               {pendingBossChapter !== null ? (
                 <AlertTriangle className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-rose-300 animate-pulse" />
               ) : (
