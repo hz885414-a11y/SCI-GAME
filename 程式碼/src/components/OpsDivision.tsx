@@ -435,7 +435,7 @@ export function OpsDivision({
             >
               {showFirstMissionGuide && pendingBossChapter === null && (
                 <span
-                  className="absolute -top-4 left-1/2 z-20 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-rose-600 text-base font-black leading-none text-white shadow-[0_0_18px_rgba(244,63,94,.95)] animate-bounce"
+                  className="absolute -right-3 top-1/2 z-20 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border-2 border-white bg-rose-600 text-base font-black leading-none text-white shadow-[0_0_18px_rgba(244,63,94,.95)] animate-bounce"
                   aria-label="新手引導：請按出發任務"
                   title="下一步：按下出發任務"
                 >
