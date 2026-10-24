@@ -2267,7 +2267,7 @@ export function MissionGame({
       // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
       // instead of silently completing the mission; V evacuation is the
       // player's successful exit route.
-      if (stage === "PLAYING" && !chapterOnePeacefulRef.current && state.ticks % 60 === 0) {
+      if (stage === "PLAYING" && firstMissionLightGuideStep === null && !chapterOnePeacefulRef.current && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev === 11 && selectedChapter !== 1 && !tideCountdownAnnouncedRef.current) {
             tideCountdownAnnouncedRef.current = true;
@@ -2458,7 +2458,7 @@ export function MissionGame({
       }
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
-      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
+      if (stage === "PLAYING" && firstMissionLightGuideStep === null && !chapterOnePeacefulRef.current) {
         const drainRate = batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
           : 0.03;
@@ -6955,7 +6955,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
