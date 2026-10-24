@@ -65,8 +65,19 @@ const APP_LAST_SCENE_KEY = "light_crew_last_scene";
 // All lab asset decisions must use the same threshold.  In particular, a
 // landscape phone between 640px and 767px must not receive desktop artwork.
 const MOBILE_BREAKPOINT_PX = 768;
+const CHAPTER_ONE_NPC_INTRO_PENDING_KEY = "squad_chapter_one_npc_intro_pending";
+const CHAPTER_ONE_NPC_INTRO_SEEN_KEY = "squad_chapter_one_npc_intro_seen";
 const getCharacterBreakpoint = (width: number): "desktop" | "tablet" | "mobile" =>
   width < MOBILE_BREAKPOINT_PX ? "mobile" : width < 1024 ? "tablet" : "desktop";
+
+const loadPendingChapterOneNpcIntro = () => {
+  try {
+    return localStorage.getItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY) === "true"
+      && localStorage.getItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY) !== "true";
+  } catch {
+    return false;
+  }
+};
 
 const loadLastScene = (): AppScene => {
   try {
@@ -346,6 +357,7 @@ export default function App() {
   const [isPrologueReplayOpen, setIsPrologueReplayOpen] = useState(false);
   const [isTutorialActive, setIsTutorialActive] = useState(false);
   const [showFirstMissionGuide, setShowFirstMissionGuide] = useState(false);
+  const [hasPendingChapterOneNpcIntro, setHasPendingChapterOneNpcIntro] = useState(loadPendingChapterOneNpcIntro);
   // Current active area: lab, technology R&D, mobile operations, or supply
   const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
   useEffect(() => {
@@ -370,6 +382,24 @@ export default function App() {
     blocked: gameMode !== "idle" || isGameOpen || isFortuneOpen || isInstructionsOpen || isSettingsOpen || isKnowledgeBookOpen || missionActive,
   });
   useEffect(() => { emitAmbientEvent("player_return"); }, []);
+
+  // Chapter 1's clear turns the shelter into a future NPC hub. The message is
+  // intentionally delivered only after the player follows the lab alert.
+  useEffect(() => {
+    if (!hasPendingChapterOneNpcIntro || appPhase !== "main" || currentScene !== "lab" || isTransitioning) return;
+    setStoryLines([
+      { speakerId: "leo", text: "剛剛收到避難所的新訊號！暗物質已被清除，大家正在把那裡整理成安全據點。" },
+      { speakerId: "claire", text: "之後會有不同的 NPC 出現在工業區避難所。他們會帶來情報，也可能需要我們協助。" },
+      { speakerId: "ethan", text: "記得回去和他們互動。完成他們的委託，能幫我們處理之後更複雜的任務。" },
+    ]);
+    setCurrentDialogueIndex(0);
+    setGameMode("counseling");
+    setHasPendingChapterOneNpcIntro(false);
+    try {
+      localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY);
+      localStorage.setItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY, "true");
+    } catch { /* keep the one-time story in this session if storage is unavailable */ }
+  }, [appPhase, currentScene, hasPendingChapterOneNpcIntro, isTransitioning]);
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
@@ -675,6 +705,9 @@ export default function App() {
     localStorage.removeItem("squad_chapter_one_shelter_cleared");
     localStorage.removeItem("squad_chapter_one_shield_materials_awarded");
     localStorage.removeItem("squad_first_mission_light_guide_seen");
+    localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY);
+    localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY);
+    setHasPendingChapterOneNpcIntro(false);
     localStorage.removeItem(APP_LAST_SCENE_KEY);
 
     // Reset the event system alongside the rest of the player's progress.
@@ -1174,7 +1207,7 @@ export default function App() {
           <button
             data-tutorial-target="laboratory"
             onClick={() => handleSceneChange("lab")}
-            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
+            className={`relative min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "lab"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
@@ -1183,6 +1216,9 @@ export default function App() {
           >
             <Beaker className="hidden h-4 w-4 text-orange-500 sm:block" />
             <span className="whitespace-nowrap">勇氣の實驗室</span>
+            {hasPendingChapterOneNpcIntro && (
+              <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-rose-600 p-0 font-sans text-[11px] font-black leading-[0] text-white shadow-[0_0_12px_rgba(244,63,94,.9)] animate-bounce" aria-label="新訊息：前往勇氣實驗室">!</span>
+            )}
           </button>
           <button
             data-tutorial-target="robotAssembly"
@@ -1596,6 +1632,8 @@ export default function App() {
             ]);
             setCurrentDialogueIndex(0);
             setGameMode("counseling");
+            setHasPendingChapterOneNpcIntro(true);
+            try { localStorage.setItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY, "true"); } catch { /* local story progress is optional */ }
             handleMissionOpenChange(false);
           }}
           onMissionMusicModeChange={(useBaseMusic) => setMissionUsesBaseMusic(useBaseMusic)}
