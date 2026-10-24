@@ -1628,7 +1628,7 @@ export default function App() {
             setCurrentScene("ops");
             setStoryLines([
               { speakerId: "narrator", text: "【任務完成】成功清除工業區避難所湧出的暗物質怪物。" },
-              { speakerId: "leo", text: "工業區避難所已轉為安全據點。之後再進入時，不會有怪物、戰鬥或倒數；那裡會留給其他 NPC 登場。" },
+              { speakerId: "leo", text: "工業區避難所已轉為安全據點。重返後可在上方鐵門前往「避難所周邊-01」；避難所內沒有怪物，周邊則仍有暗物質出沒。" },
             ]);
             setCurrentDialogueIndex(0);
             setGameMode("counseling");

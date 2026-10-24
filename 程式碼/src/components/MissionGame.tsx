@@ -144,6 +144,14 @@ interface ChapterTwoGate {
   entered: boolean;
 }
 
+interface ShelterPerimeterGate {
+  x: number;
+  y: number;
+  destinationX: number;
+  destinationY: number;
+  entered: boolean;
+}
+
 interface ShelterNpc {
   id: string;
   name: string;
@@ -178,6 +186,8 @@ const SHELTER_ROAMER_SEEDS = [
   { id: "volunteer", name: "救援志工", color: "#86efac", dialogueLines: ["有需要幫忙的地方請告訴我。"] },
 ] as const;
 const SHELTER_NPC_INTERACTION_RANGE = 94;
+const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
+const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
 const BLACK_TIDE_SPEED_MULTIPLIER = 1.8;
 const CHAPTER_TWO_GATE_INTERACTION_RANGE = 104;
 const CHAPTER_TWO_CORE_GATE_MIN_DISTANCE = 270;
@@ -1085,6 +1095,8 @@ export function MissionGame({
     darkCores: [] as DarkCoreEntity[],
     darkCoreGuardian: null as DarkCoreGuardian | null,
     chapterTwoGate: null as ChapterTwoGate | null,
+    shelterPerimeterGate: null as ShelterPerimeterGate | null,
+    shelterPerimeterActive: false,
     playerDialogueText: null as string | null,
     playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
@@ -1695,6 +1707,8 @@ export function MissionGame({
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
+      shelterPerimeterGate: null as ShelterPerimeterGate | null,
+      shelterPerimeterActive: false,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       shelterNpcs: [],
@@ -1773,6 +1787,29 @@ export function MissionGame({
         };
       });
       engineRef.current.shelterNpcs = [...cornerNpcs, ...roamerNpcs];
+
+      // The cleared shelter remains a quiet social space. Its upper iron gate
+      // is the one route into the combat-enabled surrounding area.
+      const findUpperWalkable = () => {
+        for (let y = 72; y <= 460; y += 20) {
+          for (let offset = 0; offset <= 820; offset += 20) {
+            for (const x of offset === 0 ? [900] : [900 - offset, 900 + offset]) {
+              if (x > 32 && x < MISSION_MAP_CONFIG.worldSize.width - 32 && isMissionPositionWalkable(x, y, 22)) return { x, y };
+            }
+          }
+        }
+        return null;
+      };
+      const gatePosition = findUpperWalkable() || findWalkableSpawn(22) || { x: 900, y: 180 };
+      const perimeterPosition = findWalkableSpawn(18, gatePosition, 520)
+        || findWalkableSpawn(18)
+        || gatePosition;
+      engineRef.current.shelterPerimeterGate = {
+        ...gatePosition,
+        destinationX: perimeterPosition.x,
+        destinationY: perimeterPosition.y,
+        entered: false,
+      };
     }
 
     // Chapter two introduces an immobile objective: three dark cores are
@@ -2077,6 +2114,8 @@ export function MissionGame({
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
+      shelterPerimeterGate: null,
+      shelterPerimeterActive: false,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       collectibles: [],
@@ -2267,9 +2306,9 @@ export function MissionGame({
       // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
       // instead of silently completing the mission; V evacuation is the
       // player's successful exit route.
-      if (stage === "PLAYING" && firstMissionLightGuideStep === null && !chapterOnePeacefulRef.current && state.ticks % 60 === 0) {
+      if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
-          if (prev === 11 && selectedChapter !== 1 && !tideCountdownAnnouncedRef.current) {
+          if (prev === 11 && (selectedChapter !== 1 || state.shelterPerimeterActive) && !tideCountdownAnnouncedRef.current) {
             tideCountdownAnnouncedRef.current = true;
             setTideAlert("countdown");
             triggerSound("countdown");
@@ -2458,7 +2497,7 @@ export function MissionGame({
       }
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
-      if (stage === "PLAYING" && firstMissionLightGuideStep === null && !chapterOnePeacefulRef.current) {
+      if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive)) {
         const drainRate = batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
           : 0.03;
@@ -3264,7 +3303,9 @@ export function MissionGame({
 
       // 5. UPDATE ENEMIES
       // Spawn enemies in survivors mode
-      if (stage === "PLAYING" && !chapterOnePeacefulRef.current) {
+      // The cleared Chapter 1 shelter itself stays peaceful. Its newly opened
+      // perimeter map is an exception: it uses the regular survivor spawner.
+      if (stage === "PLAYING" && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive)) {
         // Black tide is intentionally hard to outlast: a low, repeated shake
         // sells the unstable world without locking the player's controls.
         if (state.overtime && state.ticks % 12 === 0) triggerCameraShake(state, 3.4);
@@ -3850,7 +3891,7 @@ export function MissionGame({
       // again beside the core resumes it from the displayed amount.
       if (stage === "PLAYING" && selectedChapter === 1 && chapterOnePeacefulRef.current) {
         const shelterNpcs = state.shelterNpcs as ShelterNpc[];
-        shelterNpcs.forEach((npc) => {
+        if (!state.shelterPerimeterActive) shelterNpcs.forEach((npc) => {
           const distanceToTarget = Math.hypot(npc.targetX - npc.x, npc.targetY - npc.y);
           if (distanceToTarget < 4 || state.ticks >= npc.nextWanderTick) {
             let destination: { x: number; y: number } | null = null;
@@ -3872,11 +3913,57 @@ export function MissionGame({
             moveWithinMissionMask(npc, (npc.targetX - npc.x) / distanceToTarget * step, (npc.targetY - npc.y) / distanceToTarget * step, npc.radius);
           }
         });
-        const nearbyNpc = shelterNpcs.reduce<ShelterNpc | null>((nearest, npc) => {
+        const shelterPerimeterGate = state.shelterPerimeterGate as ShelterPerimeterGate | null;
+        const gateDistance = shelterPerimeterGate
+          ? Math.hypot(shelterPerimeterGate.x - player.x, shelterPerimeterGate.y - player.y)
+          : Infinity;
+        const nearbyNpc = !state.shelterPerimeterActive ? shelterNpcs.reduce<ShelterNpc | null>((nearest, npc) => {
           if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
           return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
-        }, null);
-        if (nearbyNpc) {
+        }, null) : null;
+        if (shelterPerimeterGate && gateDistance <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE && !state.shelterPerimeterActive) {
+          interactionTargetRef.current = {
+            label: shelterPerimeterGate.entered ? "前往避難所周邊-01" : "穿越上方鐵門・前往避難所周邊-01",
+            onTap: () => {
+              const isFirstEntry = !shelterPerimeterGate.entered;
+              player.x = shelterPerimeterGate.destinationX;
+              player.y = shelterPerimeterGate.destinationY;
+              shelterPerimeterGate.entered = true;
+              state.shelterPerimeterActive = true;
+              state.enemies = [];
+              state.spawnTimer = 0;
+              // The shelter itself is safe, but its surrounding map is a
+              // Black Tide survival zone with a fresh countdown.
+              state.overtime = false;
+              setIsOvertime(false);
+              setTimeLeft(isDemoMode ? 30 : 90);
+              setTideAlert("idle");
+              tideCountdownAnnouncedRef.current = false;
+              if (isFirstEntry) {
+                for (let index = 0; index < SHELTER_PERIMETER_INITIAL_ENEMIES; index++) {
+                  const spawn = findWalkableSpawn(12 + (index % 2) * 5, player, 260 + index * 46);
+                  if (!spawn) continue;
+                  const type: EnemyType = index % 3 === 2 ? "stalker" : index % 2 === 1 ? "clumper" : "mote";
+                  const hp = type === "clumper" ? gameplayConfig.clumperBaseHp + gameplayConfig.clumperHpPerChapter : type === "stalker" ? gameplayConfig.stalkerBaseHp + gameplayConfig.stalkerHpPerChapter : gameplayConfig.moteBaseHp + gameplayConfig.moteHpPerChapter;
+                  state.enemies.push({
+                    x: spawn.x, y: spawn.y, hp, maxHp: hp,
+                    speed: type === "clumper" ? 0.35 : type === "stalker" ? 1.1 : 0.75,
+                    radius: type === "clumper" ? 18 : type === "stalker" ? 8 : 10,
+                    color: type === "clumper" ? "rgba(107, 114, 128, 0.85)" : type === "stalker" ? "rgba(239, 68, 68, 0.8)" : "rgba(168, 85, 247, 0.7)",
+                    type, points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
+                    facingLeft: spawn.x > player.x, aiState: "dormant", alertTicks: 0, lostSightTicks: 0, searchTicks: 0,
+                    lastSeenX: spawn.x, lastSeenY: spawn.y,
+                  });
+                }
+              }
+              state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
+              state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
+              setAreaTransition("避難所周邊-01");
+              setInteractionFeedback(isFirstEntry ? "已進入：避難所周邊-01・黑潮倒數已啟動" : "已進入：避難所周邊-01・黑潮倒數已重置");
+              triggerSound("power");
+            },
+          };
+        } else if (nearbyNpc) {
           interactionTargetRef.current = {
             label: `與${nearbyNpc.name}交談`,
             onTap: () => {
@@ -5346,6 +5433,29 @@ export function MissionGame({
         ctx.textAlign = "center";
         ctx.fillText(chapterTwoGate.unlocked ? "↑ 廢棄工廠 2" : "🔒 上方鐵門", 0, -60);
         if (chapterTwoGate.unlocked && Math.hypot(chapterTwoGate.x - player.x, chapterTwoGate.y - player.y) <= CHAPTER_TWO_GATE_INTERACTION_RANGE) {
+          ctx.fillStyle = "#fef3c7";
+          ctx.fillText("點擊互動進入", 0, 40);
+        }
+        ctx.restore();
+      }
+      const shelterPerimeterGate = state.shelterPerimeterGate as ShelterPerimeterGate | null;
+      if (stage === "PLAYING" && shelterPerimeterGate && !state.shelterPerimeterActive) {
+        const gatePulse = (Math.sin(state.ticks * 0.12) + 1) / 2;
+        const nearGate = Math.hypot(shelterPerimeterGate.x - player.x, shelterPerimeterGate.y - player.y) <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE;
+        ctx.save();
+        ctx.translate(shelterPerimeterGate.x, shelterPerimeterGate.y);
+        ctx.fillStyle = `rgba(34, 211, 238, ${0.14 + gatePulse * 0.14})`;
+        ctx.fillRect(-44, -48, 88, 72);
+        ctx.strokeStyle = "#67e8f9";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-44, -48, 88, 72);
+        ctx.strokeStyle = "rgba(165, 243, 252, .9)";
+        ctx.beginPath(); ctx.moveTo(-29, -48); ctx.lineTo(-29, 24); ctx.moveTo(0, -48); ctx.lineTo(0, 24); ctx.moveTo(29, -48); ctx.lineTo(29, 24); ctx.stroke();
+        ctx.fillStyle = "#cffafe";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("↑ 避難所周邊-01", 0, -60);
+        if (nearGate) {
           ctx.fillStyle = "#fef3c7";
           ctx.fillText("點擊互動進入", 0, 40);
         }
