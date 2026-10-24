@@ -3984,7 +3984,10 @@ export function MissionGame({
             });
           }
           if (area < SHELTER_PERIMETER_FINAL_AREA) {
-            const gatePosition = findWalkableSpawn(22, player, 410) || findWalkableSpawn(22) || player;
+            // Keep the next-sector gate within the current camera view. The
+            // perimeter is deliberately dark, so a distant random exit feels
+            // absent even when it exists.
+            const gatePosition = findWalkableSpawn(22, player, 230) || findWalkableSpawn(22, player, 160) || findWalkableSpawn(22) || player;
             const nextDestination = findWalkableSpawn(18, gatePosition, 520) || findWalkableSpawn(18) || gatePosition;
             state.shelterPerimeterNextGate = { ...gatePosition, destinationX: nextDestination.x, destinationY: nextDestination.y, nextArea: area + 1 };
           } else {
@@ -6986,6 +6989,23 @@ export function MissionGame({
               mctx.beginPath();
               mctx.arc(px, py, locatorRadius, 0, Math.PI * 2);
               mctx.fill();
+
+              // A deeper-sector gate is a navigation beacon, not an NPC or
+              // objective. Give it a small permanent opening in the fog so
+              // players can always locate the 01→02 (and later) doorway.
+              const nextGate = state.shelterPerimeterNextGate as ShelterPerimeterDepthGate | null;
+              if (state.shelterPerimeterActive && nextGate) {
+                const gateX = nextGate.x - state.camera.x;
+                const gateY = nextGate.y - state.camera.y;
+                const gateGlow = mctx.createRadialGradient(gateX, gateY, 8, gateX, gateY, 94);
+                gateGlow.addColorStop(0, "rgba(0,0,0,0.96)");
+                gateGlow.addColorStop(0.4, "rgba(0,0,0,0.68)");
+                gateGlow.addColorStop(1, "rgba(0,0,0,0)");
+                mctx.fillStyle = gateGlow;
+                mctx.beginPath();
+                mctx.arc(gateX, gateY, 94, 0, Math.PI * 2);
+                mctx.fill();
+              }
             }
             ctx.drawImage(maskCanvas, 0, 0);
           } else {
