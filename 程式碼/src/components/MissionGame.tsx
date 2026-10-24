@@ -3939,7 +3939,10 @@ export function MissionGame({
               // Black Tide survival zone with a fresh countdown.
               state.overtime = false;
               setIsOvertime(false);
-              setTimeLeft(isDemoMode ? 30 : 90);
+              // 避難所周邊-01 follows the Chapter 2 Black Tide cadence, but
+              // is a short standalone survival map: 30 seconds, then the
+              // final 10-second warning and Black Tide on zero.
+              setTimeLeft(30);
               setTideAlert("idle");
               tideCountdownAnnouncedRef.current = false;
               onMissionMusicModeChange(false);
@@ -3963,7 +3966,7 @@ export function MissionGame({
               state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
               state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
               setAreaTransition("避難所周邊-01");
-              setInteractionFeedback(isFirstEntry ? "已進入：避難所周邊-01・黑潮倒數已啟動" : "已進入：避難所周邊-01・黑潮倒數已重置");
+              setInteractionFeedback(isFirstEntry ? "已進入：避難所周邊-01・30 秒後黑潮來襲" : "已進入：避難所周邊-01・30 秒黑潮倒數已重置");
               triggerSound("power");
             },
           };
