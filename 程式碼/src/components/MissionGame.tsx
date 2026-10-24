@@ -152,6 +152,14 @@ interface ShelterPerimeterGate {
   entered: boolean;
 }
 
+interface ShelterPerimeterDepthGate {
+  x: number;
+  y: number;
+  destinationX: number;
+  destinationY: number;
+  nextArea: number;
+}
+
 interface ShelterNpc {
   id: string;
   name: string;
@@ -188,6 +196,16 @@ const SHELTER_ROAMER_SEEDS = [
 const SHELTER_NPC_INTERACTION_RANGE = 94;
 const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
 const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
+const SHELTER_PERIMETER_FINAL_AREA = 5;
+const SHELTER_PERIMETER_THREATS = [
+  { hpMultiplier: 1, speedMultiplier: 1, densityMultiplier: 1 },
+  { hpMultiplier: 1.45, speedMultiplier: 1.1, densityMultiplier: 1.15 },
+  { hpMultiplier: 1.95, speedMultiplier: 1.22, densityMultiplier: 1.3 },
+  { hpMultiplier: 2.55, speedMultiplier: 1.36, densityMultiplier: 1.5 },
+  { hpMultiplier: 3.3, speedMultiplier: 1.52, densityMultiplier: 1.75 },
+] as const;
+const getShelterPerimeterThreat = (area: number) =>
+  SHELTER_PERIMETER_THREATS[Math.max(0, Math.min(SHELTER_PERIMETER_THREATS.length - 1, area - 1))];
 const BLACK_TIDE_SPEED_MULTIPLIER = 1.8;
 const CHAPTER_TWO_GATE_INTERACTION_RANGE = 104;
 const CHAPTER_TWO_CORE_GATE_MIN_DISTANCE = 270;
@@ -1097,6 +1115,8 @@ export function MissionGame({
     chapterTwoGate: null as ChapterTwoGate | null,
     shelterPerimeterGate: null as ShelterPerimeterGate | null,
     shelterPerimeterActive: false,
+    shelterPerimeterArea: 0,
+    shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
     playerDialogueText: null as string | null,
     playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
@@ -1709,6 +1729,8 @@ export function MissionGame({
       chapterTwoGate: null,
       shelterPerimeterGate: null as ShelterPerimeterGate | null,
       shelterPerimeterActive: false,
+      shelterPerimeterArea: 0,
+      shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       shelterNpcs: [],
@@ -2116,6 +2138,8 @@ export function MissionGame({
       chapterTwoGate: null,
       shelterPerimeterGate: null,
       shelterPerimeterActive: false,
+      shelterPerimeterArea: 0,
+      shelterPerimeterNextGate: null,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       collectibles: [],
@@ -3311,8 +3335,14 @@ export function MissionGame({
         if (state.overtime && state.ticks % 12 === 0) triggerCameraShake(state, 3.4);
         state.spawnTimer++;
         const overtimeMultiplier = state.overtime ? 2 : 1;
-        const spawnLimit = Math.max(gameplayConfig.spawnMinInterval, gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150));
-        const enemyCap = gameplayConfig.maxEnemies * overtimeMultiplier;
+        const perimeterThreat = state.shelterPerimeterActive
+          ? getShelterPerimeterThreat(state.shelterPerimeterArea || 1)
+          : { hpMultiplier: 1, speedMultiplier: 1, densityMultiplier: 1 };
+        const spawnLimit = Math.max(
+          gameplayConfig.spawnMinInterval,
+          Math.floor((gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150)) / perimeterThreat.densityMultiplier),
+        );
+        const enemyCap = Math.ceil(gameplayConfig.maxEnemies * perimeterThreat.densityMultiplier * overtimeMultiplier);
         if (state.spawnTimer >= spawnLimit && state.enemies.length < enemyCap) {
           state.spawnTimer = 0;
           
@@ -3323,21 +3353,21 @@ export function MissionGame({
           if (spawn) {
             const rand = Math.random();
             let type: EnemyType = "mote";
-            let hpVal = (gameplayConfig.moteBaseHp + selectedChapter * gameplayConfig.moteHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
-            let spd = 0.6 + Math.random() * 0.3; // Slower walking
+            let hpVal = (gameplayConfig.moteBaseHp + selectedChapter * gameplayConfig.moteHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier * perimeterThreat.hpMultiplier;
+            let spd = (0.6 + Math.random() * 0.3) * perimeterThreat.speedMultiplier; // Slower walking
             let radius = 10;
             let col = "rgba(168, 85, 247, 0.7)"; // purple blob
 
             if (rand > 0.8) {
               type = "clumper";
-              hpVal = (gameplayConfig.clumperBaseHp + selectedChapter * gameplayConfig.clumperHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
-              spd = 0.35; // Slower walking
+              hpVal = (gameplayConfig.clumperBaseHp + selectedChapter * gameplayConfig.clumperHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier * perimeterThreat.hpMultiplier;
+              spd = 0.35 * perimeterThreat.speedMultiplier; // Slower walking
               radius = 18;
               col = "rgba(107, 114, 128, 0.85)"; // heavy grey blob
             } else if (rand > 0.6) {
               type = "stalker";
-              hpVal = (gameplayConfig.stalkerBaseHp + selectedChapter * gameplayConfig.stalkerHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier;
-              spd = 1.1; // Slower walking
+              hpVal = (gameplayConfig.stalkerBaseHp + selectedChapter * gameplayConfig.stalkerHpPerChapter) * gameplayConfig.monsterHpMultiplier * overtimeMultiplier * perimeterThreat.hpMultiplier;
+              spd = 1.1 * perimeterThreat.speedMultiplier; // Slower walking
               radius = 8;
               col = "rgba(239, 68, 68, 0.8)"; // red shadow crawler
             }
@@ -3921,56 +3951,68 @@ export function MissionGame({
           if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
           return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
         }, null) : null;
+        const enterShelterPerimeterArea = (area: number, destination: { x: number; y: number }) => {
+          const threat = getShelterPerimeterThreat(area);
+          player.x = destination.x;
+          player.y = destination.y;
+          state.shelterPerimeterActive = true;
+          state.shelterPerimeterArea = area;
+          state.shelterNpcs = [];
+          state.enemies = [];
+          state.spawnTimer = 0;
+          state.overtime = false;
+          setIsOvertime(false);
+          setTimeLeft(30);
+          setTideAlert("idle");
+          tideCountdownAnnouncedRef.current = false;
+          onMissionMusicModeChange(false);
+
+          for (let index = 0; index < SHELTER_PERIMETER_INITIAL_ENEMIES; index++) {
+            const spawn = findWalkableSpawn(12 + (index % 2) * 5, player, 260 + index * 46);
+            if (!spawn) continue;
+            const type: EnemyType = index % 3 === 2 ? "stalker" : index % 2 === 1 ? "clumper" : "mote";
+            const baseHp = type === "clumper" ? gameplayConfig.clumperBaseHp + gameplayConfig.clumperHpPerChapter : type === "stalker" ? gameplayConfig.stalkerBaseHp + gameplayConfig.stalkerHpPerChapter : gameplayConfig.moteBaseHp + gameplayConfig.moteHpPerChapter;
+            const baseSpeed = type === "clumper" ? 0.35 : type === "stalker" ? 1.1 : 0.75;
+            state.enemies.push({
+              x: spawn.x, y: spawn.y, hp: baseHp * threat.hpMultiplier, maxHp: baseHp * threat.hpMultiplier,
+              speed: baseSpeed * threat.speedMultiplier,
+              radius: type === "clumper" ? 18 : type === "stalker" ? 8 : 10,
+              color: type === "clumper" ? "rgba(107, 114, 128, 0.85)" : type === "stalker" ? "rgba(239, 68, 68, 0.8)" : "rgba(168, 85, 247, 0.7)",
+              type, points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
+              facingLeft: spawn.x > player.x, aiState: "dormant", alertTicks: 0, lostSightTicks: 0, searchTicks: 0,
+              lastSeenX: spawn.x, lastSeenY: spawn.y,
+            });
+          }
+          if (area < SHELTER_PERIMETER_FINAL_AREA) {
+            const gatePosition = findWalkableSpawn(22, player, 410) || findWalkableSpawn(22) || player;
+            const nextDestination = findWalkableSpawn(18, gatePosition, 520) || findWalkableSpawn(18) || gatePosition;
+            state.shelterPerimeterNextGate = { ...gatePosition, destinationX: nextDestination.x, destinationY: nextDestination.y, nextArea: area + 1 };
+          } else {
+            state.shelterPerimeterNextGate = null;
+          }
+          state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
+          state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
+          setAreaTransition(`避難所周邊-${String(area).padStart(2, "0")}`);
+          setInteractionFeedback(`已進入：避難所周邊-${String(area).padStart(2, "0")}・30 秒後黑潮來襲`);
+          triggerSound("power");
+        };
         if (shelterPerimeterGate && gateDistance <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE && !state.shelterPerimeterActive) {
           interactionTargetRef.current = {
             label: shelterPerimeterGate.entered ? "前往避難所周邊-01" : "穿越上方鐵門・前往避難所周邊-01",
             onTap: () => {
-              const isFirstEntry = !shelterPerimeterGate.entered;
-              player.x = shelterPerimeterGate.destinationX;
-              player.y = shelterPerimeterGate.destinationY;
               shelterPerimeterGate.entered = true;
-              state.shelterPerimeterActive = true;
-              // Crossing the gate leaves the safe hub behind. NPCs belong to
-              // the shelter only and must never appear in the perimeter run.
-              state.shelterNpcs = [];
-              state.enemies = [];
-              state.spawnTimer = 0;
-              // The shelter itself is safe, but its surrounding map is a
-              // Black Tide survival zone with a fresh countdown.
-              state.overtime = false;
-              setIsOvertime(false);
-              // 避難所周邊-01 follows the Chapter 2 Black Tide cadence, but
-              // is a short standalone survival map: 30 seconds, then the
-              // final 10-second warning and Black Tide on zero.
-              setTimeLeft(30);
-              setTideAlert("idle");
-              tideCountdownAnnouncedRef.current = false;
-              onMissionMusicModeChange(false);
-              if (isFirstEntry) {
-                for (let index = 0; index < SHELTER_PERIMETER_INITIAL_ENEMIES; index++) {
-                  const spawn = findWalkableSpawn(12 + (index % 2) * 5, player, 260 + index * 46);
-                  if (!spawn) continue;
-                  const type: EnemyType = index % 3 === 2 ? "stalker" : index % 2 === 1 ? "clumper" : "mote";
-                  const hp = type === "clumper" ? gameplayConfig.clumperBaseHp + gameplayConfig.clumperHpPerChapter : type === "stalker" ? gameplayConfig.stalkerBaseHp + gameplayConfig.stalkerHpPerChapter : gameplayConfig.moteBaseHp + gameplayConfig.moteHpPerChapter;
-                  state.enemies.push({
-                    x: spawn.x, y: spawn.y, hp, maxHp: hp,
-                    speed: type === "clumper" ? 0.35 : type === "stalker" ? 1.1 : 0.75,
-                    radius: type === "clumper" ? 18 : type === "stalker" ? 8 : 10,
-                    color: type === "clumper" ? "rgba(107, 114, 128, 0.85)" : type === "stalker" ? "rgba(239, 68, 68, 0.8)" : "rgba(168, 85, 247, 0.7)",
-                    type, points: type === "clumper" ? 30 : type === "stalker" ? 20 : 10,
-                    facingLeft: spawn.x > player.x, aiState: "dormant", alertTicks: 0, lostSightTicks: 0, searchTicks: 0,
-                    lastSeenX: spawn.x, lastSeenY: spawn.y,
-                  });
-                }
-              }
-              state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
-              state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
-              setAreaTransition("避難所周邊-01");
-              setInteractionFeedback(isFirstEntry ? "已進入：避難所周邊-01・30 秒後黑潮來襲" : "已進入：避難所周邊-01・30 秒黑潮倒數已重置");
-              triggerSound("power");
+              enterShelterPerimeterArea(1, { x: shelterPerimeterGate.destinationX, y: shelterPerimeterGate.destinationY });
             },
           };
-        } else if (nearbyNpc) {
+        } else {
+          const nextGate = state.shelterPerimeterNextGate as ShelterPerimeterDepthGate | null;
+          const nextGateDistance = nextGate ? Math.hypot(nextGate.x - player.x, nextGate.y - player.y) : Infinity;
+          if (state.shelterPerimeterActive && nextGate && nextGateDistance <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE) {
+            interactionTargetRef.current = {
+              label: `深入避難所周邊-${String(nextGate.nextArea).padStart(2, "0")}`,
+              onTap: () => enterShelterPerimeterArea(nextGate.nextArea, { x: nextGate.destinationX, y: nextGate.destinationY }),
+            };
+          } else if (nearbyNpc) {
           interactionTargetRef.current = {
             label: `與${nearbyNpc.name}交談`,
             onTap: () => {
@@ -3979,8 +4021,9 @@ export function MissionGame({
               nearbyNpc.interactionCount += 1;
             },
           };
-        } else {
-          interactionTargetRef.current = null;
+          } else {
+            interactionTargetRef.current = null;
+          }
         }
       } else if (stage === "PLAYING" && state.darkCores) {
         let nearestCore: DarkCoreEntity | null = null;
@@ -5465,6 +5508,30 @@ export function MissionGame({
         if (nearGate) {
           ctx.fillStyle = "#fef3c7";
           ctx.fillText("點擊互動進入", 0, 40);
+        }
+        ctx.restore();
+      }
+      const shelterPerimeterNextGate = state.shelterPerimeterNextGate as ShelterPerimeterDepthGate | null;
+      if (stage === "PLAYING" && state.shelterPerimeterActive && shelterPerimeterNextGate) {
+        const gatePulse = (Math.sin(state.ticks * 0.16) + 1) / 2;
+        const nearGate = Math.hypot(shelterPerimeterNextGate.x - player.x, shelterPerimeterNextGate.y - player.y) <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE;
+        const nextLabel = `避難所周邊-${String(shelterPerimeterNextGate.nextArea).padStart(2, "0")}`;
+        ctx.save();
+        ctx.translate(shelterPerimeterNextGate.x, shelterPerimeterNextGate.y);
+        ctx.fillStyle = `rgba(225, 29, 72, ${0.16 + gatePulse * 0.18})`;
+        ctx.fillRect(-46, -50, 92, 76);
+        ctx.strokeStyle = "#fb7185";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-46, -50, 92, 76);
+        ctx.strokeStyle = "rgba(254, 202, 202, .9)";
+        ctx.beginPath(); ctx.moveTo(-30, -50); ctx.lineTo(-30, 26); ctx.moveTo(0, -50); ctx.lineTo(0, 26); ctx.moveTo(30, -50); ctx.lineTo(30, 26); ctx.stroke();
+        ctx.fillStyle = "#ffe4e6";
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`↓ ${nextLabel}`, 0, -62);
+        if (nearGate) {
+          ctx.fillStyle = "#fef3c7";
+          ctx.fillText("點擊深入", 0, 42);
         }
         ctx.restore();
       }
