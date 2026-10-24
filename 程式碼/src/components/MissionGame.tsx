@@ -3930,6 +3930,9 @@ export function MissionGame({
               player.y = shelterPerimeterGate.destinationY;
               shelterPerimeterGate.entered = true;
               state.shelterPerimeterActive = true;
+              // Crossing the gate leaves the safe hub behind. NPCs belong to
+              // the shelter only and must never appear in the perimeter run.
+              state.shelterNpcs = [];
               state.enemies = [];
               state.spawnTimer = 0;
               // The shelter itself is safe, but its surrounding map is a
@@ -3939,6 +3942,7 @@ export function MissionGame({
               setTimeLeft(isDemoMode ? 30 : 90);
               setTideAlert("idle");
               tideCountdownAnnouncedRef.current = false;
+              onMissionMusicModeChange(false);
               if (isFirstEntry) {
                 for (let index = 0; index < SHELTER_PERIMETER_INITIAL_ENEMIES; index++) {
                   const spawn = findWalkableSpawn(12 + (index % 2) * 5, player, 260 + index * 46);
@@ -5872,7 +5876,7 @@ export function MissionGame({
 
       // Cleared Chapter 1 turns into a small, testable NPC hub. These are
       // rendered in the world (not the HUD), so speech bubbles follow each NPC.
-      if (stage === "PLAYING" && isPeacefulShelter) {
+      if (stage === "PLAYING" && isPeacefulShelter && !state.shelterPerimeterActive) {
         (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
           const nearNpc = Math.hypot(npc.x - player.x, npc.y - player.y) <= SHELTER_NPC_INTERACTION_RANGE;
           const bob = Math.sin(state.ticks * 0.08 + npc.x * 0.02) * 2;
@@ -6773,7 +6777,7 @@ export function MissionGame({
 
       // Foreground dialogue layer: speech is rendered after every world
       // entity and particle, so it always remains readable above the scene.
-      if (stage === "PLAYING" && isPeacefulShelter) {
+      if (stage === "PLAYING" && isPeacefulShelter && !state.shelterPerimeterActive) {
         (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
           if (!npc.dialogueText || state.ticks >= npc.dialogueUntilTick) return;
           ctx.save();
@@ -6868,9 +6872,9 @@ export function MissionGame({
       // ==========================================
       // H. REAL-TIME SUBTRACTIVE LIGHTING FOG OF WAR
       // ==========================================
-      // The cleared shelter uses its original map art without the Chapter 1
-      // darkness mask. Other chapters retain the normal light/fog mechanic.
-      if (stage === "PLAYING" && !isPeacefulShelter) {
+      // Only the cleared shelter hub is brightly lit. Its perimeter is a
+      // regular dark adventure zone and uses the standard light/fog mechanic.
+      if (stage === "PLAYING" && (!isPeacefulShelter || state.shelterPerimeterActive)) {
         ctx.save();
         // Use cached offscreen canvas to avoid expensive DOM allocations on every frame (60fps)
         if (!offscreenCanvasRef.current) {
