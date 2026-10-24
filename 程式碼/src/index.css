@@ -723,5 +723,10 @@
 .black-tide-light-flicker { background: rgba(150, 20, 72, .24); mix-blend-mode: screen; animation: blackTideLightFlicker 1.15s steps(2, end) infinite; }
 .black-tide-countdown { animation: blackTideBorderPulse .72s steps(2, end) infinite; }
 .black-tide-title-card { animation: blackTideTitleImpact 2s steps(2, end) both; }
+.black-tide-message { width:min(94vw,660px); }
+.black-tide-alert-label { display:inline-block; border:2px solid #fecaca; background:rgba(38,3,14,.94); padding:6px 12px; color:#fff1f2; font:900 10px/1 monospace; letter-spacing:.15em; box-shadow:0 0 0 3px #16060e,0 0 22px rgba(244,63,94,.9); }
+.black-tide-main-title { color:#fff7ed; font-size:clamp(48px,13vw,96px); letter-spacing:.045em; -webkit-text-stroke:3px #170407; text-shadow:5px 0 #170407,-5px 0 #170407,0 5px #170407,0 -5px #170407,4px 4px #170407,-4px -4px #170407,0 0 12px #ef4444,0 0 30px #be123c; }
+.black-tide-english-title { color:#fde68a; font-size:clamp(14px,3.7vw,24px); letter-spacing:.22em; text-shadow:2px 2px 0 #170407,-2px -2px 0 #170407,0 0 12px #f43f5e; }
+.black-tide-evacuation { display:inline-block; border-bottom:2px solid #fda4af; background:rgba(17,3,28,.9); padding:7px 12px; color:#fff; font-size:clamp(12px,3vw,18px); letter-spacing:.08em; text-shadow:2px 2px 0 #170407; box-shadow:0 0 14px rgba(17,3,28,.9); }
 .factory-area-transition { background: radial-gradient(ellipse, rgba(120,83,8,.24), rgba(0,0,0,.72) 68%); animation: factoryAreaTransition 2.2s steps(2, end) both; }
 .pixel-title-outline { -webkit-text-stroke: 2px #020202; text-shadow: 4px 0 #020202, -4px 0 #020202, 0 4px #020202, 0 -4px #020202, 3px 3px #020202, -3px -3px #020202, 0 0 18px currentColor; }

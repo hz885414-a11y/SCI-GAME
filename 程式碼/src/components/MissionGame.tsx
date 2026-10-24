@@ -7445,11 +7445,11 @@ export function MissionGame({
                   <p className="mt-1 font-mono text-[8px] tracking-[.22em] text-violet-200/85">DARK MATTER SURGE DETECTED</p>
                 </div>}
                 {tideAlert === "rising" && <div className="black-tide-title-card absolute inset-0 grid place-items-center px-4">
-                  <div className="text-center">
-                    <p className="font-mono text-[10px] font-black tracking-[.34em] text-rose-300 sm:text-sm">⚠ EMERGENCY ALERT ⚠</p>
-                    <h2 className="pixel-title-outline mt-3 font-pixel text-[clamp(34px,9vw,76px)] font-black leading-none tracking-[.03em] text-rose-500">黑潮來襲</h2>
-                    <p className="mt-3 font-mono text-[clamp(12px,2.8vw,20px)] font-black tracking-[.28em] text-violet-200">BLACK TIDE RISING</p>
-                    <p className="mt-3 font-mono text-[10px] font-bold tracking-wider text-rose-200">暗物質即將失控　請盡速撤離</p>
+                  <div className="black-tide-message text-center">
+                    <p className="black-tide-alert-label">⚠ 緊急警報 · EMERGENCY ALERT ⚠</p>
+                    <h2 className="black-tide-main-title mt-3 font-pixel font-black leading-none">黑潮來襲</h2>
+                    <p className="black-tide-english-title mt-3 font-mono font-black">BLACK TIDE RISING</p>
+                    <p className="black-tide-evacuation mt-3 font-mono font-black">暗物質即將失控　請盡速撤離</p>
                   </div>
                 </div>}
               </div>}
