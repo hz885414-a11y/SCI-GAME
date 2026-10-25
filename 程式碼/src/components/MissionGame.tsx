@@ -3984,11 +3984,21 @@ export function MissionGame({
             });
           }
           if (area < SHELTER_PERIMETER_FINAL_AREA) {
-            // Each new sector exit is tucked deeper into the dark map, away
-            // from the entry point, so progression still requires exploration.
-            const gatePosition = findWalkableSpawn(22, player, 520) || findWalkableSpawn(22, player, 420) || findWalkableSpawn(22) || player;
-            const nextDestination = findWalkableSpawn(18, gatePosition, 520) || findWalkableSpawn(18) || gatePosition;
-            state.shelterPerimeterNextGate = { ...gatePosition, destinationX: nextDestination.x, destinationY: nextDestination.y, nextArea: area + 1 };
+            // Zone streaming uses one consistent upper iron-door landmark.
+            // Each zone spawns the player at its outer entry, then the same
+            // door transfers them immediately into the next streamed zone.
+            const fixedGate = state.shelterPerimeterGate as ShelterPerimeterGate | null;
+            if (fixedGate) {
+              state.shelterPerimeterNextGate = {
+                x: fixedGate.x,
+                y: fixedGate.y,
+                destinationX: fixedGate.destinationX,
+                destinationY: fixedGate.destinationY,
+                nextArea: area + 1,
+              };
+            } else {
+              state.shelterPerimeterNextGate = null;
+            }
           } else {
             state.shelterPerimeterNextGate = null;
           }
