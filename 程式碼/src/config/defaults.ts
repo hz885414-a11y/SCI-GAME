@@ -100,7 +100,14 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
 export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined): GameConfig {
   const mergeById = <T extends { id: string }>(defaults: T[], saved: T[] | undefined) => {
     const overrides = new Map((saved || []).map((entry) => [entry.id, entry]));
-    const known = defaults.map((entry) => overrides.get(entry.id) || entry);
+    // Older Firebase records often contain image: "" from before card artwork
+    // existed. Keep an intentionally supplied image, but inherit newly shipped
+    // default art when that legacy field is empty.
+    const known = defaults.map((entry) => {
+      const override = overrides.get(entry.id);
+      const overrideWithImage = override as T & { image?: string };
+      return override ? { ...entry, ...override, image: overrideWithImage.image || (entry as T & { image?: string }).image } : entry;
+    });
     const additions = (saved || []).filter((entry) => !defaults.some((defaultEntry) => defaultEntry.id === entry.id));
     return [...known, ...additions];
   };

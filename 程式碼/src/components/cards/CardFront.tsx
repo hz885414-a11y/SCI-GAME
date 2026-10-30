@@ -6,6 +6,10 @@ import type { CardLayoutSlotKey } from "../../config/cardLayout";
 // when the art is replaced at the same source URL.
 export const CARD_FRONT_IMAGE_URL = "https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/refs/heads/main/9.card/Card%20-%20Front.png?v=20261017";
 
+/** Static card artwork must retain Vite's GitHub Pages base path. */
+export const resolveCardImageUrl = (imageUrl: string) =>
+  imageUrl.startsWith("/assets/") ? `${import.meta.env.BASE_URL}${imageUrl.slice(1)}` : imageUrl;
+
 export interface CardFrontData {
   cardTitle: string;
   titleAlign?: "left" | "center";
@@ -31,7 +35,7 @@ export function CardFront({ data }: { data: CardFrontData }) {
       <img src={CARD_FRONT_IMAGE_URL} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
       <div className="absolute overflow-hidden bg-[#13090a]" style={position("image")}>
         {data.imageUrl && !imageFailed ? (
-          <img src={data.imageUrl} alt="" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
+          <img src={resolveCardImageUrl(data.imageUrl)} alt="" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
         ) : (
           <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_center,rgba(127,29,29,.55),rgba(0,0,0,.92)_68%)] px-4 text-center">
             <div>

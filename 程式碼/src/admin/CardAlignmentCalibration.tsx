@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { CARD_FRONT_IMAGE_URL } from "../components/cards/CardFront";
+import { CARD_FRONT_IMAGE_URL, resolveCardImageUrl } from "../components/cards/CardFront";
 import type { CardLayoutConfig, CardLayoutSlotKey } from "../config/cardLayout";
 import type { GameConfig } from "../config/types";
 
@@ -37,7 +37,7 @@ export function CardAlignmentCalibration({ cards, layout, onChange, onApplyLayou
     <div className="admin-filter-bar"><label>預覽卡片<select value={selectedCard.id} onChange={(event) => setSelectedId(event.target.value)}>{cards.map((card) => <option key={card.id} value={card.id}>{card.icon} {card.title}</option>)}</select></label><label>公版標題對齊<select value={layout.titleAlign} onChange={(event) => onApplyLayout({ ...layout, titleAlign: event.target.value as "left" | "center" })}><option value="left">靠左</option><option value="center">置中（全部卡片）</option></select></label><label>劇情特效<select value={selectedCard.storyEffect || "standard"} onChange={(event) => onChange(selectedCard.id, { storyEffect: event.target.value as "standard" | "important" | "critical" })}><option value="standard">一般｜無額外特效</option><option value="important">重要｜金色脈衝</option><option value="critical">核心劇情｜紅金爆發</option></select></label><button type="button" className="admin-add" onClick={() => { setDraft(clone(layout)); setEditingTemplate(true); }}>調整公版位置</button>{editingTemplate && <><button type="button" className="admin-add" onClick={applyTemplate}>套用公版到全部卡片</button><button type="button" className="admin-delete" onClick={() => setEditingTemplate(false)}>取消公版調整</button></>}<span>{editingTemplate ? "拖曳各框移動；拖曳右下角圓點可縮放。尚未套用前不會改動正式卡片。" : "直接點擊卡片內文字框編輯；Enter 可新增換行。"}</span></div>
     <div ref={previewRef} className={`card-live-preview ${editingTemplate ? "is-adjusting" : ""}`} aria-label="即時卡片預覽" onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
       <img src={CARD_FRONT_IMAGE_URL} alt="卡片背景" draggable={false} />
-      <div className="card-live-image" style={styleOf(activeLayout, "image")}>{selectedCard.image ? <img src={selectedCard.image} alt="" draggable={false} /> : <span>IMAGE DATA UNAVAILABLE</span>}</div>
+      <div className="card-live-image" style={styleOf(activeLayout, "image")}>{selectedCard.image ? <img src={resolveCardImageUrl(selectedCard.image)} alt="" draggable={false} /> : <span>IMAGE DATA UNAVAILABLE</span>}</div>
       <input className={`card-live-title ${activeLayout.titleAlign === "center" ? "is-centered" : ""}`} style={styleOf(activeLayout, "title")} aria-label="卡片標題" value={selectedCard.title} onChange={(event) => onChange(selectedCard.id, { title: event.target.value })} />
       <span className="card-live-category" style={styleOf(activeLayout, "category")}>{selectedCard.category}</span>
       <div className="card-live-label" style={styleOf(activeLayout, "descriptionLabel")}>▣ 卡片說明</div>
