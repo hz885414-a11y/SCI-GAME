@@ -237,13 +237,14 @@ const CHAPTER_ONE_SHELTER_CLEARED_KEY = "squad_chapter_one_shelter_cleared";
 const CHAPTER_ONE_SHIELD_REWARD_KEY = "squad_chapter_one_shield_materials_awarded";
 const FIRST_MISSION_LIGHT_GUIDE_KEY = "squad_first_mission_light_guide_seen";
 const FIRST_MISSION_LIGHT_GUIDE_LINES = [
-  "右下角的工作燈共有三段功能。",
-  "目前是關閉狀態，可以悄悄移動。",
-  "開啟一次後會切換成弱光模式。",
-  "再按一次是強光模式，會快速耗電！",
-  "光照到暗物質時，牠們就會發現你！",
-  "讓我們清除避難所的暗物質吧！",
+  "任務開始前，先認識右下角的工作燈。",
+  "關閉工作燈時，暗物質較不容易發現你。",
+  "按一下會切換成弱光：照亮前方，同時維持較低耗電。",
+  "再按一下是強光：照射範圍更大，但會快速耗電並吸引暗物質。",
+  "善用關閉、弱光與強光，安全清除避難所內的暗物質。",
+  "本關沒有倒數。清除全部 30 隻暗物質後，就能完成第一章。",
 ] as const;
+const CHAPTER_ONE_ENEMY_TARGET = 30;
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
   `https://raw.githubusercontent.com/hz885414-a11y/sci-app-assets/main/11.PARTS/CORE/CORE_%20(${index + 1}).png`,
@@ -465,6 +466,7 @@ export function MissionGame({
   const [showBossTipModal, setShowBossTipModal] = useState<boolean>(false);
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
   const [firstMissionLightGuideStep, setFirstMissionLightGuideStep] = useState<number | null>(null);
+  const [chapterOneEnemiesDefeated, setChapterOneEnemiesDefeated] = useState(0);
   const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "return" | "start" | null>(null);
   const [isGamePaused, setIsGamePaused] = useState<boolean>(false);
   const [isMobileGameMenuOpen, setIsMobileGameMenuOpen] = useState(false);
@@ -481,7 +483,6 @@ export function MissionGame({
       setStartTitleActive(false);
       if (firstMissionLightGuidePendingRef.current) {
         firstMissionLightGuidePendingRef.current = false;
-        try { localStorage.setItem(FIRST_MISSION_LIGHT_GUIDE_KEY, "true"); } catch { /* local tutorial progress is optional */ }
         setFirstMissionLightGuideStep(0);
       }
     }, 1500);
@@ -581,6 +582,9 @@ export function MissionGame({
   const bossOutcomeRecordedRef = useRef(false);
   const chapterOnePeacefulRef = useRef(false);
   const firstMissionLightGuidePendingRef = useRef(false);
+  const chapterOneEnemiesDefeatedRef = useRef(0);
+  const chapterOneEnemiesSpawnedRef = useRef(0);
+  const chapterOneClearPendingRef = useRef(false);
 
   useEffect(() => {
     robotSelectionRef.current = robotSelection;
@@ -1183,27 +1187,15 @@ export function MissionGame({
     companionSkills: {} as Record<string, number>
   });
 
-  // The first deployment introduces the work light in short, readable
-  // speech bubbles above the player. It deliberately starts after the title
-  // card fades, so the guidance is never hidden under another overlay.
+  // The first deployment introduces the work light through a modal, manual
+  // tutorial. The simulation stays frozen until the player acknowledges each
+  // line, so no input or time pressure competes with the explanation.
   useEffect(() => {
     if (firstMissionLightGuideStep === null) return;
     const state = engineRef.current;
     const line = FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep];
     state.playerDialogueText = line;
     state.playerDialogueUntilTick = Number.MAX_SAFE_INTEGER;
-    const timer = window.setTimeout(() => {
-      if (firstMissionLightGuideStep >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1) {
-        if (state.playerDialogueText === line) {
-          state.playerDialogueText = null;
-          state.playerDialogueUntilTick = 0;
-        }
-        setFirstMissionLightGuideStep(null);
-      } else {
-        setFirstMissionLightGuideStep(firstMissionLightGuideStep + 1);
-      }
-    }, 3800);
-    return () => window.clearTimeout(timer);
   }, [firstMissionLightGuideStep]);
 
   useEffect(() => {
@@ -1285,6 +1277,7 @@ export function MissionGame({
   // Adventure work-light cycle: OFF → LOW → HIGH → OFF. Boss combat retains
   // its existing two-mode behavior so this UI change cannot alter robot balance.
   const toggleBatteryMode = () => {
+    if (stage === "PLAYING" && firstMissionLightGuideStep !== null) return;
     setBatteryMode((prev) => {
       const next = stage === "PLAYING"
         ? prev === "OFF" ? "LOW" : prev === "LOW" ? "HIGH" : "OFF"
@@ -1312,8 +1305,26 @@ export function MissionGame({
     triggerSound("click");
   };
 
+  const advanceFirstMissionLightGuide = () => {
+    keysRef.current = {};
+    setJoystickPosition({ x: 0, y: 0 });
+    setFirstMissionLightGuideStep((step) => {
+      if (step === null) return step;
+      if (step >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1) {
+        const state = engineRef.current;
+        state.playerDialogueText = null;
+        state.playerDialogueUntilTick = 0;
+        try { localStorage.setItem(FIRST_MISSION_LIGHT_GUIDE_KEY, "true"); } catch { /* local tutorial progress is optional */ }
+        return null;
+      }
+      return step + 1;
+    });
+    triggerSound("click");
+  };
+
   const triggerInteraction = (kind: "tap" | "hold") => {
     if (stage !== "PLAYING") return;
+    if (firstMissionLightGuideStep !== null) return;
     // The interaction button doubles as the mobile-friendly "continue" key
     // while the memory scene freezes the mission.
     if (memoryFollowUpStep !== null) {
@@ -1387,7 +1398,7 @@ export function MissionGame({
       const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
       if (isCombatStage && (e.code === "Escape" || e.code === "KeyP")) {
         e.preventDefault();
-        if (!e.repeat && !showTipModal && !startTitleActive && bossIntroPhase === null) toggleGamePause();
+        if (!e.repeat && !showTipModal && !startTitleActive && bossIntroPhase === null && firstMissionLightGuideStep === null) toggleGamePause();
         return;
       }
 
@@ -1406,6 +1417,14 @@ export function MissionGame({
       if (showTipModal && (e.code === "Enter" || e.code === "Space")) {
         e.preventDefault();
         if (!e.repeat) handleConfirmTip();
+        return;
+      }
+
+      if (firstMissionLightGuideStep !== null) {
+        if (e.code === "Enter" || e.code === "Space" || e.code === "KeyZ") {
+          e.preventDefault();
+          if (!e.repeat) advanceFirstMissionLightGuide();
+        }
         return;
       }
 
@@ -1488,7 +1507,7 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, onClose]);
+  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep, onClose]);
 
   useEffect(() => {
     if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
@@ -1627,6 +1646,27 @@ export function MissionGame({
     return true;
   };
 
+  const completeChapterOneShelter = () => {
+    if (chapterOnePeacefulRef.current) return;
+    chapterOnePeacefulRef.current = true;
+    const state = engineRef.current;
+    state.enemies = [];
+    state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
+    state.spawnTimer = 0;
+    try { localStorage.setItem(CHAPTER_ONE_SHELTER_CLEARED_KEY, "true"); } catch { /* local progress is optional */ }
+    const shieldMaterialsAwarded = grantChapterOneShieldMaterials();
+    if (!missionCompletionRecordedRef.current) {
+      missionCompletionRecordedRef.current = true;
+      recordAction("stagesCleared");
+    }
+    setUnlockedChapters((current) => current.includes(2) ? current : [...current, 2].sort((a, b) => a - b));
+    setChapterOneCompletionComm(true);
+    setInteractionFeedback(shieldMaterialsAwarded
+      ? "工業區避難所已清除：獲得能量護盾素材（電池 ×2、固定支架與螺絲 ×2）"
+      : "工業區避難所已清除：通訊與傳送程序啟動");
+    triggerSound("success");
+  };
+
   const startGame = () => {
     if (!missionMapReady) return;
     const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
@@ -1651,6 +1691,10 @@ export function MissionGame({
     const baseAgent = AGENTS.find((agent) => agent.id === selectedAgent.id) || AGENTS[0];
     setSelectedAgent(baseAgent);
     missionCompletionRecordedRef.current = false;
+    chapterOneEnemiesDefeatedRef.current = 0;
+    chapterOneEnemiesSpawnedRef.current = 0;
+    chapterOneClearPendingRef.current = false;
+    setChapterOneEnemiesDefeated(0);
     recordAction("startMission");
     triggerSound("click");
     setSessionCoins(0);
@@ -1663,9 +1707,9 @@ export function MissionGame({
     setExpNeeded(100);
     setBatteryPercent(100);
     setBatteryMode("OFF");
-    // After the first clear, Chapter 1 is a peaceful NPC space: no timer,
-    // combat intro, or hostile spawns. Other chapters keep their timers.
-    setTimeLeft(selectedChapter === 1 ? (chapterOneAlreadyCleared ? 0 : 60) : isDemoMode ? 30 : 90);
+    // Chapter 1's opening is objective-based, while its cleared version is a
+    // peaceful NPC space. Other chapters retain their survival timers.
+    setTimeLeft(selectedChapter === 1 ? 0 : isDemoMode ? 30 : 90);
     setIsOvertime(false);
     setTideAlert("idle");
     setAreaTransition(null);
@@ -2276,7 +2320,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -2330,7 +2374,7 @@ export function MissionGame({
       // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
       // instead of silently completing the mission; V evacuation is the
       // player's successful exit route.
-      if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && state.ticks % 60 === 0) {
+      if (stage === "PLAYING" && (selectedChapter !== 1 || state.shelterPerimeterActive) && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev === 11 && (selectedChapter !== 1 || state.shelterPerimeterActive) && !tideCountdownAnnouncedRef.current) {
             tideCountdownAnnouncedRef.current = true;
@@ -2338,25 +2382,6 @@ export function MissionGame({
             triggerSound("countdown");
           }
           if (prev <= 1) {
-            if (selectedChapter === 1 && !chapterOnePeacefulRef.current) {
-              chapterOnePeacefulRef.current = true;
-              state.enemies = [];
-              state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
-              state.spawnTimer = 0;
-              try { localStorage.setItem(CHAPTER_ONE_SHELTER_CLEARED_KEY, "true"); } catch { /* local progress is optional */ }
-              const shieldMaterialsAwarded = grantChapterOneShieldMaterials();
-              if (!missionCompletionRecordedRef.current) {
-                missionCompletionRecordedRef.current = true;
-                recordAction("stagesCleared");
-              }
-              setUnlockedChapters((current) => current.includes(2) ? current : [...current, 2].sort((a, b) => a - b));
-              setChapterOneCompletionComm(true);
-              setInteractionFeedback(shieldMaterialsAwarded
-                ? "工業區避難所已清除：獲得能量護盾素材（電池 ×2、固定支架與螺絲 ×2）"
-                : "工業區避難所已清除：通訊與傳送程序啟動");
-              triggerSound("success");
-              return 0;
-            }
             if (!state.overtime) {
               state.overtime = true;
               state.enemies.forEach((enemy: EnemyEntity) => {
@@ -3338,12 +3363,15 @@ export function MissionGame({
         const perimeterThreat = state.shelterPerimeterActive
           ? getShelterPerimeterThreat(state.shelterPerimeterArea || 1)
           : { hpMultiplier: 1, speedMultiplier: 1, densityMultiplier: 1 };
+        const isChapterOneClearRun = selectedChapter === 1 && !chapterOnePeacefulRef.current && !state.shelterPerimeterActive;
         const spawnLimit = Math.max(
           gameplayConfig.spawnMinInterval,
           Math.floor((gameplayConfig.spawnStartInterval - Math.floor(state.ticks / 150)) / perimeterThreat.densityMultiplier),
         );
-        const enemyCap = Math.ceil(gameplayConfig.maxEnemies * perimeterThreat.densityMultiplier * overtimeMultiplier);
-        if (state.spawnTimer >= spawnLimit && state.enemies.length < enemyCap) {
+        const enemyCap = isChapterOneClearRun
+          ? Math.min(6, CHAPTER_ONE_ENEMY_TARGET - chapterOneEnemiesSpawnedRef.current)
+          : Math.ceil(gameplayConfig.maxEnemies * perimeterThreat.densityMultiplier * overtimeMultiplier);
+        if (state.spawnTimer >= spawnLimit && state.enemies.length < enemyCap && (!isChapterOneClearRun || chapterOneEnemiesSpawnedRef.current < CHAPTER_ONE_ENEMY_TARGET)) {
           state.spawnTimer = 0;
           
           // Spawn near the edge of the visible area, but only on white mask pixels.
@@ -3391,6 +3419,7 @@ export function MissionGame({
               lastSeenX: state.overtime ? player.x : spawn.x,
               lastSeenY: state.overtime ? player.y : spawn.y,
             });
+            if (isChapterOneClearRun) chapterOneEnemiesSpawnedRef.current += 1;
           }
         }
       }
@@ -3676,11 +3705,22 @@ export function MissionGame({
               alpha: 1
             });
           }
+          if (selectedChapter === 1 && !chapterOnePeacefulRef.current && !state.shelterPerimeterActive) {
+            const defeated = Math.min(CHAPTER_ONE_ENEMY_TARGET, chapterOneEnemiesDefeatedRef.current + 1);
+            chapterOneEnemiesDefeatedRef.current = defeated;
+            setChapterOneEnemiesDefeated(defeated);
+            if (defeated >= CHAPTER_ONE_ENEMY_TARGET) chapterOneClearPendingRef.current = true;
+          }
           return false; // remove
         }
 
         return true;
       });
+
+      if (chapterOneClearPendingRef.current) {
+        chapterOneClearPendingRef.current = false;
+        completeChapterOneShelter();
+      }
 
       state.enemyDeathEffects = state.enemyDeathEffects.filter((effect) => {
         effect.life += 1;
@@ -7238,6 +7278,9 @@ export function MissionGame({
     }, 3000);
   };
 
+  const isFirstChapterClearRun = stage === "PLAYING" && selectedChapter === 1 && !chapterOnePeacefulRef.current;
+  const isLightGuideHighlightingControl = firstMissionLightGuideStep === 2 || firstMissionLightGuideStep === 3;
+
   return (
     <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
       {stage === "ENDING" && endingSummary && <StageEnding summary={endingSummary} onReturnToBase={onClose} />}
@@ -7514,8 +7557,11 @@ export function MissionGame({
               </div>
             </div>
 
-            {/* The cleared Chapter 1 shelter is an NPC space, not a timed battle. */}
-            {!(selectedChapter === 1 && chapterOnePeacefulRef.current) && <div className="flex items-center justify-center">
+            {isFirstChapterClearRun ? <div className="flex items-center justify-center">
+              <div className="rounded border border-cyan-400/70 bg-cyan-950/70 px-3 py-1 font-mono text-[10px] font-black tracking-wider text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.24)]">
+                清除暗物質 {chapterOneEnemiesDefeated} / {CHAPTER_ONE_ENEMY_TARGET}
+              </div>
+            </div> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && <div className="flex items-center justify-center">
               <div className="px-3 py-1 bg-zinc-900/90 border border-zinc-800 rounded flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
                 <span className={`text-[10px] font-bold uppercase tracking-wider hidden sm:inline ${isOvertime ? "text-rose-300" : "text-zinc-400"}`}>{isOvertime ? "暗影暴走：" : "核心集結倒數:"}</span>
@@ -7544,7 +7590,7 @@ export function MissionGame({
               {/* Battery Mode Switch */}
               <button 
                 onClick={toggleBatteryMode}
-                className={`px-2 py-1 text-[9px] font-bold uppercase rounded border cursor-pointer transition-all flex items-center gap-1 ${
+                className={`px-2 py-1 text-[9px] font-bold uppercase rounded border cursor-pointer transition-all flex items-center gap-1 ${isLightGuideHighlightingControl ? "animate-pulse border-amber-200 ring-2 ring-amber-300/90 shadow-[0_0_26px_rgba(251,191,36,.9)]" : ""} ${
                   batteryMode === "HIGH" 
                     ? "bg-amber-500 text-zinc-950 border-amber-400 font-black" 
                     : batteryMode === "LOW" ? "bg-zinc-900 text-zinc-400 border-zinc-800" : "bg-zinc-950 text-zinc-600 border-zinc-800"
@@ -7729,7 +7775,7 @@ export function MissionGame({
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] leading-4 shadow-lg backdrop-blur-[6px]">
                 <span className="text-amber-400">🪙 {sessionCoins}</span><span className="text-orange-300">◆ {score}</span>
                 <span className="text-cyan-300">LV.{level} {Math.floor(Math.min(100, (exp / expNeeded) * 100))}%</span>
-                {!(selectedChapter === 1 && chapterOnePeacefulRef.current) && <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>}
+                {isFirstChapterClearRun ? <span className="font-black text-cyan-200">清除 {chapterOneEnemiesDefeated}/{CHAPTER_ONE_ENEMY_TARGET}</span> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>}
               </div>
               <div className="relative">
                 <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-500/60 bg-[rgba(10,10,14,0.78)] text-orange-400 backdrop-blur-[6px]" aria-label="任務選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
@@ -7750,7 +7796,7 @@ export function MissionGame({
 
             {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動 Z</b></span></button>}
             {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className="pointer-events-auto absolute bottom-[max(28px,env(safe-area-inset-bottom))] right-40 grid h-12 w-12 place-items-center rounded-full border border-emerald-500/70 bg-emerald-950/80 text-center text-emerald-100 shadow-[0_0_14px_rgba(16,185,129,.2)] backdrop-blur-[4px] disabled:opacity-50" aria-label="撤離返回基地"><span className="text-[8px] font-black">撤離<br />V</span></button>}
-            <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : batteryMode === "LOW" ? "border-orange-500/70 bg-black/65 text-orange-300" : "border-zinc-700 bg-zinc-950/80 text-zinc-500"}`} aria-label="切換工作燈：關閉、弱光、強光">
+            <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${isLightGuideHighlightingControl ? "animate-pulse border-amber-200 ring-4 ring-amber-300/90 shadow-[0_0_34px_rgba(251,191,36,.95)]" : ""} ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : batteryMode === "LOW" ? "border-orange-500/70 bg-black/65 text-orange-300" : "border-zinc-700 bg-zinc-950/80 text-zinc-500"}`} aria-label="切換工作燈：關閉、弱光、強光">
               <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : batteryMode === "LOW" ? "弱光" : "關閉"}</b></span>
             </button>
             {interactionFeedback && <div className="pointer-events-none absolute bottom-[104px] right-4 max-w-[190px] rounded border border-cyan-400/50 bg-cyan-950/90 px-2 py-1 text-right font-mono text-[10px] text-cyan-100 shadow-lg">{interactionFeedback}</div>}
@@ -8531,6 +8577,22 @@ export function MissionGame({
             <p className="mt-3 text-[10px] leading-5 text-zinc-500">事件結束後，此區不再生成怪物，保留為後續 NPC 登場與劇情互動場所。</p>
             <button type="button" onClick={advanceChapterOneNpcEvent} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-cyan-300 bg-cyan-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-cyan-200">
               {chapterOneNpcEventStep >= CHAPTER_ONE_NPC_LINES.length - 1 ? "建立安全據點" : "繼續通訊"}
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === "PLAYING" && firstMissionLightGuideStep !== null && (
+        <div className="absolute inset-0 z-[78] flex items-end justify-center bg-black/60 p-4 pb-[max(24px,env(safe-area-inset-bottom))] backdrop-blur-[1px] sm:items-center sm:p-8" role="dialog" aria-modal="true" aria-label="工作燈新手教學">
+          <div className="w-full max-w-xl border border-amber-300/80 bg-zinc-950/95 p-4 shadow-[0_0_54px_rgba(251,191,36,.24)] sm:p-6">
+            <p className="font-mono text-[10px] font-black tracking-[.26em] text-amber-300">WORK LIGHT // BASIC TRAINING</p>
+            <div className="mt-3 flex items-center justify-between gap-4"><h2 className="text-xl font-black tracking-wider text-white sm:text-2xl">工作燈操作教學</h2><span className="shrink-0 font-mono text-xs text-amber-200">{firstMissionLightGuideStep + 1} / {FIRST_MISSION_LIGHT_GUIDE_LINES.length}</span></div>
+            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep]}</p>
+            {isLightGuideHighlightingControl && <p className="mt-2 border-l-2 border-amber-300 pl-3 text-xs leading-5 text-amber-100">右下角的工作燈按鈕已發光標示。現在先閱讀說明，完成教學後才會開放操作。</p>}
+            <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學期間，時間、敵人與角色操作皆已暫停。</p>
+            <button type="button" onClick={advanceFirstMissionLightGuide} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-amber-300 bg-amber-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-amber-200">
+              {firstMissionLightGuideStep >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1 ? "開始清除任務" : "我了解了，繼續"}
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
