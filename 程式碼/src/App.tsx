@@ -705,6 +705,9 @@ export default function App() {
     localStorage.removeItem("squad_chapter_one_shelter_cleared");
     localStorage.removeItem("squad_chapter_one_shield_materials_awarded");
     localStorage.removeItem("squad_first_mission_light_guide_seen");
+    localStorage.removeItem("sci_first_robot_upgrade_complete");
+    localStorage.removeItem("sci_ampa_boss_victory");
+    localStorage.removeItem("sci_first_boss_combat_tutorial_seen");
     localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY);
     localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY);
     setHasPendingChapterOneNpcIntro(false);

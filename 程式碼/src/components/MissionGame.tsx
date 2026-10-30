@@ -10,6 +10,7 @@ import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites"
 import { getBossVisualSet, type BossVisualState } from "../data/bossVisualConfig";
 import { getEffectiveBossBehaviorProfile, getBossKnowledgeModifiers, getEffectiveBossDefinition } from "../systems/bossKnowledgeEffects";
 import { getPlayerStats, recordAction, recordEnemyDefeated, recordExhibitionBossOutcome } from "../systems/playerStats";
+import { hasSeenBossCombatTutorial, markAmpaBossDefeated, markBossCombatTutorialSeen } from "../systems/bossProgression";
 import { getOwnedCards } from "../systems/playerCollection";
 import { getTriggeredEvents } from "../systems/eventManager";
 import { StageEnding, type StageEndingSummary } from "./StageEnding";
@@ -244,6 +245,13 @@ const FIRST_MISSION_LIGHT_GUIDE_LINES = [
   "善用關閉、弱光與強光，安全清除避難所內的暗物質。",
   "本關沒有倒數。清除全部 30 隻暗物質後，就能完成第一章。",
 ] as const;
+const BOSS_COMBAT_TUTORIAL_LINES = [
+  "這是 C2-932 的機器人作戰。教學期間，Boss、時間與操作都會暫停。",
+  "使用 WASD／方向鍵，或左下搖桿移動。保持走位，別停在 Boss 的攻擊範圍內。",
+  "右下技能依序是：Z 重拳、X 防禦、C 雷射、V 大招。手機版可直接按對應按鈕。",
+  "防禦能抵擋攻擊；雷射適合拉開距離輸出。累積能量至 100% 後再使用大招。",
+  "擊敗 AMPA Boss 後，任務中心會開放其他全部 Boss 作戰。準備好就開始吧。",
+] as const;
 const CHAPTER_ONE_ENEMY_TARGET = 30;
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
@@ -466,6 +474,7 @@ export function MissionGame({
   const [showBossTipModal, setShowBossTipModal] = useState<boolean>(false);
   const [startTitleActive, setStartTitleActive] = useState<boolean>(false);
   const [firstMissionLightGuideStep, setFirstMissionLightGuideStep] = useState<number | null>(null);
+  const [bossCombatTutorialStep, setBossCombatTutorialStep] = useState<number | null>(null);
   const [chapterOneEnemiesDefeated, setChapterOneEnemiesDefeated] = useState(0);
   const [bossIntroPhase, setBossIntroPhase] = useState<"entrance" | "return" | "start" | null>(null);
   const [isGamePaused, setIsGamePaused] = useState<boolean>(false);
@@ -1361,6 +1370,21 @@ export function MissionGame({
     triggerSound("click");
   };
 
+  const advanceBossCombatTutorial = () => {
+    keysRef.current = {};
+    releaseJoystick();
+    setBossCombatTutorialStep((step) => {
+      if (step === null) return null;
+      if (step >= BOSS_COMBAT_TUTORIAL_LINES.length - 1) {
+        markBossCombatTutorialSeen();
+        window.requestAnimationFrame(() => canvasRef.current?.focus({ preventScroll: true }));
+        return null;
+      }
+      return step + 1;
+    });
+    triggerSound("click");
+  };
+
   const triggerInteraction = (kind: "tap" | "hold") => {
     if (stage !== "PLAYING") return;
     if (firstMissionLightGuideStep !== null) return;
@@ -1437,7 +1461,7 @@ export function MissionGame({
       const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
       if (isCombatStage && (e.code === "Escape" || e.code === "KeyP")) {
         e.preventDefault();
-        if (!e.repeat && !showTipModal && !startTitleActive && bossIntroPhase === null && firstMissionLightGuideStep === null) toggleGamePause();
+        if (!e.repeat && !showTipModal && !startTitleActive && bossIntroPhase === null && firstMissionLightGuideStep === null && bossCombatTutorialStep === null) toggleGamePause();
         return;
       }
 
@@ -1463,6 +1487,14 @@ export function MissionGame({
         if (e.code === "Enter" || e.code === "Space" || e.code === "KeyZ") {
           e.preventDefault();
           if (!e.repeat) advanceFirstMissionLightGuide();
+        }
+        return;
+      }
+
+      if (bossCombatTutorialStep !== null) {
+        if (e.code === "Enter" || e.code === "Space" || e.code === "KeyZ") {
+          e.preventDefault();
+          if (!e.repeat) advanceBossCombatTutorial();
         }
         return;
       }
@@ -1546,7 +1578,7 @@ export function MissionGame({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep, onClose]);
+  }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep, bossCombatTutorialStep, onClose]);
 
   useEffect(() => {
     if (stage === "PLAYING" || stage === "BOSSBATTLE" || stage === "BOSS_WARNING" || showUpgradeChoice) return;
@@ -2137,6 +2169,7 @@ export function MissionGame({
     setBatteryMode("LOW");
     setStage("BOSSBATTLE");
     setBossIntroPhase("entrance");
+    if (!hasSeenBossCombatTutorial()) setBossCombatTutorialStep(0);
     setWeaponLevels(getRobotWeaponLevels());
 
     // Boss combat uses laboratory robot upgrades only. Human supply upgrades
@@ -2356,7 +2389,7 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null;
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -7228,7 +7261,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -7237,6 +7270,7 @@ export function MissionGame({
     bossDeathCinematicRef.current = true;
     setBossDeathCinematic(true);
     recordAction("bossDefeated");
+    if (entrySource === "exhibition" && selectedChapter === 1) markAmpaBossDefeated();
     if (!bossOutcomeRecordedRef.current) {
       bossOutcomeRecordedRef.current = true;
       recordExhibitionBossOutcome(selectedChapter, "victory");
@@ -8629,6 +8663,21 @@ export function MissionGame({
             <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學期間，時間、敵人與角色操作皆已暫停。</p>
             <button type="button" onClick={advanceFirstMissionLightGuide} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-amber-300 bg-amber-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-amber-200">
               {firstMissionLightGuideStep >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1 ? "開始清除任務" : "我了解了，繼續"}
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === "BOSSBATTLE" && bossCombatTutorialStep !== null && (
+        <div className="absolute inset-0 z-[78] flex items-end justify-center bg-black/65 p-4 pb-[max(24px,env(safe-area-inset-bottom))] backdrop-blur-[1px] sm:items-center sm:p-8" role="dialog" aria-modal="true" aria-label="機器人作戰新手教學">
+          <div className="w-full max-w-xl border border-cyan-300/80 bg-zinc-950/95 p-4 shadow-[0_0_54px_rgba(34,211,238,.24)] sm:p-6">
+            <p className="font-mono text-[10px] font-black tracking-[.26em] text-cyan-300">C2-932 // BOSS COMBAT TRAINING</p>
+            <div className="mt-3 flex items-center justify-between gap-4"><h2 className="text-xl font-black tracking-wider text-white sm:text-2xl">機器人作戰操作教學</h2><span className="shrink-0 font-mono text-xs text-cyan-200">{bossCombatTutorialStep + 1} / {BOSS_COMBAT_TUTORIAL_LINES.length}</span></div>
+            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{BOSS_COMBAT_TUTORIAL_LINES[bossCombatTutorialStep]}</p>
+            <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學結束前，Boss 攻擊、倒數與機器人操作都不會開始。</p>
+            <button type="button" onClick={advanceBossCombatTutorial} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-cyan-300 bg-cyan-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-cyan-200">
+              {bossCombatTutorialStep >= BOSS_COMBAT_TUTORIAL_LINES.length - 1 ? "開始機器人作戰" : "我了解了，繼續"}
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>

@@ -19,6 +19,7 @@ import {
   Gamepad2
 } from "lucide-react";
 import { EXHIBITION_MISSIONS, type ExhibitionMission } from "../data/exhibitionMissions";
+import { canEnterExhibitionBoss, getBossLockReason } from "../systems/bossProgression";
 interface OpsDivisionProps {
   isMuted: boolean;
   playSound: (sound: string) => void;
@@ -107,6 +108,11 @@ export function OpsDivision({
   };
 
   const handleStartBossMission = (exhibition: ExhibitionMission) => {
+    if (!canEnterExhibitionBoss(exhibition.bossMission.chapter)) {
+      playSound("click");
+      addLog(`[BOSS_LOCKED] ${getBossLockReason(exhibition.bossMission.chapter)}`);
+      return;
+    }
     playSound("click");
     addLog(
       `[BOSS_DEPLOY] ${exhibition.name} // 第 ${exhibition.bossMission.chapter} 章 // ${exhibition.bossMission.bossName}`
@@ -307,6 +313,8 @@ export function OpsDivision({
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin">
                   {EXHIBITION_MISSIONS.map((exhib) => {
+                    const bossUnlocked = canEnterExhibitionBoss(exhib.bossMission.chapter);
+                    const bossLockReason = getBossLockReason(exhib.bossMission.chapter);
                     return (
                       <article
                         key={exhib.id}
@@ -342,12 +350,15 @@ export function OpsDivision({
                           <button
                             type="button"
                             onClick={() => handleStartBossMission(exhib)}
-                            className="flex min-h-10 items-center justify-center gap-1.5 border border-rose-500/70 bg-rose-950/60 px-2 text-[10px] font-black text-rose-200 transition-all hover:bg-rose-900 hover:border-rose-400 active:scale-95 cursor-pointer"
-                            aria-label={`啟動 ${exhib.name} Boss 作戰`}
+                            disabled={!bossUnlocked}
+                            title={bossUnlocked ? "啟動 Boss 作戰" : bossLockReason}
+                            className={`flex min-h-10 items-center justify-center gap-1.5 border px-2 text-[10px] font-black transition-all ${bossUnlocked ? "border-rose-500/70 bg-rose-950/60 text-rose-200 hover:bg-rose-900 hover:border-rose-400 active:scale-95 cursor-pointer" : "cursor-not-allowed border-zinc-700 bg-zinc-950 text-zinc-500"}`}
+                            aria-label={bossUnlocked ? `啟動 ${exhib.name} Boss 作戰` : `${exhib.name} Boss 作戰已鎖定：${bossLockReason}`}
                           >
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            <span>BOSS 作戰</span>
+                            <AlertTriangle className={`h-3.5 w-3.5 ${bossUnlocked ? "" : "opacity-50"}`} />
+                            <span>{bossUnlocked ? "BOSS 作戰" : "🔒 BOSS 鎖定"}</span>
                           </button>
+                          {!bossUnlocked && <p className="col-span-2 -mt-1 text-center text-[9px] text-zinc-500">{bossLockReason}</p>}
                         </div>
                       </article>
                     );

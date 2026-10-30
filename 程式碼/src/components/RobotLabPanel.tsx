@@ -14,6 +14,7 @@ import {
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
 import { recordAction, recordRhythmWeldResult } from "../systems/playerStats";
+import { markFirstRobotUpgradeComplete } from "../systems/bossProgression";
 import { RhythmSolderingGame } from "./RhythmSolderingGame";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
 import type { RhythmResult } from "../rhythm/types";
@@ -86,6 +87,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
     recordAction("repairRobot");
     recordAction("upgradeRobotModule", levelsGained);
     recordRhythmWeldResult(result.grade);
+    markFirstRobotUpgradeComplete();
     emitAmbientEvent("research_success", { eventId: id });
     playSound("success");
     setPendingUpgradeId(null);
