@@ -7610,9 +7610,9 @@ export function MissionGame({
             <div
               className="relative flex h-full w-full items-center justify-center"
               style={{
-                width: isMobile
-                  ? "100%"
-                  : "min(1400px, 100%, calc(100vh * 14 / 9))"
+                // General missions use the entire desktop viewport, matching
+                // the mobile play surface instead of a letterboxed 14:9 card.
+                width: "100%"
               }}
             >
               <canvas 
@@ -7623,7 +7623,7 @@ export function MissionGame({
                 className={
                   isMobile 
                     ? "h-full w-full bg-zinc-950 object-cover" 
-                    : "h-auto w-full max-h-full max-w-[1400px] aspect-[14/9] border border-zinc-800 bg-zinc-950 shadow-2xl rounded"
+                    : "h-full w-full bg-zinc-950 object-cover"
                 }
               />
               {areaTransition && <div className="factory-area-transition pointer-events-none absolute inset-0 z-[46] grid place-items-center px-4" aria-live="assertive">
