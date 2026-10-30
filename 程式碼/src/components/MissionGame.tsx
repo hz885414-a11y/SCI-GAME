@@ -7490,38 +7490,9 @@ export function MissionGame({
       {stage === "PLAYING" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none overflow-hidden" ref={containerRef}>
           {/* Streamlined, Compact Top Status Bar */}
-          <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-2 rounded border border-zinc-700/60 bg-zinc-950/75 px-3 py-1.5 shadow-xl backdrop-blur-md select-none sm:flex">
-            {/* Left Column: Player Status & Mini Stats */}
+          <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-2 select-none sm:flex">
+            {/* Left Column: Mission Stats */}
             <div className="flex items-center gap-2 xs:gap-3 flex-wrap">
-              {/* Agent mini badge */}
-              <div className="flex items-center gap-1.5 bg-zinc-900/80 border border-zinc-800/60 rounded px-2 py-1">
-                <div className="scale-75 -mx-1.5 flex-shrink-0">
-                  <SpriteAnimator
-                    src={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].src}
-                    totalFrames={6}
-                    idleFrame={0}
-                    animationFrames={[1, 2, 3, 4, 5]}
-                    frameXOffsets={walkSprites[selectedAgent.id as "claire" | "ethan" | "leo"].frameXOffsets}
-                    fps={7}
-                    playing={true}
-                    width={28}
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-zinc-200 leading-none">{selectedAgent.name}</span>
-                  <div className="flex items-center gap-0.5 mt-0.5">
-                    {Array.from({ length: maxHp }).map((_, i) => (
-                      <Heart 
-                        key={i} 
-                        className={`w-2.5 h-2.5 ${
-                          i < hp ? "text-rose-500 fill-rose-500" : "text-zinc-800"
-                        }`} 
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
               {/* Coins & Score Badges */}
               <div className="flex items-center gap-1.5">
                 <div className="flex items-center gap-1 bg-zinc-900/80 border border-zinc-800/60 rounded px-2 py-1 text-[10px] font-mono">
