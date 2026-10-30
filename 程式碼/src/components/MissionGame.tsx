@@ -43,7 +43,7 @@ import {
 } from "../utils/gameFeedback";
 interface MissionGameProps {
   onClose: () => void;
-  /** Returns to base after Chapter 1's one-time 60-second survival sequence. */
+  /** Returns to base after Chapter 1's opening mission is cleared. */
   onChapterOneShelterCleared: () => void;
   /** A revisited, purified Chapter 1 keeps the base's peaceful BGM. */
   onMissionMusicModeChange: (useBaseMusic: boolean) => void;
@@ -554,6 +554,7 @@ export function MissionGame({
   const [memoryFollowUpStep, setMemoryFollowUpStep] = useState<number | null>(null);
   const [chapterOneNpcEventStep, setChapterOneNpcEventStep] = useState<number | null>(null);
   const [chapterOneCompletionComm, setChapterOneCompletionComm] = useState(false);
+  const [chapterOneReturnGuideActive, setChapterOneReturnGuideActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
   const [tideAlert, setTideAlert] = useState<"idle" | "countdown" | "rising">("idle");
@@ -1699,6 +1700,7 @@ export function MissionGame({
     }
     setUnlockedChapters((current) => current.includes(2) ? current : [...current, 2].sort((a, b) => a - b));
     setChapterOneCompletionComm(true);
+    setChapterOneReturnGuideActive(true);
     setInteractionFeedback(shieldMaterialsAwarded
       ? "工業區避難所已清除：獲得能量護盾素材（電池 ×2、固定支架與螺絲 ×2）"
       : "工業區避難所已清除：通訊與傳送程序啟動");
@@ -1722,6 +1724,7 @@ export function MissionGame({
     setMemoryFollowUpStep(null);
     setChapterOneNpcEventStep(null);
     setChapterOneCompletionComm(false);
+    setChapterOneReturnGuideActive(false);
     chapterOnePeacefulRef.current = chapterOneAlreadyCleared;
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
@@ -2021,14 +2024,6 @@ export function MissionGame({
     setStartTitleActive(false);
   };
 
-  // The completion transmission is visible before the squad is transported
-  // home, so the 60-second result cannot be mistaken for a normal exit.
-  useEffect(() => {
-    if (!chapterOneCompletionComm) return;
-    const timer = window.setTimeout(onChapterOneShelterCleared, 2600);
-    return () => window.clearTimeout(timer);
-  }, [chapterOneCompletionComm, onChapterOneShelterCleared]);
-
   // Assembly Sequence transition
   const enterAssembly = () => {
     triggerSound("power");
@@ -2071,6 +2066,8 @@ export function MissionGame({
   // normal successful report screen.
   const beginEvacuation = () => {
     if (stage !== "PLAYING" || evacuationTimerRef.current !== null) return;
+    const isFirstChapterReturn = selectedChapter === 1 && chapterOneReturnGuideActive;
+    setChapterOneReturnGuideActive(false);
     const startedAt = performance.now();
     setEvacuationProgress(0);
     setEvacuationPhase("upload");
@@ -2092,7 +2089,8 @@ export function MissionGame({
       evacuationTimerRef.current = window.setTimeout(() => {
         evacuationTimerRef.current = null;
         if (engineRef.current.player.hp <= 0) return;
-        enterReport();
+        if (isFirstChapterReturn) onChapterOneShelterCleared();
+        else enterReport();
       }, EVACUATION_LAUNCH_MS);
     }, 2000);
   };
@@ -7230,7 +7228,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -7639,7 +7637,7 @@ export function MissionGame({
               </button>
 
               {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-cyan-700 bg-cyan-950/45 text-cyan-200 transition hover:border-cyan-300" aria-label="互動：點擊或長按" title="互動（Z）；長按可觸發特殊互動"><Sparkles className="w-3 h-3" /><span>互動 Z</span></button>}
-              {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className="px-2 py-1 text-[9px] font-bold uppercase rounded border border-emerald-700 bg-emerald-950/45 text-emerald-200 transition hover:border-emerald-300 disabled:opacity-50" aria-label="返回基地" title="返回基地（V），讀取 2 秒"><span>撤離 V</span></button>}
+              {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className={`px-2 py-1 text-[9px] font-bold uppercase rounded border border-emerald-700 bg-emerald-950/45 text-emerald-200 transition hover:border-emerald-300 disabled:opacity-50 ${chapterOneReturnGuideActive ? "animate-pulse border-emerald-200 ring-2 ring-emerald-300/90 shadow-[0_0_26px_rgba(52,211,153,.9)]" : ""}`} aria-label="回城返回基地" title="回城返回基地（V），讀取 2 秒"><span>回城 V</span></button>}
 
               {/* Virtual Control Switch */}
               <button 
@@ -7833,7 +7831,7 @@ export function MissionGame({
             </div>
 
             {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動 Z</b></span></button>}
-            {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className="pointer-events-auto absolute bottom-[max(28px,env(safe-area-inset-bottom))] right-40 grid h-12 w-12 place-items-center rounded-full border border-emerald-500/70 bg-emerald-950/80 text-center text-emerald-100 shadow-[0_0_14px_rgba(16,185,129,.2)] backdrop-blur-[4px] disabled:opacity-50" aria-label="撤離返回基地"><span className="text-[8px] font-black">撤離<br />V</span></button>}
+            {stage === "PLAYING" && <button type="button" onClick={beginEvacuation} disabled={evacuationProgress !== null} className={`pointer-events-auto absolute bottom-[max(28px,env(safe-area-inset-bottom))] right-40 grid h-12 w-12 place-items-center rounded-full border border-emerald-500/70 bg-emerald-950/80 text-center text-emerald-100 shadow-[0_0_14px_rgba(16,185,129,.2)] backdrop-blur-[4px] disabled:opacity-50 ${chapterOneReturnGuideActive ? "animate-pulse border-emerald-200 ring-4 ring-emerald-300/90 shadow-[0_0_34px_rgba(52,211,153,.95)]" : ""}`} aria-label="回城返回基地"><span className="text-[8px] font-black">回城<br />V</span></button>}
             <button type="button" onPointerDown={(event) => { event.preventDefault(); toggleBatteryMode(); }} className={`pointer-events-auto absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-4 grid h-[72px] w-[72px] place-items-center rounded-full border text-center shadow-[0_0_18px_rgba(249,115,22,.22)] backdrop-blur-[4px] ${isLightGuideHighlightingControl ? "animate-pulse border-amber-200 ring-4 ring-amber-300/90 shadow-[0_0_34px_rgba(251,191,36,.95)]" : ""} ${batteryMode === "HIGH" ? "border-amber-300 bg-amber-500/90 text-zinc-950" : batteryMode === "LOW" ? "border-orange-500/70 bg-black/65 text-orange-300" : "border-zinc-700 bg-zinc-950/80 text-zinc-500"}`} aria-label="切換工作燈：關閉、弱光、強光">
               <span><Zap className="mx-auto h-5 w-5" /><b className="mt-0.5 block text-[9px] leading-3">{batteryMode === "HIGH" ? "強光" : batteryMode === "LOW" ? "弱光" : "關閉"}</b></span>
             </button>
@@ -8599,9 +8597,9 @@ export function MissionGame({
             <p className="font-mono text-[10px] font-black tracking-[.28em] text-cyan-200">SHELTER COMMS // CLEARANCE CONFIRMED</p>
             <h2 className="mt-3 text-2xl font-black tracking-wider text-white sm:text-3xl">工業區避難所清除完成</h2>
             <p className="mt-4 text-sm leading-7 text-cyan-50 sm:text-base">成功清除工業區避難所湧出的暗物質怪物。</p>
-            <p className="mt-3 text-xs leading-6 text-slate-300">安全訊號已建立。正在傳送小隊回到營運機動部，並觸發「避難所的清除」事件。</p>
-            <div className="mx-auto mt-5 h-1.5 max-w-xs overflow-hidden rounded-full bg-slate-800"><div className="h-full w-full animate-[pulse_1s_ease-in-out_infinite] bg-cyan-300" /></div>
-            <p className="mt-2 font-mono text-[10px] tracking-widest text-cyan-300">TRANSPORTING TO BASE…</p>
+            <p className="mt-3 text-xs leading-6 text-slate-300">安全訊號已建立。接下來由你決定何時回城，不會自動傳送。</p>
+            <div className="mx-auto mt-5 max-w-xs border border-emerald-300/80 bg-emerald-950/50 px-3 py-3 text-left shadow-[0_0_22px_rgba(52,211,153,.2)]"><p className="font-mono text-[10px] font-black tracking-wider text-emerald-200">回城教學</p><p className="mt-1 text-xs leading-5 text-emerald-50">關閉此訊息後，發光的「回城 V」按鈕會留在畫面上。點擊它或按 V，即可自行返回基地。</p></div>
+            <button type="button" onClick={() => { keysRef.current = {}; setChapterOneCompletionComm(false); triggerSound("click"); }} autoFocus className="mx-auto mt-5 flex min-h-12 w-full max-w-xs items-center justify-center gap-2 border border-emerald-300 bg-emerald-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-emerald-200"><span>了解，顯示回城按鈕</span><ChevronRight className="h-4 w-4" /></button>
           </div>
         </div>
       )}
