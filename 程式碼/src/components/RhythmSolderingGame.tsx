@@ -20,7 +20,15 @@ interface RhythmSolderingGameProps {
 }
 
 const CALIBRATION_KEY = "c2_932_rhythm_audio_calibration_ms";
+const RHYTHM_TUTORIAL_KEY = "c2_932_rhythm_soldering_tutorial_seen";
 const PREVIEW_SECONDS = 15;
+const RHYTHM_TUTORIAL_LINES = [
+  "這是機器人改裝用的節奏焊接。節奏開始前，先選擇想挑戰的難度。",
+  "音符會沿著電路板接近判定點；看準節奏，在音符抵達時按下對應按鍵。",
+  "電腦可使用 Z、X、C、V；手機則直接點擊畫面下方四個焊接按鈕。",
+  "遇到雙音符時，請同時按下兩個對應軌道。長音符則要按住直到音符結束。",
+  "準備好後按下「開始焊接改裝」。第一次也可以先選擇 15 秒試玩，不會消耗素材。",
+] as const;
 const JUDGEMENT_COLOR: Record<RhythmJudgement, string> = { perfect: "text-amber-200", great: "text-emerald-300", good: "text-cyan-300", miss: "text-rose-400" };
 const JUDGEMENT_POP_STYLE: Record<RhythmJudgement, string> = {
   perfect: "text-amber-200 drop-shadow-[0_0_16px_#fbbf24]",
@@ -102,6 +110,9 @@ export function RhythmSolderingGame({ equipmentName, onCompleted, onCancel }: Rh
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const [hitEffect, setHitEffect] = useState<{ id: number; lane: RhythmLane; judgement: Exclude<RhythmJudgement, "miss"> } | null>(null);
+  const [tutorialStep, setTutorialStep] = useState<number | null>(() => {
+    try { return localStorage.getItem(RHYTHM_TUTORIAL_KEY) === "true" ? null : 0; } catch { return 0; }
+  });
   const chartRef = useRef<RhythmChart>(getRhythmChart("normal"));
   const engineRef = useRef(new RhythmAudioController());
   const frameRef = useRef<number | null>(null);
@@ -118,6 +129,18 @@ export function RhythmSolderingGame({ equipmentName, onCompleted, onCancel }: Rh
     const next = Math.max(-300, Math.min(300, value));
     setCalibrationMs(next);
     localStorage.setItem(CALIBRATION_KEY, String(next));
+  };
+
+  const advanceTutorial = () => {
+    setTutorialStep((step) => {
+      if (step === null) return null;
+      if (step >= RHYTHM_TUTORIAL_LINES.length - 1) {
+        try { localStorage.setItem(RHYTHM_TUTORIAL_KEY, "true"); } catch { /* tutorial progress is optional */ }
+        return null;
+      }
+      return step + 1;
+    });
+    playSound("click");
   };
 
   const register = useCallback((judgement: RhythmJudgement, lane?: RhythmLane) => {
@@ -238,6 +261,7 @@ export function RhythmSolderingGame({ equipmentName, onCompleted, onCancel }: Rh
       {phase === "paused" && <section className="flex min-h-0 flex-1 flex-col items-center justify-center bg-[#020b0d] p-5 text-center"><p className="font-mono text-xs tracking-[.2em] text-amber-300">RHYTHM PAUSED</p><h3 className="mt-3 font-mono text-xl font-black">焊接已安全暫停</h3><p className="mt-3 text-sm leading-relaxed text-zinc-400">為避免音樂時鐘偏移，重新開始本次焊接。素材不會被扣除。</p><button type="button" onClick={() => void start(playMode)} className="mt-6 min-h-14 w-full border-2 border-amber-100 bg-amber-400 font-mono font-black text-black">重新開始焊接</button><button type="button" onClick={onCancel} className="mt-3 font-mono text-sm text-zinc-500 underline">返回改裝介面</button></section>}
       {phase === "result" && result && <section className="flex min-h-0 flex-1 flex-col justify-center bg-[radial-gradient(ellipse_at_top,rgba(14,116,144,.18),transparent_50%),#020b0d] p-5 text-center"><div className="mx-auto w-full max-w-[360px] border border-cyan-950 bg-[#041216]/75 px-5 py-6 shadow-[0_0_35px_rgba(6,182,212,.08)]"><p className="font-mono text-[11px] tracking-[.18em] text-cyan-300">{playMode === "preview" ? "CALIBRATION REPORT // PREVIEW" : "SOLDERING REPORT"}</p><h3 className="mt-2 font-pixel text-[clamp(96px,26vw,136px)] font-black leading-none text-amber-300 drop-shadow-[0_0_16px_#fbbf24]">{result.grade}</h3><p className="mt-4 flex items-baseline justify-center gap-2 text-2xl font-black"><span className="font-cjk-ui">同步率</span><AnimatedAccuracy value={result.accuracy} /></p><p className="mt-2 font-mono text-base font-bold tracking-wider text-zinc-400">{result.score} SCORE</p>{result.bonusScore > 0 && <p className="mt-1 font-mono text-xs font-black text-emerald-300">{result.grade} 評價加成　+{result.bonusScore} SCORE</p>}{playMode === "full" && <p className="mt-2 font-mono text-xs font-black text-cyan-200">改裝增幅　{result.grade === "S" ? "+3 級" : result.grade === "A" ? "+2 級" : "+1 級"}</p>}</div><div className="mt-6 grid grid-cols-4 gap-1 text-[10px]">{(["perfect", "great", "good", "miss"] as RhythmJudgement[]).map((item) => <div key={item} className="border-2 border-cyan-950 bg-black/75 p-2"><b className={`font-mono ${JUDGEMENT_COLOR[item]}`}>{item.toUpperCase()}</b><span className="mt-1 block font-mono text-xl font-black">{result[item]}</span></div>)}</div><p className="mt-4 font-mono text-xs text-zinc-400">MAX COMBO {result.maxCombo} · {playMode === "preview" ? "試玩不會套用改裝" : "改裝準備完成"}</p>{playMode === "full" ? <><button type="button" onClick={() => onCompleted(result)} className="mt-6 min-h-14 w-full border-2 border-emerald-100 bg-emerald-400 font-mono font-black text-black">套用改裝並扣除素材</button><button type="button" onClick={onCancel} className="mt-3 font-mono text-sm text-zinc-500 underline">放棄改裝（不扣素材）</button></> : <button type="button" onClick={() => { setPhase("select"); setResult(null); }} className="mt-6 min-h-14 w-full border-2 border-cyan-100 bg-cyan-400 font-mono font-black text-black">返回校正與改裝</button>}</section>}
       {isPlaying && <><div className="grid shrink-0 grid-cols-4 border-b-2 border-[#1a4c55] bg-[#061719] font-mono text-center text-[9px] sm:text-[10px]"><div className="border-r border-cyan-950 py-1"><span className="block text-cyan-700">SCORE</span><b>{score.score}</b></div><div className="border-r border-cyan-950 py-1"><span className="block text-cyan-700">COMBO</span><b className="text-amber-200">{score.combo}</b></div><div className="border-r border-cyan-950 py-1"><span className="block text-cyan-700">SYNC</span><b>{accuracy}%</b></div><div className="py-1"><span className="block text-cyan-700">PROGRESS</span><b>{Math.min(100, Math.round(now / chart.duration * 100))}%</b></div></div><main className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(ellipse,rgba(6,78,59,.22),transparent_70%),#01090a] p-2"><CircuitBoard now={now} notes={chart.notes.filter((entry) => !statesRef.current.get(entry.id)?.judged)} litLanes={litLanes} unstable={unstable} lastJudgement={lastJudgement} hitEffect={hitEffect} />{lastJudgement && <div key={`${lastJudgement}-${score.score}`} className={`rhythm-judgement-pop pointer-events-none absolute left-1/2 top-[9%] z-20 font-pixel text-[clamp(30px,8vw,48px)] font-black tracking-[.08em] animate-[rhythmJudgementPop_.48s_ease-out_both] ${JUDGEMENT_POP_STYLE[lastJudgement]}`}>{lastJudgement.toUpperCase()}</div>}</main><div className="shrink-0 border-t-2 border-[#1a4c55] bg-[#030d0f] px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2"><div className="grid grid-cols-4 gap-1">{RHYTHM_LANES.map((lane) => <button key={lane} type="button" aria-label={`焊接點 ${RHYTHM_KEY_LABELS[lane]}（Lane ${lane}）`} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); inputDown(lane); }} onPointerUp={(event) => { event.preventDefault(); inputUp(lane); }} onPointerCancel={() => inputUp(lane)} className={`min-h-[clamp(52px,11dvh,76px)] touch-none select-none border-2 font-mono text-[clamp(23px,6vw,34px)] font-black transition active:scale-95 ${litLanes.has(lane) ? "border-amber-100 bg-amber-300 text-black shadow-[0_0_16px_#fbbf24]" : "border-cyan-700 bg-[#06282b] text-cyan-100 shadow-[inset_0_0_0_2px_#031114]"}`}>{RHYTHM_KEY_LABELS[lane]}</button>)}</div><div className="mt-1 min-h-4 text-center font-mono text-xs font-black uppercase"><span className={lastJudgement ? JUDGEMENT_COLOR[lastJudgement] : "text-cyan-900"}>{lastJudgement ?? "SYNC READY"}</span></div></div></>}
+      {tutorialStep !== null && <div className="absolute inset-0 z-50 flex items-end bg-black/75 p-4 backdrop-blur-sm sm:items-center"><div className="w-full border-2 border-amber-300 bg-[#07171b] p-4 shadow-[0_0_42px_rgba(251,191,36,.28)]"><p className="font-mono text-[10px] font-black tracking-[.22em] text-amber-300">RHYTHM SOLDERING // TRAINING</p><div className="mt-2 flex items-center justify-between gap-3"><h3 className="font-pixel text-xl text-amber-100">節奏焊接新手教學</h3><span className="font-mono text-xs text-cyan-200">{tutorialStep + 1} / {RHYTHM_TUTORIAL_LINES.length}</span></div><p className="mt-4 min-h-20 text-sm leading-7 text-cyan-50">{RHYTHM_TUTORIAL_LINES[tutorialStep]}</p><p className="mt-3 text-[10px] leading-5 text-zinc-400">教學尚未結束前，不會開始倒數、播放節奏或接受焊接操作。</p><button type="button" autoFocus onClick={advanceTutorial} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border-2 border-amber-100 bg-amber-400 font-mono text-sm font-black text-black shadow-[inset_0_0_0_3px_#a85c05]">{tutorialStep >= RHYTHM_TUTORIAL_LINES.length - 1 ? "完成教學，選擇改裝" : "我了解了，繼續"}<ChevronDown className="h-4 w-4" /></button></div></div>}
     </div>
   </div>, document.body);
 }
