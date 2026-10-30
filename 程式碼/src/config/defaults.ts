@@ -95,6 +95,16 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   rhythmEdits: {},
 };
 
+// These operator-created cards predate the artwork field.  Preserve any
+// explicit Firebase image, while giving the known cards a shipped fallback.
+const LEGACY_CUSTOM_CARD_ART: Record<string, string> = {
+  "五月雨測試": "/assets/cards/may-rain-test.png",
+  "IP67 防護等級": "/assets/cards/ip67-waterproof.png",
+  "IP68 防護等級": "/assets/cards/ip68-deep-waterproof.png",
+  "勇氣の證明": "/assets/cards/courage-proof.png",
+  "BOM表": "/assets/cards/bom-parts.png",
+};
+
 /** Adds newly shipped default cards/events to older Firebase documents while
  * retaining every operator edit that already exists under the same id. */
 export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined): GameConfig {
@@ -108,7 +118,14 @@ export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined):
       const overrideWithImage = override as T & { image?: string };
       return override ? { ...entry, ...override, image: overrideWithImage.image || (entry as T & { image?: string }).image } : entry;
     });
-    const additions = (saved || []).filter((entry) => !defaults.some((defaultEntry) => defaultEntry.id === entry.id));
+    const additions = (saved || [])
+      .filter((entry) => !defaults.some((defaultEntry) => defaultEntry.id === entry.id))
+      .map((entry) => {
+        const card = entry as T & { title?: string; image?: string };
+        return card.image || !card.title || !LEGACY_CUSTOM_CARD_ART[card.title]
+          ? entry
+          : { ...entry, image: LEGACY_CUSTOM_CARD_ART[card.title] };
+      });
     return [...known, ...additions];
   };
   return {
