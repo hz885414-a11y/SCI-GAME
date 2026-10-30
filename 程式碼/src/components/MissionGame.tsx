@@ -500,6 +500,44 @@ export function MissionGame({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // A mission is a full-screen control surface on touch devices. Lock the
+  // document while it is active so a joystick drag cannot scroll the page,
+  // trigger pull-to-refresh, or hand a horizontal edge swipe to the browser.
+  useEffect(() => {
+    if (stage !== "PLAYING" && stage !== "BOSSBATTLE") return;
+    const body = document.body;
+    const html = document.documentElement;
+    const scrollY = window.scrollY;
+    const previous = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+      bodyOverscroll: body.style.overscrollBehavior,
+      htmlOverscroll: html.style.overscrollBehavior,
+    };
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overscrollBehavior = "none";
+    html.style.overscrollBehavior = "none";
+    const preventMissionScroll = (event: TouchEvent) => {
+      if (event.cancelable) event.preventDefault();
+    };
+    document.addEventListener("touchmove", preventMissionScroll, { passive: false });
+    return () => {
+      document.removeEventListener("touchmove", preventMissionScroll);
+      body.style.overflow = previous.bodyOverflow;
+      body.style.position = previous.bodyPosition;
+      body.style.top = previous.bodyTop;
+      body.style.width = previous.bodyWidth;
+      body.style.overscrollBehavior = previous.bodyOverscroll;
+      html.style.overscrollBehavior = previous.htmlOverscroll;
+      window.scrollTo(0, scrollY);
+    };
+  }, [stage]);
+
   // Core gameplay states synced with UI
   const [hp, setHp] = useState<number>(gameplayConfig.playerBaseHp);
   const [maxHp, setMaxHp] = useState<number>(gameplayConfig.playerBaseHp);
@@ -7282,7 +7320,7 @@ export function MissionGame({
   const isLightGuideHighlightingControl = firstMissionLightGuideStep === 2 || firstMissionLightGuideStep === 3;
 
   return (
-    <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100">
+    <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100 touch-none overscroll-none" style={{ touchAction: "none", overscrollBehavior: "none" }}>
       {stage === "ENDING" && endingSummary && <StageEnding summary={endingSummary} onReturnToBase={onClose} />}
       <BossWarningTransition
         active={stage === "BOSS_WARNING"}
