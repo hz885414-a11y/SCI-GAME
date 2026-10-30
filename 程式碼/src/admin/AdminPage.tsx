@@ -34,8 +34,6 @@ const KNOWLEDGE_CATEGORIES = ["lighting", "energy", "materials", "maintenance", 
 const CATEGORY_LABELS: Record<(typeof KNOWLEDGE_CATEGORIES)[number], string> = {
   lighting: "照明", energy: "能源", materials: "材料", maintenance: "維護", marine: "海事", safety: "安全",
 };
-const categoryRank = (category: string | undefined) => Math.max(0, KNOWLEDGE_CATEGORIES.indexOf(category as (typeof KNOWLEDGE_CATEGORIES)[number]));
-
 const GAMEPLAY_FIELDS: Array<{ group: string; key: keyof GameplayConfig; label: string; hint: string; step: number }> = [
   { group: "玩家燈燈小隊｜生命", key: "playerBaseHp", label: "冒險模式基礎生命", hint: "Claire、Ethan、Leo 進入一般任務時的愛心數量。", step: 1 },
   { group: "C2-932 機器人｜生命與 Boss", key: "mechaBaseHp", label: "C2-932 基礎生命", hint: "Boss 戰機器人的基礎 HP。", step: 10 },
@@ -145,10 +143,9 @@ export function AdminPage() {
   const save = async () => {
     setSaving(true);
     try {
-      const cards = [...config.cards].sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
-      const eventCategory = (event: (typeof config.events)[number]) => cards.find((card) => card.id === event.rewardCard)?.category;
-      const events = [...config.events].sort((a, b) => categoryRank(eventCategory(a)) - categoryRank(eventCategory(b)));
-      const next = { ...config, cards, events, rhythmEdits: getAllRhythmEdits(), version: config.version + 1, updatedAt: new Date().toISOString() };
+      // Preserve the editor's deliberate order. Event/card order is gameplay
+      // metadata and is now controlled directly through drag-and-drop.
+      const next = { ...config, rhythmEdits: getAllRhythmEdits(), version: config.version + 1, updatedAt: new Date().toISOString() };
       await saveFirebaseConfig(next);
       localStorage.setItem("sci_game_config_updated", String(Date.now()));
       setConfig(next);
@@ -171,6 +168,16 @@ export function AdminPage() {
     setConfig({ ...config, [key]: next });
   };
 
+  const reorderKnowledgeItem = (key: "events" | "cards", sourceIndex: number, destinationIndex: number) => {
+    if (sourceIndex === destinationIndex) return;
+    setConfig((current) => {
+      const items = [...current[key]];
+      const [moved] = items.splice(sourceIndex, 1);
+      items.splice(destinationIndex, 0, moved);
+      return { ...current, [key]: items };
+    });
+  };
+
   const activeInfo = ADMIN_MODULES.find((item) => item.id === active)!;
   const dialogue = config.dialogues[dialogueScenario] || config.dialogues.others;
   const selectedScenario = config.scenarios.find((scenario) => scenario.id === dialogueScenario);
@@ -182,11 +189,64 @@ export function AdminPage() {
   const filteredEvents = config.events.map((event, index) => ({ event, index })).filter(({ event }) => {
     const matchesText = `${event.title} ${event.content} ${event.id}`.toLowerCase().includes(eventSearch.trim().toLowerCase());
     return matchesText && (eventActionFilter === "all" || event.action === eventActionFilter) && (eventCategoryFilter === "all" || cardCategoryForEvent(event.rewardCard) === eventCategoryFilter);
-  }).sort((a, b) => categoryRank(cardCategoryForEvent(a.event.rewardCard)) - categoryRank(cardCategoryForEvent(b.event.rewardCard)) || a.index - b.index);
+  });
   const filteredCards = config.cards.map((card, index) => ({ card, index })).filter(({ card }) => {
     const matchesText = `${card.title} ${card.description} ${card.industryNote} ${card.id}`.toLowerCase().includes(cardSearch.trim().toLowerCase());
     return matchesText && (cardCategoryFilter === "all" || card.category === cardCategoryFilter);
-  }).sort((a, b) => categoryRank(a.card.category) - categoryRank(b.card.category) || a.index - b.index);
+  });
+
+  useEffect(() => {
+    if (active !== "knowledge") return;
+    const sections = Array.from(document.querySelectorAll<HTMLElement>(".admin-knowledge-section"));
+    const bindDragRecords = (
+      section: HTMLElement | undefined,
+      key: "events" | "cards",
+      records: Array<{ index: number }>,
+    ) => {
+      if (!section) return () => undefined;
+      const nodes = Array.from(section.querySelectorAll<HTMLElement>(".admin-stack > .admin-record"));
+      const cleanups = nodes.map((node, visualIndex) => {
+        const record = records[visualIndex];
+        if (!record) return () => undefined;
+        node.draggable = true;
+        node.classList.add("admin-draggable");
+        node.title = "拖曳以調整順序";
+        const onStart = (event: DragEvent) => {
+          event.dataTransfer?.setData("text/plain", `${key}:${record.index}`);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+          node.classList.add("is-dragging");
+        };
+        const onOver = (event: DragEvent) => event.preventDefault();
+        const onDrop = (event: DragEvent) => {
+          event.preventDefault();
+          const source = event.dataTransfer?.getData("text/plain") || "";
+          const [sourceKey, sourceIndex] = source.split(":");
+          if (sourceKey === key && Number.isInteger(Number(sourceIndex))) {
+            reorderKnowledgeItem(key, Number(sourceIndex), record.index);
+          }
+          node.classList.remove("is-dragging");
+        };
+        const onEnd = () => node.classList.remove("is-dragging");
+        node.addEventListener("dragstart", onStart);
+        node.addEventListener("dragover", onOver);
+        node.addEventListener("drop", onDrop);
+        node.addEventListener("dragend", onEnd);
+        return () => {
+          node.draggable = false;
+          node.classList.remove("admin-draggable", "is-dragging");
+          node.removeAttribute("title");
+          node.removeEventListener("dragstart", onStart);
+          node.removeEventListener("dragover", onOver);
+          node.removeEventListener("drop", onDrop);
+          node.removeEventListener("dragend", onEnd);
+        };
+      });
+      return () => cleanups.forEach((cleanup) => cleanup());
+    };
+    const cleanEvents = bindDragRecords(sections[0], "events", filteredEvents);
+    const cleanCards = bindDragRecords(sections[1], "cards", filteredCards);
+    return () => { cleanEvents(); cleanCards(); };
+  }, [active, filteredEvents, filteredCards]);
 
   return <main className="admin-shell">
     <header className="admin-header"><div><p>SCI GAME / CONTROL ROOM</p><h1>遊戲內容管理台</h1><span className={status.includes("成功") || status.includes("已載入") ? "status-ok" : ""}>{status}</span></div><div className="admin-actions"><a href={import.meta.env.BASE_URL}>返回遊戲</a><button disabled={saving || !isFirebaseConfigured()} onClick={save}>{saving ? "儲存中…" : "儲存到 Firebase"}</button></div></header>
