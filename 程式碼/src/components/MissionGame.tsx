@@ -246,11 +246,11 @@ const FIRST_MISSION_LIGHT_GUIDE_LINES = [
   "本關沒有倒數。清除全部 30 隻暗物質後，就能完成第一章。",
 ] as const;
 const BOSS_COMBAT_TUTORIAL_LINES = [
-  "這是 C2-932 的機器人作戰。教學期間，Boss、時間與操作都會暫停。",
-  "使用 WASD／方向鍵，或左下搖桿移動。保持走位，別停在 Boss 的攻擊範圍內。",
-  "右下技能依序是：Z 重拳、X 防禦、C 雷射、V 大招。手機版可直接按對應按鈕。",
-  "防禦能抵擋攻擊；雷射適合拉開距離輸出。累積能量至 100% 後再使用大招。",
-  "擊敗 AMPA Boss 後，任務中心會開放其他全部 Boss 作戰。準備好就開始吧。",
+  "這是 C2-932 的機器人作戰。先看清戰場與底部控制列；教學期間不會開始戰鬥。",
+  "發光的是移動控制：用 WASD／方向鍵，或左下搖桿走位，避開 Boss 的攻擊範圍。",
+  "右下發光的是技能按鈕：Z 重拳、X 防禦、C 雷射、V 大招；手機可直接點按。",
+  "現在注意 X 防禦與 C 雷射：危險時按住防禦，拉開距離時用雷射輸出。",
+  "最後是 V 大招：能量累積到 100% 後才可使用。擊敗 AMPA 後會開放其餘 Boss 戰。",
 ] as const;
 const CHAPTER_ONE_ENEMY_TARGET = 30;
 
@@ -8231,16 +8231,16 @@ export function MissionGame({
 
             <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
               <div className="mb-1 ml-1 flex w-fit items-center gap-2 rounded bg-black/65 px-2 py-1 font-mono text-[9px] backdrop-blur-sm"><span className={mechaLaserBattery < 15 ? "font-black text-rose-400" : "text-sky-300"}>⚡ {Math.floor(mechaLaserBattery)}%</span><span className="text-fuchsia-300">ULT {mechaUltEnergy}%</span></div>
-              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-cyan-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
+              <div ref={joystickRef} className={`relative h-[88px] w-[88px] touch-none rounded-full border bg-black/45 backdrop-blur-[3px] ${bossCombatTutorialStep === 1 ? "animate-pulse border-cyan-200 shadow-[0_0_28px_rgba(34,211,238,.95)]" : "border-cyan-500/40 shadow-[inset_0_0_22px_rgba(0,0,0,.8)]"}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
                 <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-300/80 bg-cyan-500/30 shadow-[0_0_14px_rgba(34,211,238,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
               </div>
             </div>
 
             <div className="pointer-events-auto absolute bottom-[max(14px,env(safe-area-inset-bottom))] right-3 grid grid-cols-2 gap-2">
-              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.z = true; }} onPointerUp={() => { keysRef.current.z = false; }} onPointerCancel={() => { keysRef.current.z = false; }} className="grid h-14 w-14 place-items-center rounded-full border border-orange-500/70 bg-black/65 text-center backdrop-blur-sm"><span className="text-base">👊<b className="block text-[8px] text-orange-300">重拳</b></span></button>
-              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.x = true; }} onPointerUp={() => { keysRef.current.x = false; }} onPointerCancel={() => { keysRef.current.x = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${mechaActiveShield ? "border-cyan-300 text-cyan-200" : "border-cyan-500/60"}`}><span className="text-base">🛡️<b className="block text-[8px] text-cyan-300">防禦</b></span></button>
-              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.c = true; }} onPointerUp={() => { keysRef.current.c = false; }} onPointerCancel={() => { keysRef.current.c = false; }} className="grid h-14 w-14 place-items-center rounded-full border border-sky-500/70 bg-black/65 text-center backdrop-blur-sm"><span className="text-base">⚡<b className="block text-[8px] text-sky-300">雷射</b></span></button>
-              <button type="button" disabled={mechaUltEnergy < 100} onPointerDown={(e) => { e.preventDefault(); keysRef.current.v = true; }} onPointerUp={() => { keysRef.current.v = false; }} onPointerCancel={() => { keysRef.current.v = false; }} className={`grid h-14 w-14 place-items-center rounded-full border text-center backdrop-blur-sm ${mechaUltEnergy >= 100 ? "animate-pulse border-fuchsia-400 bg-fuchsia-950/85" : "border-zinc-700 bg-black/55 opacity-55"}`}><span className="text-base">💥<b className="block text-[8px] text-fuchsia-300">大招</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.z = true; }} onPointerUp={() => { keysRef.current.z = false; }} onPointerCancel={() => { keysRef.current.z = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : "border-orange-500/70"}`}><span className="text-base">👊<b className="block text-[8px] text-orange-300">重拳</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.x = true; }} onPointerUp={() => { keysRef.current.x = false; }} onPointerCancel={() => { keysRef.current.x = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : mechaActiveShield ? "border-cyan-300 text-cyan-200" : "border-cyan-500/60"}`}><span className="text-base">🛡️<b className="block text-[8px] text-cyan-300">防禦</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.c = true; }} onPointerUp={() => { keysRef.current.c = false; }} onPointerCancel={() => { keysRef.current.c = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : "border-sky-500/70"}`}><span className="text-base">⚡<b className="block text-[8px] text-sky-300">雷射</b></span></button>
+              <button type="button" disabled={mechaUltEnergy < 100} onPointerDown={(e) => { e.preventDefault(); keysRef.current.v = true; }} onPointerUp={() => { keysRef.current.v = false; }} onPointerCancel={() => { keysRef.current.v = false; }} className={`grid h-14 w-14 place-items-center rounded-full border text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 4 ? "animate-pulse border-cyan-200 bg-cyan-950/85 opacity-100 shadow-[0_0_22px_rgba(34,211,238,.95)]" : mechaUltEnergy >= 100 ? "animate-pulse border-fuchsia-400 bg-fuchsia-950/85" : "border-zinc-700 bg-black/55 opacity-55"}`}><span className="text-base">💥<b className="block text-[8px] text-fuchsia-300">大招</b></span></button>
             </div>
           </div>
 
@@ -8252,7 +8252,7 @@ export function MissionGame({
               <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
                 {/* Left Side: Joystick D-pad */}
                 {showTouchControls ? (
-                  <div className="flex items-center gap-2 select-none flex-shrink-0 bg-zinc-900/40 p-1.5 rounded-lg border border-zinc-900">
+                  <div className={`flex items-center gap-2 select-none flex-shrink-0 rounded-lg border bg-zinc-900/40 p-1.5 ${bossCombatTutorialStep === 1 ? "animate-pulse border-cyan-200 shadow-[0_0_24px_rgba(34,211,238,.8)]" : "border-zinc-900"}`}>
                     <span className="text-zinc-500 text-[9px] uppercase font-mono tracking-wider hidden lg:block">移動 Control:</span>
                     <div className="flex items-center gap-1">
                       {/* Left */}
@@ -8304,7 +8304,7 @@ export function MissionGame({
                     </div>
                   </div>
                 ) : (
-                  <div className="hidden sm:flex flex-col text-left font-mono text-[9px] text-zinc-500 border border-zinc-850/50 p-2 bg-zinc-900/35 rounded max-w-[150px] flex-shrink-0">
+                  <div className={`hidden sm:flex flex-col text-left font-mono text-[9px] text-zinc-500 border p-2 rounded max-w-[150px] flex-shrink-0 ${bossCombatTutorialStep === 1 ? "animate-pulse border-cyan-200 bg-cyan-950/50 text-cyan-100 shadow-[0_0_24px_rgba(34,211,238,.8)]" : "border-zinc-850/50 bg-zinc-900/35"}`}>
                     <div className="text-zinc-400 font-bold mb-0.5">WASD / ◀▲▼▶</div>
                     <div>鍵盤方向鍵控制機甲移動，避開首領攻擊</div>
                   </div>
@@ -8320,7 +8320,7 @@ export function MissionGame({
                       onMouseLeave={() => { keysRef.current["z"] = false; }}
                       onTouchStart={(e) => { e.preventDefault(); keysRef.current["z"] = true; }}
                       onTouchEnd={(e) => { e.preventDefault(); keysRef.current["z"] = false; }}
-                      className="bg-zinc-900 hover:bg-zinc-850 border border-orange-500/40 hover:border-orange-500 rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all group cursor-pointer active:scale-95 text-white"
+                      className={`bg-zinc-900 hover:bg-zinc-850 border rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all group cursor-pointer active:scale-95 text-white ${bossCombatTutorialStep === 2 ? "animate-pulse border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,.85)]" : "border-orange-500/40 hover:border-orange-500"}`}
                     >
                       <div className="text-sm">👊</div>
                       <div className="text-[8px] xs:text-[9px] font-extrabold text-orange-400">重拳 [Z]</div>
@@ -8335,7 +8335,9 @@ export function MissionGame({
                       onTouchStart={(e) => { e.preventDefault(); keysRef.current["x"] = true; }}
                       onTouchEnd={(e) => { e.preventDefault(); keysRef.current["x"] = false; }}
                       className={`border rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer active:scale-95 text-white ${
-                        mechaActiveShield 
+                        bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3
+                          ? "animate-pulse border-cyan-200 bg-cyan-950/70 shadow-[0_0_20px_rgba(34,211,238,.85)]"
+                          : mechaActiveShield
                           ? "bg-cyan-950 border-cyan-400 shadow shadow-cyan-500/10 text-cyan-300 scale-102 font-black" 
                           : "bg-zinc-900 border-cyan-500/30 hover:border-cyan-400 hover:bg-zinc-850"
                       }`}
@@ -8354,7 +8356,7 @@ export function MissionGame({
                       onMouseLeave={() => { keysRef.current["c"] = false; }}
                       onTouchStart={(e) => { e.preventDefault(); keysRef.current["c"] = true; }}
                       onTouchEnd={(e) => { e.preventDefault(); keysRef.current["c"] = false; }}
-                      className="bg-zinc-900 hover:bg-zinc-850 border border-sky-500/40 hover:border-sky-400 rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer active:scale-95 text-white"
+                      className={`bg-zinc-900 hover:bg-zinc-850 border rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer active:scale-95 text-white ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,.85)]" : "border-sky-500/40 hover:border-sky-400"}`}
                     >
                       <div className="text-sm text-sky-400">⚡</div>
                       <div className="text-[8px] xs:text-[9px] font-extrabold text-sky-400">雷射 [C]</div>
@@ -8372,7 +8374,9 @@ export function MissionGame({
                       onTouchEnd={(e) => { e.preventDefault(); keysRef.current["v"] = false; }}
                       disabled={mechaUltEnergy < 100}
                       className={`border rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all text-white ${
-                        mechaUltEnergy >= 100 
+                        bossCombatTutorialStep === 2 || bossCombatTutorialStep === 4
+                          ? "animate-pulse border-cyan-200 bg-cyan-950/85 text-cyan-100 opacity-100 shadow-[0_0_20px_rgba(34,211,238,.85)]"
+                          : mechaUltEnergy >= 100
                           ? "bg-fuchsia-950 border-fuchsia-500 hover:bg-fuchsia-900 text-fuchsia-300 animate-pulse shadow shadow-fuchsia-500/20 cursor-pointer active:scale-95" 
                           : "bg-zinc-950 border-zinc-850 text-zinc-600 opacity-60 cursor-not-allowed"
                       }`}
@@ -8384,7 +8388,7 @@ export function MissionGame({
                   </div>
 
                   {/* Ultimate Charging Progress Bar */}
-                  <div className="w-full bg-zinc-900 border border-zinc-850 h-5 rounded overflow-hidden flex items-center relative select-none">
+                  <div className={`w-full bg-zinc-900 border h-5 rounded overflow-hidden flex items-center relative select-none ${bossCombatTutorialStep === 4 ? "animate-pulse border-cyan-200 shadow-[0_0_18px_rgba(34,211,238,.8)]" : "border-zinc-850"}`}>
                     <div 
                       className={`h-full transition-all duration-100 ${
                         mechaUltEnergy >= 100 
@@ -8681,16 +8685,11 @@ export function MissionGame({
       )}
 
       {stage === "BOSSBATTLE" && bossCombatTutorialStep !== null && (
-        <div className="absolute inset-0 z-[78] flex items-end justify-center bg-black/65 p-4 pb-[max(24px,env(safe-area-inset-bottom))] backdrop-blur-[1px] sm:items-center sm:p-8" role="dialog" aria-modal="true" aria-label="機器人作戰新手教學">
-          <div className="w-full max-w-xl border border-cyan-300/80 bg-zinc-950/95 p-4 shadow-[0_0_54px_rgba(34,211,238,.24)] sm:p-6">
-            <p className="font-mono text-[10px] font-black tracking-[.26em] text-cyan-300">C2-932 // BOSS COMBAT TRAINING</p>
-            <div className="mt-3 flex items-center justify-between gap-4"><h2 className="text-xl font-black tracking-wider text-white sm:text-2xl">機器人作戰操作教學</h2><span className="shrink-0 font-mono text-xs text-cyan-200">{bossCombatTutorialStep + 1} / {BOSS_COMBAT_TUTORIAL_LINES.length}</span></div>
-            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{BOSS_COMBAT_TUTORIAL_LINES[bossCombatTutorialStep]}</p>
-            <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學結束前，Boss 攻擊、倒數與機器人操作都不會開始。</p>
-            <button type="button" onClick={advanceBossCombatTutorial} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-cyan-300 bg-cyan-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-cyan-200">
-              {bossCombatTutorialStep >= BOSS_COMBAT_TUTORIAL_LINES.length - 1 ? "開始機器人作戰" : "我了解了，繼續"}
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        <div className="pointer-events-none absolute inset-x-0 top-[max(74px,env(safe-area-inset-top))] z-[78] flex justify-center px-3 sm:top-5 sm:px-8" role="status" aria-live="polite" aria-label="機器人作戰新手教學">
+          <div className="pointer-events-auto w-full max-w-md border border-cyan-300/80 bg-zinc-950/92 p-3 shadow-[0_0_34px_rgba(34,211,238,.28)] backdrop-blur-md sm:p-4">
+            <div className="flex items-center justify-between gap-3"><p className="font-mono text-[9px] font-black tracking-[.2em] text-cyan-300">C2-932 // CONTROL GUIDE</p><span className="shrink-0 font-mono text-[10px] text-cyan-200">{bossCombatTutorialStep + 1} / {BOSS_COMBAT_TUTORIAL_LINES.length}</span></div>
+            <p className="mt-2 text-xs leading-5 text-zinc-100 sm:text-sm">{BOSS_COMBAT_TUTORIAL_LINES[bossCombatTutorialStep]}</p>
+            <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[9px] leading-4 text-cyan-100/80">畫面中發光的按鈕，就是這一步要認識的操作。</p><button type="button" onClick={advanceBossCombatTutorial} autoFocus className="shrink-0 border border-cyan-300 bg-cyan-300 px-3 py-2 text-[10px] font-black tracking-wider text-zinc-950 hover:bg-cyan-200">{bossCombatTutorialStep >= BOSS_COMBAT_TUTORIAL_LINES.length - 1 ? "開始" : "下一步"}<ChevronRight className="ml-1 inline h-3 w-3" /></button></div>
           </div>
         </div>
       )}
