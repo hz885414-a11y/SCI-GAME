@@ -252,6 +252,17 @@ const BOSS_COMBAT_TUTORIAL_LINES = [
   "現在注意 X 防禦與 C 雷射：危險時按住防禦，拉開距離時用雷射輸出。",
   "最後是 V 大招：能量累積到 100% 後才可使用。擊敗 AMPA 後會開放其餘 Boss 戰。",
 ] as const;
+type AdventureUpgradeId = "batteryCapacity" | "energySaver" | "mobility" | "protection" | "lightDamage" | "lightRange";
+type AdventureUpgradeChoice = { id: AdventureUpgradeId; name: string; desc: string; icon: string; level: number; maxLevel: number; nextEffect: string };
+const ADVENTURE_UPGRADE_CONFIG: Record<AdventureUpgradeId, { name: string; icon: string; maxLevel: number; description: string; effect: (nextLevel: number) => string }> = {
+  batteryCapacity: { name: "電池容量擴充", icon: "🔋", maxLevel: 4, description: "提高本次冒險的工作燈可用電量上限。", effect: (level) => `電池上限 +${level * 15}%` },
+  energySaver: { name: "節能迴路", icon: "♻️", maxLevel: 3, description: "以乘算方式降低工作燈耗電。", effect: (level) => `耗電速度 ×${(0.9 ** level).toFixed(2)}（約 -${Math.round((1 - 0.9 ** level) * 100)}%）` },
+  mobility: { name: "機動強化", icon: "🏃", maxLevel: 3, description: "提升本次冒險的移動速度。", effect: (level) => `移動速度 +${level * 8}%` },
+  protection: { name: "防護強化", icon: "🛡️", maxLevel: 3, description: "增加最大生命，選擇時立即補滿生命。", effect: (level) => `最大血量 +${level}` },
+  lightDamage: { name: "光照強化", icon: "✨", maxLevel: 5, description: "提高工作燈造成的照明傷害。", effect: (level) => `照明傷害 +${level * 10}%` },
+  lightRange: { name: "工作燈照明範圍", icon: "🔦", maxLevel: 3, description: "擴大照明與傷害扇形的有效距離。", effect: (level) => `照明範圍 +${level * 20}%` },
+};
+const EMPTY_ADVENTURE_UPGRADE_LEVELS: Record<AdventureUpgradeId, number> = { batteryCapacity: 0, energySaver: 0, mobility: 0, protection: 0, lightDamage: 0, lightRange: 0 };
 const CHAPTER_ONE_ENEMY_TARGET = 30;
 
 const DARK_CORE_IMAGE_URLS = Array.from({ length: 9 }, (_, index) =>
@@ -597,7 +608,8 @@ export function MissionGame({
 
   // Upgrades overlay choice
   const [showUpgradeChoice, setShowUpgradeChoice] = useState<boolean>(false);
-  const [upgradeChoices, setUpgradeChoices] = useState<Array<{ id: string; type: "weapon" | "stat"; name: string; desc: string; icon: string }>>([]);
+  const [adventureUpgradeLevels, setAdventureUpgradeLevels] = useState<Record<AdventureUpgradeId, number>>(EMPTY_ADVENTURE_UPGRADE_LEVELS);
+  const [upgradeChoices, setUpgradeChoices] = useState<AdventureUpgradeChoice[]>([]);
   const [selectedUpgradeIndex, setSelectedUpgradeIndex] = useState(0);
 
   // Boss Battle HUD States
@@ -1601,56 +1613,36 @@ export function MissionGame({
   }, [stage, startStep, showTipModal, showUpgradeChoice]);
 
   // Generate random upgrades when leveling up
-  const triggerLevelUpUpgrade = (currentWeapons: Record<string, number>) => {
+  const triggerLevelUpUpgrade = (_currentWeapons: Record<string, number>) => {
     triggerSound("upgrade");
-    const options: Array<{ id: string; type: "weapon" | "stat"; name: string; desc: string; icon: string }> = [];
-
-    // Mission level-ups are temporary character stats only. Permanent C2-932 modules are laboratory-only.
-
-    // Stat options
-    options.push({
-      id: "stat_hp",
-      type: "stat",
-      name: "增加生命上限 (+1 ❤️)",
-      desc: "強化燈小隊防護服裝，提升一格生命心型容量，並補滿生命。",
-      icon: "❤️"
-    });
-    options.push({
-      id: "stat_battery",
-      type: "stat",
-      name: "超能電容擴容 (+20 🔋)",
-      desc: "配備高性能固態電池，提升儲能上限，延長高亮模式續航力。",
-      icon: "🔋"
-    });
-    options.push({
-      id: "stat_speed",
-      type: "stat",
-      name: "奈米推進組件 (速度 +15%)",
-      desc: "提升本次冒險的小隊移動速度，更加靈活躲避怪物夾擊。",
-      icon: "🏃"
-    });
-
-    // Pick 3 random distinct options
-    const shuffled = options.sort(() => 0.5 - Math.random());
+    const options = (Object.keys(ADVENTURE_UPGRADE_CONFIG) as AdventureUpgradeId[])
+      .filter((id) => adventureUpgradeLevels[id] < ADVENTURE_UPGRADE_CONFIG[id].maxLevel)
+      .map((id) => {
+        const config = ADVENTURE_UPGRADE_CONFIG[id];
+        const level = adventureUpgradeLevels[id];
+        return { id, name: config.name, desc: config.description, icon: config.icon, level, maxLevel: config.maxLevel, nextEffect: config.effect(level + 1) };
+      });
+    const shuffled = [...options].sort(() => Math.random() - 0.5);
     setUpgradeChoices(shuffled.slice(0, 3));
     setSelectedUpgradeIndex(0);
     setShowUpgradeChoice(true);
   };
 
-  const handleSelectUpgrade = (choice: { id: string; type: "weapon" | "stat"; name: string }) => {
+  const handleSelectUpgrade = (choice: AdventureUpgradeChoice) => {
     triggerSound("click");
     recordAction("levelUp");
-    if (choice.id === "stat_hp") {
+    const nextLevel = choice.level + 1;
+    setAdventureUpgradeLevels((current) => ({ ...current, [choice.id]: nextLevel }));
+    if (choice.id === "protection") {
       setMaxHp((maximum) => {
         const nextMaximum = maximum + 1;
         setHp(nextMaximum);
         return nextMaximum;
       });
-    } else if (choice.id === "stat_battery") {
-      setSelectedAgent((previous) => ({ ...previous, maxBattery: previous.maxBattery + 20 }));
-      engineRef.current.player.batteryVal = Math.min(engineRef.current.player.batteryVal + 50, selectedAgent.maxBattery + 20);
-    } else if (choice.id === "stat_speed") {
-      setSelectedAgent((previous) => ({ ...previous, speed: previous.speed * 1.15 }));
+    } else if (choice.id === "batteryCapacity") {
+      const nextBatteryCap = selectedAgent.maxBattery * (1 + nextLevel * 0.15) + supplyEffects.battery;
+      engineRef.current.player.batteryVal = Math.min(nextBatteryCap, engineRef.current.player.batteryVal + nextBatteryCap * 0.15);
+      setBatteryPercent(Math.ceil((engineRef.current.player.batteryVal / nextBatteryCap) * 100));
     }
     setShowUpgradeChoice(false);
   };
@@ -1681,7 +1673,7 @@ export function MissionGame({
   // Setup / reset game for survivors stage
   const getPlayerMaxBattery = (agent = selectedAgent) => {
     const bonus = supplyEffects.battery;
-    return agent.maxBattery + bonus;
+    return agent.maxBattery * (1 + adventureUpgradeLevels.batteryCapacity * 0.15) + bonus;
   };
 
   const handleGameOver = () => {
@@ -1800,6 +1792,8 @@ export function MissionGame({
     tideCountdownAnnouncedRef.current = false;
     setScore(0);
     setWeaponLevels(getAdventureWeaponLevels());
+    setAdventureUpgradeLevels(EMPTY_ADVENTURE_UPGRADE_LEVELS);
+    setUpgradeChoices([]);
     setCollectedMaterials(createEmptyMaterialInventory());
     // Migration-safe: players who cleared Chapter 1 before this reward was
     // introduced still receive the one-time shield starter kit on re-entry.
@@ -1809,7 +1803,7 @@ export function MissionGame({
     setRobotSelection(null);
     robotSelectionRef.current = null;
 
-    const initMaxBattery = getPlayerMaxBattery(baseAgent);
+    const initMaxBattery = baseAgent.maxBattery + supplyEffects.battery;
     const configuredSpawn = MISSION_MAP_CONFIG.playerSpawn;
     const initialPlayerPosition = isMissionPositionWalkable(configuredSpawn.x, configuredSpawn.y, 14)
       ? configuredSpawn
@@ -2565,7 +2559,7 @@ export function MissionGame({
 
        const speedMultiplier = stage === "BOSSBATTLE"
          ? 1 + (robotUpgrades.movement_speed || 0) * 0.08
-         : 1 + supplyEffects.speed;
+         : 1 + supplyEffects.speed + adventureUpgradeLevels.mobility * 0.08;
        const currentSpeed = (stage === "BOSSBATTLE" ? 2.5 : selectedAgent.speed) * speedMultiplier;
        if (stage === "PLAYING") {
          moveWithinMissionMask(player, dx * currentSpeed, dy * currentSpeed, player.radius);
@@ -2627,9 +2621,9 @@ export function MissionGame({
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
       if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive)) {
-        const drainRate = batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
+        const drainRate = (batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
-          : 0.03;
+          : 0.03) * (0.9 ** adventureUpgradeLevels.energySaver);
 
         const maxBatLimit = getPlayerMaxBattery();
         player.batteryVal = Math.max(0, player.batteryVal - drainRate);
@@ -3092,10 +3086,11 @@ export function MissionGame({
             : Math.atan2(dy, dx);
 
           const fanSize = lightAttackProfile.fanSize;
-          const dist = lightAttackProfile.range;
+          const lightRangeMultiplier = stage === "BOSSBATTLE" ? 1 : 1 + adventureUpgradeLevels.lightRange * 0.2;
+          const dist = lightAttackProfile.range * lightRangeMultiplier;
           const bonusDamageMult = stage === "BOSSBATTLE"
             ? 1 + (robotUpgrades.attack_power || 0) * 0.12 + (robotUpgrades.passive_skill || 0) * 0.05
-            : 1 + supplyEffects.damage;
+            : 1 + supplyEffects.damage + adventureUpgradeLevels.lightDamage * 0.1;
           const rangeBaseDamage = stage === "BOSSBATTLE"
             ? (isHigh ? gameplayConfig.robotRangeHighDamage : gameplayConfig.robotRangeLowDamage)
             : (isHigh ? gameplayConfig.rangeHighDamage : gameplayConfig.rangeLowDamage);
@@ -7160,7 +7155,8 @@ export function MissionGame({
             : Math.atan2(dy, dx);
           const lightAttackProfile = isHigh ? LIGHT_ATTACK_PROFILES.HIGH : LIGHT_ATTACK_PROFILES.LOW;
           const fanSize = lightAttackProfile.lightFanSize;
-          const sweepDist = lightAttackProfile.lightRange;
+          const adventureLightRangeMultiplier = stage === "BOSSBATTLE" ? 1 : 1 + adventureUpgradeLevels.lightRange * 0.2;
+          const sweepDist = lightAttackProfile.lightRange * adventureLightRangeMultiplier;
 
           const sectorGrad = mctx.createRadialGradient(px, py, 10, px, py, sweepDist);
           sectorGrad.addColorStop(0, "rgba(0,0,0,1)");
@@ -7193,7 +7189,7 @@ export function MissionGame({
 
           // Draw the true damage area as a white work-light fan. This makes the
           // difference between LOW and HIGH visible without overstating range.
-          const attackRange = lightAttackProfile.range;
+          const attackRange = lightAttackProfile.range * adventureLightRangeMultiplier;
           const attackFanSize = lightAttackProfile.fanSize;
           const attackPulse = 0.72 + Math.sin(state.ticks * 0.16) * 0.16;
           const attackGradient = ctx.createRadialGradient(px, py, 12, px, py, attackRange);
@@ -7272,7 +7268,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -7939,8 +7935,9 @@ export function MissionGame({
                       <div className="flex-1">
                         <div className={`text-[11px] sm:text-xs font-black group-hover:text-orange-400 transition-colors ${
                           selectedUpgradeIndex === i ? "text-orange-300" : "text-white"
-                        }`}>{choice.name}</div>
+                        }`}>{choice.name} <span className="font-mono text-[9px] text-cyan-300">Lv.{choice.level} → {choice.level + 1}/{choice.maxLevel}</span></div>
                         <div className="text-[9px] sm:text-[10px] text-zinc-400 mt-0.5 font-sans leading-tight">{choice.desc}</div>
+                        <div className="mt-1 text-[9px] font-black text-emerald-300">升級後：{choice.nextEffect}</div>
                       </div>
                       <ChevronRight className={`w-3.5 h-3.5 group-hover:text-orange-400 transition-colors ${
                         selectedUpgradeIndex === i ? "text-orange-400" : "text-zinc-600"
