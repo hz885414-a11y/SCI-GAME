@@ -15,6 +15,7 @@ const writeFlag = (key: string) => {
 };
 
 export const markFirstRobotUpgradeComplete = () => writeFlag(FIRST_ROBOT_UPGRADE_COMPLETE_KEY);
+export const hasCompletedFirstRobotUpgrade = () => readFlag(FIRST_ROBOT_UPGRADE_COMPLETE_KEY);
 export const markAmpaBossDefeated = () => writeFlag(AMPA_BOSS_VICTORY_KEY);
 export const markBossCombatTutorialSeen = () => writeFlag(FIRST_BOSS_COMBAT_TUTORIAL_KEY);
 

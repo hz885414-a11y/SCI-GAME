@@ -40,6 +40,7 @@ import { canAffordUpgrade, createDefaultRobotUpgrades, createEmptyMaterialInvent
 import { ROBOT_CONFIG } from "./data/robotConfig";
 import { playSound, setMuteState, startAmbientHum, stopAmbientHum, startBackgroundMusic, stopBackgroundMusic, setMusicVolume, setMusicMuteState } from "./utils/audio";
 import { useGameConfig } from "./config/GameConfigContext";
+import { hasCompletedFirstRobotUpgrade } from "./systems/bossProgression";
 import {
   Lightbulb,
   BookOpen,
@@ -67,6 +68,7 @@ const APP_LAST_SCENE_KEY = "light_crew_last_scene";
 const MOBILE_BREAKPOINT_PX = 768;
 const CHAPTER_ONE_NPC_INTRO_PENDING_KEY = "squad_chapter_one_npc_intro_pending";
 const CHAPTER_ONE_NPC_INTRO_SEEN_KEY = "squad_chapter_one_npc_intro_seen";
+const AMPA_BOSS_UNLOCK_NOTICE_SEEN_KEY = "sci_ampa_boss_unlock_notice_seen";
 const CHAPTER_ONE_NPC_INTRO_LINES: DialogueLine[] = [
   { speakerId: "leo", text: "剛剛收到避難所的新訊號！暗物質已被清除，大家正在把那裡整理成安全據點。" },
   { speakerId: "claire", text: "之後會有不同的 NPC 出現在工業區避難所。他們會帶來情報，也可能需要我們協助。" },
@@ -79,6 +81,15 @@ const loadPendingChapterOneNpcIntro = () => {
   try {
     return localStorage.getItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY) === "true"
       && localStorage.getItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY) !== "true";
+  } catch {
+    return false;
+  }
+};
+
+const loadPendingAmpaBossNotice = () => {
+  try {
+    return hasCompletedFirstRobotUpgrade()
+      && localStorage.getItem(AMPA_BOSS_UNLOCK_NOTICE_SEEN_KEY) !== "true";
   } catch {
     return false;
   }
@@ -364,6 +375,7 @@ export default function App() {
   const [showFirstMissionGuide, setShowFirstMissionGuide] = useState(false);
   const [hasPendingChapterOneNpcIntro, setHasPendingChapterOneNpcIntro] = useState(loadPendingChapterOneNpcIntro);
   const [isChapterOneNpcIntroActive, setIsChapterOneNpcIntroActive] = useState(false);
+  const [hasPendingAmpaBossNotice, setHasPendingAmpaBossNotice] = useState(loadPendingAmpaBossNotice);
   // Current active area: lab, technology R&D, mobile operations, or supply
   const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
   useEffect(() => {
@@ -406,6 +418,10 @@ export default function App() {
 
   const handleSceneChange = (targetScene: AppScene) => {
     if (targetScene === currentScene || isTransitioning) return;
+    if (targetScene === "ops" && hasPendingAmpaBossNotice) {
+      setHasPendingAmpaBossNotice(false);
+      try { localStorage.setItem(AMPA_BOSS_UNLOCK_NOTICE_SEEN_KEY, "true"); } catch { /* The in-session notice is still cleared. */ }
+    }
     if (targetScene === "supply") {
       recordAction("openShop");
     } else {
@@ -712,9 +728,11 @@ export default function App() {
     localStorage.removeItem("sci_first_robot_upgrade_complete");
     localStorage.removeItem("sci_ampa_boss_victory");
     localStorage.removeItem("sci_first_boss_combat_tutorial_seen");
+    localStorage.removeItem(AMPA_BOSS_UNLOCK_NOTICE_SEEN_KEY);
     localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY);
     localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_SEEN_KEY);
     setHasPendingChapterOneNpcIntro(false);
+    setHasPendingAmpaBossNotice(false);
     localStorage.removeItem(APP_LAST_SCENE_KEY);
 
     // Reset the event system alongside the rest of the player's progress.
@@ -1252,7 +1270,7 @@ export default function App() {
           <button
             data-tutorial-target="adventure"
             onClick={() => handleSceneChange("ops")}
-            className={`min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
+            className={`relative min-h-14 border px-1 py-2 text-[11px] font-bold font-sans transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 sm:min-h-0 sm:px-4 sm:py-1.5 sm:text-sm
               ${currentScene === "ops"
                 ? "bg-orange-500/15 border-orange-500 text-orange-400 font-black"
                 : "bg-zinc-950 border-zinc-850 text-zinc-400 hover:text-zinc-200"
@@ -1261,6 +1279,9 @@ export default function App() {
           >
             <Shield className="hidden h-4 w-4 text-orange-500 sm:block" />
             <span className="whitespace-nowrap">營業機動部</span>
+            {hasPendingAmpaBossNotice && (
+              <span className="absolute -right-1 -top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-rose-600 p-0 font-sans text-[11px] font-black leading-[0] text-white shadow-[0_0_12px_rgba(244,63,94,.9)] animate-bounce" aria-label="新任務：前往營業機動部的任務中心">!</span>
+            )}
           </button>
           <button
             data-tutorial-target="supply"
@@ -1455,6 +1476,7 @@ export default function App() {
             upgrades={robotUpgrades}
             setUpgrades={setRobotUpgrades}
             playSound={playSound}
+            onFirstUpgradeCompleted={() => setHasPendingAmpaBossNotice(true)}
           />
         </main>
       ) : currentScene === "ops" ? (

@@ -14,7 +14,7 @@ import {
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { BACKGROUND_ASSETS } from "../data/backgroundAssets";
 import { recordAction, recordRhythmWeldResult } from "../systems/playerStats";
-import { markFirstRobotUpgradeComplete } from "../systems/bossProgression";
+import { hasCompletedFirstRobotUpgrade, markFirstRobotUpgradeComplete } from "../systems/bossProgression";
 import { RhythmSolderingGame } from "./RhythmSolderingGame";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
 import type { RhythmResult } from "../rhythm/types";
@@ -25,6 +25,7 @@ interface RobotLabPanelProps {
   upgrades: RobotUpgradeLevels;
   setUpgrades: React.Dispatch<React.SetStateAction<RobotUpgradeLevels>>;
   playSound: (sound: string) => void;
+  onFirstUpgradeCompleted?: () => void;
 }
 
 type UpgradeCategory = "attack" | "defense" | "mobility" | "special";
@@ -44,7 +45,7 @@ const UPGRADE_CATEGORIES: Array<{
   { id: "special", name: "特殊系統", shortName: "特殊", icon: Sparkles, upgrades: ["special_lighting", "passive_skill"] },
 ];
 
-export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound }: RobotLabPanelProps) {
+export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound, onFirstUpgradeCompleted }: RobotLabPanelProps) {
   const [activeCategory, setActiveCategory] = useState<UpgradeCategory>("attack");
   const [isMaterialPanelOpen, setIsMaterialPanelOpen] = useState(false);
   const [pendingUpgradeId, setPendingUpgradeId] = useState<RobotUpgradeId | null>(null);
@@ -87,7 +88,9 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
     recordAction("repairRobot");
     recordAction("upgradeRobotModule", levelsGained);
     recordRhythmWeldResult(result.grade);
+    const isFirstRobotUpgrade = !hasCompletedFirstRobotUpgrade();
     markFirstRobotUpgradeComplete();
+    if (isFirstRobotUpgrade) onFirstUpgradeCompleted?.();
     emitAmbientEvent("research_success", { eventId: id });
     playSound("success");
     setPendingUpgradeId(null);
