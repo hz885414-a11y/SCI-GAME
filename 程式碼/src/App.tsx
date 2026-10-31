@@ -67,6 +67,11 @@ const APP_LAST_SCENE_KEY = "light_crew_last_scene";
 const MOBILE_BREAKPOINT_PX = 768;
 const CHAPTER_ONE_NPC_INTRO_PENDING_KEY = "squad_chapter_one_npc_intro_pending";
 const CHAPTER_ONE_NPC_INTRO_SEEN_KEY = "squad_chapter_one_npc_intro_seen";
+const CHAPTER_ONE_NPC_INTRO_LINES: DialogueLine[] = [
+  { speakerId: "leo", text: "剛剛收到避難所的新訊號！暗物質已被清除，大家正在把那裡整理成安全據點。" },
+  { speakerId: "claire", text: "之後會有不同的 NPC 出現在工業區避難所。他們會帶來情報，也可能需要我們協助。" },
+  { speakerId: "ethan", text: "記得回去和他們互動。完成他們的委託，能幫我們處理之後更複雜的任務。" },
+];
 const getCharacterBreakpoint = (width: number): "desktop" | "tablet" | "mobile" =>
   width < MOBILE_BREAKPOINT_PX ? "mobile" : width < 1024 ? "tablet" : "desktop";
 
@@ -358,6 +363,7 @@ export default function App() {
   const [isTutorialActive, setIsTutorialActive] = useState(false);
   const [showFirstMissionGuide, setShowFirstMissionGuide] = useState(false);
   const [hasPendingChapterOneNpcIntro, setHasPendingChapterOneNpcIntro] = useState(loadPendingChapterOneNpcIntro);
+  const [isChapterOneNpcIntroActive, setIsChapterOneNpcIntroActive] = useState(false);
   // Current active area: lab, technology R&D, mobile operations, or supply
   const [currentScene, setCurrentScene] = useState<AppScene>(() => loadLastScene());
   useEffect(() => {
@@ -387,13 +393,10 @@ export default function App() {
   // intentionally delivered only after the player follows the lab alert.
   useEffect(() => {
     if (!hasPendingChapterOneNpcIntro || appPhase !== "main" || currentScene !== "lab" || isTransitioning) return;
-    setStoryLines([
-      { speakerId: "leo", text: "剛剛收到避難所的新訊號！暗物質已被清除，大家正在把那裡整理成安全據點。" },
-      { speakerId: "claire", text: "之後會有不同的 NPC 出現在工業區避難所。他們會帶來情報，也可能需要我們協助。" },
-      { speakerId: "ethan", text: "記得回去和他們互動。完成他們的委託，能幫我們處理之後更複雜的任務。" },
-    ]);
+    setStoryLines(CHAPTER_ONE_NPC_INTRO_LINES);
     setCurrentDialogueIndex(0);
     setGameMode("counseling");
+    setIsChapterOneNpcIntroActive(true);
     setHasPendingChapterOneNpcIntro(false);
     try {
       localStorage.removeItem(CHAPTER_ONE_NPC_INTRO_PENDING_KEY);
@@ -657,6 +660,7 @@ export default function App() {
     localStorage.setItem("light_crew_affection", JSON.stringify(initial));
     setGameMode("idle");
     setStoryLines([]);
+    setIsChapterOneNpcIntroActive(false);
     setInputText("");
     
     // Also reset custom images
@@ -1525,29 +1529,60 @@ export default function App() {
               // Check if we are at the end of the dialogue to show action choices in the footer bar!
               gameMode === "counseling" && currentDialogueIndex === storyLines.length - 1 ? (
                 <div className="w-full flex gap-2 h-[34px] sm:h-[50px] animate-scale-up">
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setGameMode("idle");
-                      setStoryLines([]);
-                      setInputText("");
-                    }}
-                    className="flex-1 h-full px-2 sm:px-6 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-850 font-bold text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
-                  >
-                    <RefreshCw className="w-3 h-3 text-orange-500 flex-shrink-0" />
-                    <span className="truncate">再問一題 (NEW_CIRCUIT)</span>
-                  </button>
+                  {isChapterOneNpcIntroActive ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          playSound("click");
+                          setIsChapterOneNpcIntroActive(false);
+                          setGameMode("idle");
+                          setStoryLines([]);
+                          setInputText("");
+                        }}
+                        className="flex-1 h-full px-2 sm:px-6 bg-white text-black hover:bg-orange-500 hover:text-white font-black text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 shadow-lg flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
+                      >
+                        <CheckCircle className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                        <span className="truncate">我知道了 (ACKNOWLEDGE)</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          playSound("click");
+                          setStoryLines(CHAPTER_ONE_NPC_INTRO_LINES);
+                          setCurrentDialogueIndex(0);
+                        }}
+                        className="flex-1 h-full px-2 sm:px-6 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-850 font-bold text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
+                      >
+                        <RefreshCw className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                        <span className="truncate">再說一次 (REPLAY)</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          playSound("click");
+                          setGameMode("idle");
+                          setStoryLines([]);
+                          setInputText("");
+                        }}
+                        className="flex-1 h-full px-2 sm:px-6 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-850 font-bold text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
+                      >
+                        <RefreshCw className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                        <span className="truncate">再問一題 (NEW_CIRCUIT)</span>
+                      </button>
 
-                  <button
-                    onClick={() => {
-                      playSound("click");
-                      setIsFortuneOpen(true);
-                    }}
-                    className="flex-1 h-full px-2 sm:px-6 bg-white text-black hover:bg-orange-500 hover:text-white font-black text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 shadow-lg flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
-                  >
-                    <Sparkles className="w-3 h-3 text-orange-500 flex-shrink-0 animate-pulse" />
-                    <span className="truncate">抽取今日戀愛籤 (FORTUNE)</span>
-                  </button>
+                      <button
+                        onClick={() => {
+                          playSound("click");
+                          setIsFortuneOpen(true);
+                        }}
+                        className="flex-1 h-full px-2 sm:px-6 bg-white text-black hover:bg-orange-500 hover:text-white font-black text-[9px] sm:text-xs uppercase tracking-wider sm:tracking-widest rounded-none transition-all duration-200 active:scale-95 shadow-lg flex items-center justify-center gap-1 sm:gap-2 cursor-pointer truncate"
+                      >
+                        <Sparkles className="w-3 h-3 text-orange-500 flex-shrink-0 animate-pulse" />
+                        <span className="truncate">抽取今日戀愛籤 (FORTUNE)</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 // During narrative mode, we disable typing to keep focus on dialogue flow
