@@ -629,6 +629,10 @@ export function MissionGame({
   const bossDeathCinematicRef = useRef(false);
   const bossOutcomeRecordedRef = useRef(false);
   const chapterOnePeacefulRef = useRef(false);
+  // Completion is persisted immediately, but the first clear should retain
+  // its dangerous, masked presentation until the player returns and enters
+  // the shelter again in a new run.
+  const chapterOneCompletedThisRunRef = useRef(false);
   const firstMissionLightGuidePendingRef = useRef(false);
   const chapterOneEnemiesDefeatedRef = useRef(0);
   const chapterOneEnemiesSpawnedRef = useRef(0);
@@ -1326,6 +1330,11 @@ export function MissionGame({
   // its existing two-mode behavior so this UI change cannot alter robot balance.
   const toggleBatteryMode = () => {
     if (stage === "PLAYING" && firstMissionLightGuideStep !== null) return;
+    if (stage === "PLAYING" && engineRef.current.player.batteryVal <= 0.1) {
+      setBatteryMode("OFF");
+      triggerSound("low_battery");
+      return;
+    }
     setBatteryMode((prev) => {
       const next = stage === "PLAYING"
         ? prev === "OFF" ? "LOW" : prev === "LOW" ? "HIGH" : "OFF"
@@ -1720,6 +1729,7 @@ export function MissionGame({
   const completeChapterOneShelter = () => {
     if (chapterOnePeacefulRef.current) return;
     chapterOnePeacefulRef.current = true;
+    chapterOneCompletedThisRunRef.current = true;
     const state = engineRef.current;
     state.enemies = [];
     state.bullets = state.bullets.filter((bullet: { isEnemy?: boolean }) => !bullet.isEnemy);
@@ -1758,6 +1768,7 @@ export function MissionGame({
     setChapterOneCompletionComm(false);
     setChapterOneReturnGuideActive(false);
     chapterOnePeacefulRef.current = chapterOneAlreadyCleared;
+    chapterOneCompletedThisRunRef.current = false;
     setJoystickPosition({ x: 0, y: 0 });
     // Restore the selected character's authored base stats before every run so
     // level-up choices remain temporary to the adventure in which they occur.
@@ -2628,8 +2639,8 @@ export function MissionGame({
           setBatteryPercent(nextBatPercent);
         }
 
-        if (player.batteryVal <= 0.1 && batteryMode === "HIGH") {
-          setBatteryMode("LOW");
+        if (player.batteryVal <= 0.1 && batteryMode !== "OFF") {
+          setBatteryMode("OFF");
           triggerSound("low_battery");
           // Low battery protection spark
           for (let i = 0; i < 5; i++) {
@@ -7065,7 +7076,7 @@ export function MissionGame({
       // ==========================================
       // Only the cleared shelter hub is brightly lit. Its perimeter is a
       // regular dark adventure zone and uses the standard light/fog mechanic.
-      if (stage === "PLAYING" && (!isPeacefulShelter || state.shelterPerimeterActive)) {
+      if (stage === "PLAYING" && (!isPeacefulShelter || chapterOneCompletedThisRunRef.current || state.shelterPerimeterActive)) {
         ctx.save();
         // Use cached offscreen canvas to avoid expensive DOM allocations on every frame (60fps)
         if (!offscreenCanvasRef.current) {
