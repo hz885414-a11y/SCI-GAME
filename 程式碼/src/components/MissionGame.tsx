@@ -277,6 +277,16 @@ const SHELTER_FURNITURE_ASSET = "/assets/shelter-props/post-apoc/Post%20Apoc%20S
 const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
 const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
 const SHELTER_PERIMETER_FINAL_AREA = 5;
+// The cleared shelter opens into one continuous expedition world.  Areas are
+// narrative sectors within that world, not a sequence of square rooms.
+const SHELTER_EXPEDITION_SECTORS = [
+  { name: "南門廢棄街", subtitle: "SOUTH GATE RUINS", accent: "#f59e0b" },
+  { name: "浸水物流站", subtitle: "FLOODED DEPOT", accent: "#38bdf8" },
+  { name: "斷電住宅區", subtitle: "BLACKOUT BLOCK", accent: "#a78bfa" },
+  { name: "高架橋下", subtitle: "UNDERPASS", accent: "#fb7185" },
+  { name: "訊號塔荒地", subtitle: "RELAY WASTES", accent: "#facc15" },
+] as const;
+const getShelterExpeditionSector = (area: number) => SHELTER_EXPEDITION_SECTORS[Math.max(0, Math.min(SHELTER_EXPEDITION_SECTORS.length - 1, area - 1))];
 const SHELTER_PERIMETER_THREATS = [
   { hpMultiplier: 1, speedMultiplier: 1, densityMultiplier: 1 },
   { hpMultiplier: 1.45, speedMultiplier: 1.1, densityMultiplier: 1.15 },
@@ -4380,13 +4390,14 @@ export function MissionGame({
           }
           state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
           state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
-          setAreaTransition(`避難所周邊-${String(area).padStart(2, "0")}`);
-          setInteractionFeedback(`已進入：避難所周邊-${String(area).padStart(2, "0")}・30 秒後黑潮來襲`);
+          const sector = getShelterExpeditionSector(area);
+          setAreaTransition(`遠征・${sector.name}`);
+          setInteractionFeedback(`已進入：${sector.name}・保持照明，30 秒後黑潮來襲`);
           triggerSound("power");
         };
         if (shelterPerimeterGate && gateDistance <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE && !state.shelterPerimeterActive) {
           interactionTargetRef.current = {
-            label: shelterPerimeterGate.entered ? "前往避難所周邊-01" : "穿越上方鐵門・前往避難所周邊-01",
+            label: shelterPerimeterGate.entered ? "返回遠征區・南門廢棄街" : "開啟遠征門・南門廢棄街",
             onTap: () => {
               shelterPerimeterGate.entered = true;
               enterShelterPerimeterArea(1, { x: shelterPerimeterGate.destinationX, y: shelterPerimeterGate.destinationY });
@@ -4397,7 +4408,7 @@ export function MissionGame({
           const nextGateDistance = nextGate ? Math.hypot(nextGate.x - player.x, nextGate.y - player.y) : Infinity;
           if (state.shelterPerimeterActive && nextGate && nextGateDistance <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE) {
             interactionTargetRef.current = {
-              label: `深入避難所周邊-${String(nextGate.nextArea).padStart(2, "0")}`,
+              label: `深入遠征・${getShelterExpeditionSector(nextGate.nextArea).name}`,
               onTap: () => enterShelterPerimeterArea(nextGate.nextArea, { x: nextGate.destinationX, y: nextGate.destinationY }),
             };
           } else if (nearbyProp) {
@@ -5815,6 +5826,8 @@ export function MissionGame({
       ctx.fillStyle = activeChapter.groundColor;
       ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
 
+      const isShelterExpedition = stage === "PLAYING" && isPeacefulShelter && state.shelterPerimeterActive;
+
       if (stage === "PLAYING" || stage === "BOSSBATTLE") {
         const backgroundImage = stage === "BOSSBATTLE"
           ? bossArenaBackgroundImgRef.current
@@ -5829,6 +5842,7 @@ export function MissionGame({
 
           ctx.save();
           ctx.imageSmoothingEnabled = false;
+          if (isShelterExpedition) ctx.globalAlpha = .28;
           ctx.drawImage(
             backgroundImage,
             placement.x,
@@ -5840,8 +5854,71 @@ export function MissionGame({
         }
       }
 
+      // The post-clear Chapter 1 exterior is an open, landmark-driven
+      // expedition landscape. Curved roads, irregular ruined shells and
+      // scattered survival infrastructure deliberately break up the old
+      // checkerboard/room feeling while the existing collision, light and gate
+      // systems remain exactly the same.
+      if (isShelterExpedition) {
+        const sector = getShelterExpeditionSector(state.shelterPerimeterArea || 1);
+        const road = (points: Array<[number, number]>, width: number, color: string) => {
+          ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+          for (let index = 1; index < points.length; index++) ctx.lineTo(points[index][0], points[index][1]);
+          ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke();
+        };
+        ctx.save();
+        // Ash, dried mud and subtle contaminated ground patches.
+        ctx.fillStyle = "#111922"; ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
+        for (let y = 30; y < state.mapSize.height; y += 86) for (let x = (Math.floor(y / 86) % 2) * 37; x < state.mapSize.width; x += 102) {
+          const seed = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+          const size = 10 + Math.abs(seed % 1) * 26;
+          ctx.fillStyle = `rgba(91, 73, 55, ${.12 + Math.abs(seed % .18)})`;
+          ctx.beginPath(); ctx.ellipse(x, y, size, size * .38, seed, 0, Math.PI * 2); ctx.fill();
+        }
+        // A broken arterial road makes the world readable as a place rather
+        // than a boxed arena. Two branches offer visual exploration choices.
+        road([[80, 980], [360, 850], [620, 900], [890, 690], [1140, 610], [1450, 370], [1740, 300]], 134, "#20242a");
+        road([[380, 1180], [560, 970], [770, 790], [900, 515], [870, 80]], 82, "#1b2026");
+        road([[1030, 1180], [1110, 940], [1350, 790], [1690, 820]], 72, "#1b2026");
+        road([[80, 980], [360, 850], [620, 900], [890, 690], [1140, 610], [1450, 370], [1740, 300]], 5, "rgba(226, 185, 88, .28)");
+        road([[380, 1180], [560, 970], [770, 790], [900, 515], [870, 80]], 3, "rgba(226, 185, 88, .18)");
+
+        const ruins: Array<[number, number, number, number, number]> = [
+          [130, 155, 190, 128, .2], [385, 245, 118, 212, -.15], [690, 100, 216, 134, .08], [1130, 155, 178, 176, -.18],
+          [1450, 130, 210, 150, .14], [142, 600, 205, 168, -.1], [1120, 760, 162, 170, .18], [1450, 920, 224, 132, -.12],
+        ];
+        ruins.forEach(([x, y, width, height, tilt], index) => {
+          ctx.save(); ctx.translate(x + width / 2, y + height / 2); ctx.rotate(tilt);
+          ctx.fillStyle = index % 2 ? "#2b3033" : "#303537"; ctx.fillRect(-width / 2, -height / 2, width, height);
+          ctx.fillStyle = "#171b1e"; ctx.fillRect(-width * .35, -height * .24, width * .42, height * .28);
+          ctx.fillStyle = "#53504a"; ctx.fillRect(width * .1, -height * .42, width * .2, height * .14);
+          ctx.strokeStyle = "rgba(148, 163, 184, .18)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-width * .45, height * .35); ctx.lineTo(width * .4, -height * .28); ctx.stroke();
+          ctx.restore();
+        });
+        // Barricades, wreckage and weak lamps give the routes a survivor-game
+        // rhythm: safe-ish pools of light separated by threatening darkness.
+        const camps: Array<[number, number, number]> = [[290, 825, 0], [615, 900, .2], [880, 515, -.15], [1145, 610, .12], [1380, 780, -.08], [1500, 370, .16]];
+        camps.forEach(([x, y, angle], index) => {
+          ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+          ctx.fillStyle = "#5a4632"; ctx.fillRect(-30, -10, 60, 20);
+          ctx.fillStyle = "#2f3538"; ctx.fillRect(-24, -18, 12, 36); ctx.fillRect(12, -18, 12, 36);
+          ctx.strokeStyle = "#9a7b3c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-29, -6); ctx.lineTo(29, 7); ctx.stroke();
+          if (index % 2 === 0) { const glow = ctx.createRadialGradient(0, -28, 3, 0, -28, 70); glow.addColorStop(0, "rgba(250, 204, 21, .4)"); glow.addColorStop(1, "rgba(250, 204, 21, 0)"); ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -28, 70, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#fde68a"; ctx.fillRect(-3, -35, 6, 12); }
+          ctx.restore();
+        });
+        // Sector colour only appears as a restrained expedition beacon, so it
+        // supports navigation without breaking the devastated palette.
+        const beaconX = 900 + Math.sin((state.shelterPerimeterArea || 1) * 1.7) * 220;
+        const beaconY = 455 + Math.cos((state.shelterPerimeterArea || 1) * 1.3) * 120;
+        const beaconGlow = ctx.createRadialGradient(beaconX, beaconY, 6, beaconX, beaconY, 110);
+        beaconGlow.addColorStop(0, `${sector.accent}99`); beaconGlow.addColorStop(1, `${sector.accent}00`);
+        ctx.fillStyle = beaconGlow; ctx.beginPath(); ctx.arc(beaconX, beaconY, 110, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = sector.accent; ctx.fillRect(beaconX - 4, beaconY - 46, 8, 46); ctx.fillRect(beaconX - 14, beaconY - 50, 28, 7);
+        ctx.restore();
+      }
+
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
-      if (stage === "PLAYING") {
+      if (stage === "PLAYING" && !isShelterExpedition) {
         ctx.strokeStyle = activeChapter.gridColor;
         ctx.lineWidth = 1;
         const gridSize = 40;
@@ -5917,7 +5994,7 @@ export function MissionGame({
         ctx.fillStyle = "#cffafe";
         ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("↑ 避難所周邊-01", 0, -60);
+        ctx.fillText("↑ 遠征門・南門廢棄街", 0, -60);
         if (nearGate) {
           ctx.fillStyle = "#fef3c7";
           ctx.fillText("點擊互動進入", 0, 40);
@@ -5928,7 +6005,8 @@ export function MissionGame({
       if (stage === "PLAYING" && state.shelterPerimeterActive && shelterPerimeterNextGate) {
         const gatePulse = (Math.sin(state.ticks * 0.16) + 1) / 2;
         const nearGate = Math.hypot(shelterPerimeterNextGate.x - player.x, shelterPerimeterNextGate.y - player.y) <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE;
-        const nextLabel = `避難所周邊-${String(shelterPerimeterNextGate.nextArea).padStart(2, "0")}`;
+        const nextSector = getShelterExpeditionSector(shelterPerimeterNextGate.nextArea);
+        const nextLabel = `遠征・${nextSector.name}`;
         ctx.save();
         ctx.translate(shelterPerimeterNextGate.x, shelterPerimeterNextGate.y);
         ctx.fillStyle = `rgba(225, 29, 72, ${0.16 + gatePulse * 0.18})`;
