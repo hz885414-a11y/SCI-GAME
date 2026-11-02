@@ -1285,6 +1285,7 @@ export function MissionGame({
     shelterPerimeterActive: false,
     shelterPerimeterArea: 0,
     shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
+    shelterPerimeterArrivalUntilTick: 0,
     playerDialogueText: null as string | null,
     playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
@@ -1988,6 +1989,7 @@ export function MissionGame({
       shelterPerimeterActive: false,
       shelterPerimeterArea: 0,
       shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
+      shelterPerimeterArrivalUntilTick: 0,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       shelterNpcs: [],
@@ -2087,7 +2089,22 @@ export function MissionGame({
         return null;
       };
       const gatePosition = findUpperWalkable() || findWalkableSpawn(22) || { x: 900, y: 180 };
-      const perimeterPosition = findWalkableSpawn(18, gatePosition, 520)
+      // An expedition always begins just inside the lower-middle edge of the
+      // destination map. This makes the upper gate feel like a real doorway
+      // into a new space rather than a random teleport beside the exit.
+      const findPerimeterArrival = () => {
+        const { width, height } = MISSION_MAP_CONFIG.worldSize;
+        for (let y = height - 150; y >= Math.floor(height * .42); y -= 20) {
+          for (let offset = 0; offset <= width * .42; offset += 20) {
+            for (const x of offset === 0 ? [width / 2] : [width / 2 - offset, width / 2 + offset]) {
+              if (x > 32 && x < width - 32 && isMissionPositionWalkable(x, y, 18)) return { x, y };
+            }
+          }
+        }
+        return null;
+      };
+      const perimeterPosition = findPerimeterArrival()
+        || findWalkableSpawn(18, gatePosition, 520)
         || findWalkableSpawn(18)
         || gatePosition;
       engineRef.current.shelterPerimeterGate = {
@@ -2401,6 +2418,7 @@ export function MissionGame({
       shelterPerimeterActive: false,
       shelterPerimeterArea: 0,
       shelterPerimeterNextGate: null,
+      shelterPerimeterArrivalUntilTick: 0,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       collectibles: [],
@@ -2832,7 +2850,8 @@ export function MissionGame({
       // Camera tracking uses world coordinates in both exploration and the larger boss arena.
       if (stage === "PLAYING") {
         state.camera.x = player.x - canvas.width / 2;
-        state.camera.y = player.y - canvas.height / 2;
+        const isPerimeterArrival = state.shelterPerimeterActive && state.shelterPerimeterArrivalUntilTick > state.ticks;
+        state.camera.y = player.y - canvas.height * (isPerimeterArrival ? .72 : .5);
         // Clamp camera to map bounds
         state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, state.camera.x));
         state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, state.camera.y));
@@ -4307,6 +4326,7 @@ export function MissionGame({
           player.y = destination.y;
           state.shelterPerimeterActive = true;
           state.shelterPerimeterArea = area;
+          state.shelterPerimeterArrivalUntilTick = state.ticks + 180;
           state.shelterNpcs = [];
           state.enemies = [];
           state.spawnTimer = 0;
@@ -4353,7 +4373,7 @@ export function MissionGame({
             state.shelterPerimeterNextGate = null;
           }
           state.camera.x = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
-          state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
+          state.camera.y = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height * .72));
           setAreaTransition(`避難所周邊-${String(area).padStart(2, "0")}`);
           setInteractionFeedback(`已進入：避難所周邊-${String(area).padStart(2, "0")}・30 秒後黑潮來襲`);
           triggerSound("power");
