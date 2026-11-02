@@ -7493,11 +7493,8 @@ export function MissionGame({
           ctx.fillStyle = "rgba(8, 47, 73, 0.98)";
           ctx.strokeStyle = npc.color;
           ctx.lineWidth = 2;
-          ctx.shadowColor = npc.color;
-          ctx.shadowBlur = 10;
           ctx.fillRect(bubbleX, bubbleY, bubbleWidth, 27);
           ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, 27);
-          ctx.shadowBlur = 0;
           ctx.beginPath(); ctx.moveTo(npc.x - 5, bubbleY + 27); ctx.lineTo(npc.x + 5, bubbleY + 27); ctx.lineTo(npc.x, bubbleY + 33); ctx.closePath(); ctx.fill(); ctx.stroke();
           ctx.fillStyle = "#f8fafc";
           ctx.fillText(npc.dialogueText, npc.x, bubbleY + 13.5);
