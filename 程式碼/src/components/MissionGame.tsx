@@ -209,10 +209,6 @@ const SHELTER_CHILD_SEEDS = [
   { id: "child-doudou", name: "豆豆", color: "#a7f3d0", x: 900, y: 330, dialogueLines: ["我會幫忙把電池送過去。"] },
   { id: "child-mimi", name: "米米", color: "#c4b5fd", x: 1010, y: 410, dialogueLines: ["我想畫一張新的避難所地圖。"] },
   { id: "child-che", name: "阿澈", color: "#7dd3fc", x: 1120, y: 340, dialogueLines: ["外面的風聲已經變小了。"] },
-  { id: "child-qingqing", name: "晴晴", color: "#fbcfe8", x: 700, y: 490, dialogueLines: ["我有聽到大家一起笑的聲音。"] },
-  { id: "child-kaikai", name: "凱凱", color: "#86efac", x: 840, y: 520, dialogueLines: ["我想當像機器人一樣的工程師！"] },
-  { id: "child-luna", name: "露娜", color: "#ddd6fe", x: 980, y: 500, dialogueLines: ["星星也會幫我們守夜嗎？"] },
-  { id: "child-taku", name: "拓也", color: "#fde68a", x: 1110, y: 530, dialogueLines: ["等安全了，我要幫忙搬補給箱。"] },
 ] as const;
 // CC0 top-down character pack by piano_no_renshu.  Each source sheet is a
 // 4×4 grid (16×24 px cells): rows are facing directions and columns are walk
@@ -229,13 +225,7 @@ const SHELTER_NPC_SPRITES: Record<string, string> = {
   researcher: "/assets/npc/chapter-one/pack/6.png",
   volunteer: "/assets/npc/chapter-one/pack/9.png",
 };
-const ADULT_NPC_FRAMES: Record<string, { x: number; y: number }> = {
-  // The first three columns of this sheet are portrait heads, not walk
-  // frames.  Adult NPCs therefore only use the six verified 3×4 body blocks.
-  liaison: { x: 54, y: 0 }, engineer: { x: 108, y: 0 }, scout: { x: 162, y: 0 }, medic: { x: 54, y: 64 },
-  courier: { x: 108, y: 64 }, resident: { x: 162, y: 64 }, technician: { x: 54, y: 0 }, researcher: { x: 108, y: 0 }, volunteer: { x: 162, y: 0 },
-};
-const CHILD_SPRITE_IDS: Record<string, string> = { "child-xingya": "liaison", "child-lele": "engineer", "child-doudou": "scout", "child-mimi": "medic", "child-che": "courier", "child-qingqing": "resident", "child-kaikai": "technician", "child-luna": "researcher", "child-taku": "volunteer" };
+const CHILD_SPRITE_IDS: Record<string, string> = { "child-xingya": "liaison", "child-lele": "engineer", "child-doudou": "scout", "child-mimi": "medic", "child-che": "courier" };
 const SHELTER_NPC_INTERACTION_RANGE = 94;
 const SHELTER_PROP_INTERACTION_RANGE = 76;
 // All shelter dressing comes from the same 32px post-apocalyptic interior set.
@@ -259,22 +249,7 @@ const SHELTER_PROP_SPRITES = {
   barrel: { x: 192, y: 480, w: 1, h: 1 },
   warning: { x: 352, y: 480, w: 1, h: 1 },
 } as const;
-const SHELTER_PROP_SEEDS: Omit<ShelterProp, "used">[] = [
-  { id: "supply", label: "應急補給箱", kind: "supply", sprite: "crates", x: 430, y: 255, radius: 32, interactive: true },
-  { id: "medical", label: "醫療櫃", kind: "medical", sprite: "medkit", x: 1370, y: 320, radius: 28, interactive: true },
-  { id: "rest", label: "值勤休息床", kind: "rest", sprite: "bed", x: 1240, y: 850, radius: 40, interactive: true },
-  { id: "ration-rack", label: "罐頭與飲水", kind: "decor", sprite: "rations", x: 875, y: 960, radius: 32 },
-  { id: "bunk-a", label: "", kind: "decor", sprite: "bunk", x: 1165, y: 846, radius: 42 },
-  { id: "bunk-b", label: "", kind: "decor", sprite: "bunk", x: 1310, y: 848, radius: 42 },
-  { id: "radio", label: "", kind: "decor", sprite: "radio", x: 735, y: 298, radius: 26 },
-  { id: "repair-bench", label: "", kind: "decor", sprite: "workbench", x: 535, y: 282, radius: 42 },
-  { id: "tool-locker", label: "", kind: "decor", sprite: "locker", x: 600, y: 254, radius: 26 },
-  { id: "water-barrel", label: "", kind: "decor", sprite: "water", x: 805, y: 860, radius: 25 },
-  { id: "barrel-stack", label: "", kind: "decor", sprite: "barrel", x: 760, y: 884, radius: 22 },
-  { id: "privacy-screen", label: "", kind: "decor", sprite: "divider", x: 1325, y: 333, radius: 28 },
-  { id: "field-tarp", label: "", kind: "decor", sprite: "tarp", x: 1060, y: 850, radius: 38 },
-  { id: "warning-sign", label: "", kind: "decor", sprite: "warning", x: 960, y: 420, radius: 20 },
-];
+const SHELTER_PROP_SEEDS: Omit<ShelterProp, "used">[] = [];
 const SHELTER_FURNITURE_ASSET = "/assets/shelter-props/post-apoc/Post%20Apoc%20Shelter%20-%20Asset%20Pack/Post%20Apoc%20-%20Shelter%2032x32%20Grid/Shelter_Furniture_32x32.png";
 const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
 const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
@@ -830,7 +805,6 @@ export function MissionGame({
   const [bossRobotActLoaded, setBossRobotActLoaded] = useState<boolean>(false);
   const combatEffectImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const shelterNpcImagesRef = useRef<Record<string, HTMLImageElement>>({});
-  const shelterAdultNpcImageRef = useRef<HTMLImageElement | null>(null);
   const shelterPropImagesRef = useRef<Record<string, HTMLImageElement>>({});
 
   const companionRobotImagesRef = useRef<Record<string, HTMLImageElement>>({});
@@ -861,8 +835,6 @@ export function MissionGame({
       });
     };
   }, []);
-
-  useEffect(() => { const image = new Image(); image.onload = () => { shelterAdultNpcImageRef.current = image; }; image.src = "/assets/npc/chapter-one/adult-npcs.png"; }, []);
 
   useEffect(() => {
     const image = new Image();
@@ -6534,30 +6506,27 @@ export function MissionGame({
         (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
           const nearNpc = Math.hypot(npc.x - player.x, npc.y - player.y) <= SHELTER_NPC_INTERACTION_RANGE;
           const bob = Math.sin(state.ticks * 0.08 + npc.x * 0.02) * 2;
-          const npcSprite = npc.isChild ? shelterNpcImagesRef.current[CHILD_SPRITE_IDS[npc.id]] : null;
-          const adultSprite = shelterAdultNpcImageRef.current;
+          // Every NPC uses a complete 4×4 body sheet. The old adult sheet
+          // mixes portrait-only cells with walk frames, which caused heads to
+          // appear without bodies in the shelter.
+          const npcSpriteKey = npc.isChild ? CHILD_SPRITE_IDS[npc.id] : npc.id;
+          const npcSprite = shelterNpcImagesRef.current[npcSpriteKey];
           ctx.save();
           ctx.translate(npc.x, npc.y + bob);
-          if (npc.isChild && npcSprite?.complete && npcSprite.naturalWidth > 0) {
+          if (npcSprite?.complete && npcSprite.naturalWidth > 0) {
             const moveX = npc.targetX - npc.x;
             const moveY = npc.targetY - npc.y;
             const moving = Math.hypot(moveX, moveY) >= 4;
             const horizontal = Math.abs(moveX) > Math.abs(moveY);
             const directionRow = horizontal ? 2 : moveY < 0 ? 3 : 0;
             const walkFrame = moving ? Math.floor(state.ticks / 9) % 4 : 0;
+            const drawWidth = npc.isChild ? 32 : 38;
+            const drawHeight = npc.isChild ? 48 : 57;
             ctx.imageSmoothingEnabled = false;
             ctx.shadowColor = npc.color;
             ctx.shadowBlur = nearNpc ? 14 : 5;
             if (horizontal && moveX < 0) ctx.scale(-1, 1);
-            ctx.drawImage(npcSprite, walkFrame * 16, directionRow * 24, 16, 24, -16, -31, 32, 48);
-          } else if (!npc.isChild && adultSprite?.complete && adultSprite.naturalWidth > 0 && ADULT_NPC_FRAMES[npc.id]) {
-            const moveX = npc.targetX - npc.x; const moveY = npc.targetY - npc.y;
-            const horizontal = Math.abs(moveX) > Math.abs(moveY); const moving = Math.hypot(moveX, moveY) >= 4;
-            const base = ADULT_NPC_FRAMES[npc.id]; const row = horizontal ? 1 : moveY < 0 ? 3 : 0;
-            const frame = moving ? Math.floor(state.ticks / 10) % 3 : 1;
-            ctx.imageSmoothingEnabled = false; ctx.shadowColor = npc.color; ctx.shadowBlur = nearNpc ? 13 : 4;
-            if (horizontal && moveX < 0) ctx.scale(-1, 1);
-            ctx.drawImage(adultSprite, base.x + frame * 18, base.y + row * 16, 18, 16, -20, -26, 40, 36);
+            ctx.drawImage(npcSprite, walkFrame * 16, directionRow * 24, 16, 24, -drawWidth / 2, -drawHeight * .66, drawWidth, drawHeight);
           } else {
             // Keep the original lightweight silhouette as an offline fallback.
             ctx.fillStyle = npc.color;
