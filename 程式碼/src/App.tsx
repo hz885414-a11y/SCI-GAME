@@ -27,6 +27,7 @@ import { SupplyDivision } from "./components/SupplyDivision";
 import { MissionGame } from "./components/MissionGame";
 import { StageEnding, type StageEndingSummary } from "./components/StageEnding";
 import { RobotLabPanel } from "./components/RobotLabPanel";
+import { DEFAULT_ROBOT_ULTIMATE, ROBOT_ULTIMATE_IDS, type RobotUltimateId } from "./data/robotUltimateSystem";
 import { PixelCursor } from "./components/PixelCursor";
 import { EventPopup } from "./components/events/EventPopup";
 import { KnowledgeBookModal } from "./components/events/KnowledgeBookModal";
@@ -285,6 +286,12 @@ export default function App() {
       return defaults;
     }
   });
+  const [unlockedRobotUltimates, setUnlockedRobotUltimates] = useState<RobotUltimateId[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem("c2_932_unlocked_ultimates") || "[]") as RobotUltimateId[]; return [...new Set([DEFAULT_ROBOT_ULTIMATE, ...saved])]; } catch { return [DEFAULT_ROBOT_ULTIMATE]; }
+  });
+  const [equippedRobotUltimate, setEquippedRobotUltimate] = useState<RobotUltimateId>(() => {
+    try { return (localStorage.getItem("c2_932_equipped_ultimate") as RobotUltimateId) || DEFAULT_ROBOT_ULTIMATE; } catch { return DEFAULT_ROBOT_ULTIMATE; }
+  });
   const affordableRobotUpgradeCount = ROBOT_UPGRADE_IDS.filter((id) => {
     const level = robotUpgrades[id] || 0;
     return level < 5 && canAffordUpgrade(modificationMaterials, getUpgradeCost(id, level));
@@ -346,6 +353,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("c2_932_upgrades", JSON.stringify(robotUpgrades));
   }, [robotUpgrades]);
+
+  useEffect(() => { localStorage.setItem("c2_932_unlocked_ultimates", JSON.stringify(unlockedRobotUltimates)); }, [unlockedRobotUltimates]);
+  useEffect(() => { localStorage.setItem("c2_932_equipped_ultimate", equippedRobotUltimate); }, [equippedRobotUltimate]);
 
   useEffect(() => {
     localStorage.setItem("squad_unlocked_chapters", JSON.stringify(unlockedChapters));
@@ -709,8 +719,12 @@ export default function App() {
 
     setModificationMaterials(createEmptyMaterialInventory());
     setRobotUpgrades(createDefaultRobotUpgrades());
+    setUnlockedRobotUltimates([DEFAULT_ROBOT_ULTIMATE]);
+    setEquippedRobotUltimate(DEFAULT_ROBOT_ULTIMATE);
     localStorage.removeItem("c2_932_materials");
     localStorage.removeItem("c2_932_upgrades");
+    localStorage.removeItem("c2_932_unlocked_ultimates");
+    localStorage.removeItem("c2_932_equipped_ultimate");
     localStorage.setItem("sci_total_play_seconds", "0");
     window.dispatchEvent(new Event("sci:playtime-reset"));
     localStorage.removeItem("sci_stage_ending_seen");
@@ -876,6 +890,18 @@ export default function App() {
 
     const query = inputText.trim();
     if (!query) return;
+
+    if (["/ TEST ROBOT", "/TEST ROBOT"].includes(query.toUpperCase().replace(/\s+/g, " "))) {
+      setRobotUpgrades(Object.fromEntries(ROBOT_UPGRADE_IDS.map((id) => [id, 5])) as RobotUpgradeLevels);
+      setUnlockedRobotUltimates([...ROBOT_ULTIMATE_IDS]);
+      setEquippedRobotUltimate("core_singularity");
+      setInputText("");
+      setStoryLines([{ speakerId: "narrator", text: "【測試模式啟用】C2-932 全部改裝已完成（Lv.5），所有 Boss 大招已解鎖；目前裝備「核心奇點」。可前往技術研發部 → 特殊系統切換測試。" }]);
+      setCurrentDialogueIndex(0);
+      setGameMode("counseling");
+      playSound("success");
+      return;
+    }
 
     if (query.toUpperCase() === "/RICH") {
       setCoins(99999);
@@ -1477,6 +1503,9 @@ export default function App() {
             setUpgrades={setRobotUpgrades}
             playSound={playSound}
             onFirstUpgradeCompleted={() => setHasPendingAmpaBossNotice(true)}
+            unlockedUltimates={unlockedRobotUltimates}
+            equippedUltimate={equippedRobotUltimate}
+            onEquipUltimate={setEquippedRobotUltimate}
           />
         </main>
       ) : currentScene === "ops" ? (
@@ -1719,6 +1748,8 @@ export default function App() {
           setCoins={setCoins}
           purchasedUpgrades={purchasedUpgrades}
           robotUpgrades={robotUpgrades}
+          equippedRobotUltimate={equippedRobotUltimate}
+          onBossUltimateUnlocked={(ultimate) => setUnlockedRobotUltimates((current) => current.includes(ultimate) ? current : [...current, ultimate])}
           onMaterialsEarned={(earned) => setModificationMaterials((previous) => {
             const next = { ...previous };
             Object.entries(earned).forEach(([id, amount]) => { next[id as keyof MaterialInventory] += amount || 0; });

@@ -14,6 +14,11 @@ export interface RhythmChartEdits {
 }
 export type RhythmEditsByDifficulty = Partial<Record<RhythmDifficulty, RhythmChartEdits>>;
 
+export interface CombatEffectFrame { x: number; y: number; width: number; height: number; durationMs: number; }
+export interface CombatEffectAsset { image: string; manifest?: { frames: CombatEffectFrame[]; loopMode?: "loop" | "none" }; imageName?: string; manifestName?: string; }
+export type CombatEffectPhase = "charge" | "travel" | "impact" | "residue";
+export interface CombatEffectBinding { id: string; label: string; group: "robot" | "boss"; asset?: CombatEffectAsset; layers?: Partial<Record<CombatEffectPhase, CombatEffectAsset>>; scale: number; }
+
 export interface GameplayConfig {
   playerBaseAttack: number;
   playerBaseHp: number;
@@ -114,6 +119,7 @@ export interface GameConfig {
   supplyShopItems: SupplyShopItem[];
   /** Versioned, shared rhythm chart edits. The JSON source files remain the base chart. */
   rhythmEdits: RhythmEditsByDifficulty;
+  combatEffects: CombatEffectBinding[];
 }
 
 export type ConfigSource = "firebase" | "local-default";

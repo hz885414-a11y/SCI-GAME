@@ -1,5 +1,5 @@
 export interface AdminModule {
-  id: "gameplay" | "bosses" | "supply" | "prologue" | "ending" | "knowledge" | "cardEvents" | "characters" | "dialogues" | "ambientDialogues" | "rhythm";
+  id: "gameplay" | "bosses" | "effects" | "supply" | "prologue" | "ending" | "knowledge" | "cardEvents" | "characters" | "dialogues" | "ambientDialogues" | "rhythm";
   label: string;
   description: string;
 }
@@ -7,6 +7,7 @@ export interface AdminModule {
 export const ADMIN_MODULES: AdminModule[] = [
   { id: "gameplay", label: "戰鬥與掉落", description: "任務戰鬥中的攻擊力、血量與掉落率" },
   { id: "bosses", label: "Boss 管理", description: "六個展覽 Boss 的名稱、生命、技能與行為數據" },
+  { id: "effects", label: "戰鬥特效庫", description: "為機器人與每個 Boss 技能上傳 PNG sprite sheet 與 JSON manifest" },
   { id: "supply", label: "後勤補給部", description: "補給商品、價格、最高等級與升級效果" },
   { id: "prologue", label: "前情提要", description: "開始遊戲後播放的三頁故事文字與圖片" },
   { id: "ending", label: "階段結局", description: "擊敗六個魔王後播放的三頁故事文字與圖片" },

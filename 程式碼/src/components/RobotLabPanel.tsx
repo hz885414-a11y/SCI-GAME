@@ -18,6 +18,7 @@ import { hasCompletedFirstRobotUpgrade, markFirstRobotUpgradeComplete } from "..
 import { RhythmSolderingGame } from "./RhythmSolderingGame";
 import { emitAmbientEvent } from "../ambient-dialogues/events";
 import type { RhythmResult } from "../rhythm/types";
+import { ROBOT_ULTIMATES, getRobotUltimate, type RobotUltimateId } from "../data/robotUltimateSystem";
 
 interface RobotLabPanelProps {
   materials: MaterialInventory;
@@ -26,6 +27,9 @@ interface RobotLabPanelProps {
   setUpgrades: React.Dispatch<React.SetStateAction<RobotUpgradeLevels>>;
   playSound: (sound: string) => void;
   onFirstUpgradeCompleted?: () => void;
+  unlockedUltimates: RobotUltimateId[];
+  equippedUltimate: RobotUltimateId;
+  onEquipUltimate: (id: RobotUltimateId) => void;
 }
 
 type UpgradeCategory = "attack" | "defense" | "mobility" | "special";
@@ -45,7 +49,7 @@ const UPGRADE_CATEGORIES: Array<{
   { id: "special", name: "特殊系統", shortName: "特殊", icon: Sparkles, upgrades: ["special_lighting", "passive_skill"] },
 ];
 
-export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound, onFirstUpgradeCompleted }: RobotLabPanelProps) {
+export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, playSound, onFirstUpgradeCompleted, unlockedUltimates, equippedUltimate, onEquipUltimate }: RobotLabPanelProps) {
   const [activeCategory, setActiveCategory] = useState<UpgradeCategory>("attack");
   const [isMaterialPanelOpen, setIsMaterialPanelOpen] = useState(false);
   const [pendingUpgradeId, setPendingUpgradeId] = useState<RobotUpgradeId | null>(null);
@@ -199,6 +203,10 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
           </div>
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+            {activeCategory === "special" && <section className="border border-amber-500/45 bg-amber-950/15 p-3">
+              <div className="flex items-start justify-between gap-2"><div><p className="text-[9px] font-black tracking-[.16em] text-amber-300">BOSS REWARD // ULTIMATE LOADOUT</p><h3 className="mt-1 text-sm font-black text-white">機器人大招改裝</h3><p className="mt-1 text-[10px] leading-relaxed text-zinc-400">擊敗任務中心 Boss 後解鎖新大招；一次只能裝備一個。</p></div><span className="text-2xl">{getRobotUltimate(equippedUltimate).icon}</span></div>
+              <div className="mt-3 space-y-2">{Object.values(ROBOT_ULTIMATES).map((ultimate) => { const unlocked = unlockedUltimates.includes(ultimate.id); const equipped = equippedUltimate === ultimate.id; return <button key={ultimate.id} type="button" disabled={!unlocked} onClick={() => { onEquipUltimate(ultimate.id); playSound("click"); }} className={`w-full border p-2 text-left transition ${equipped ? "border-amber-300 bg-amber-400/15" : unlocked ? "border-zinc-600 bg-black/35 hover:border-amber-400" : "cursor-not-allowed border-zinc-800 bg-black/20 opacity-45"}`}><div className="flex items-center justify-between gap-2"><span className="font-bold text-zinc-100">{ultimate.icon} {ultimate.name}</span><span className={`text-[9px] font-black ${equipped ? "text-amber-300" : unlocked ? "text-emerald-400" : "text-zinc-600"}`}>{equipped ? "已裝備" : unlocked ? "點擊裝備" : `擊敗 CH.${ultimate.rewardChapter} Boss 解鎖`}</span></div><span className="mt-1 block text-[9px] text-zinc-500">{ultimate.effect}</span></button>; })}</div>
+            </section>}
             {category.upgrades.map((id) => {
               const config = ROBOT_UPGRADE_CONFIG[id];
               const level = upgrades[id] || 0;

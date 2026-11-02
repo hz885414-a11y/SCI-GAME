@@ -35,6 +35,7 @@ import {
   type MaterialInventory,
   type RobotUpgradeLevels
 } from "../data/modificationSystem";
+import { getBossUltimateReward, getRobotUltimate, type RobotUltimateId } from "../data/robotUltimateSystem";
 import {
   applyCollectFeedback,
   applyDeathFeedback,
@@ -59,6 +60,8 @@ interface MissionGameProps {
   setCoins: React.Dispatch<React.SetStateAction<number>>;
   purchasedUpgrades: Record<string, number>;
   robotUpgrades: RobotUpgradeLevels;
+  equippedRobotUltimate: RobotUltimateId;
+  onBossUltimateUnlocked: (ultimate: RobotUltimateId) => void;
   onMaterialsEarned: (materials: MaterialInventory) => void;
   unlockedChapters: number[];
   setUnlockedChapters: React.Dispatch<React.SetStateAction<number[]>>;
@@ -179,6 +182,12 @@ interface ShelterNpc {
   targetX: number;
   targetY: number;
   nextWanderTick: number;
+  isChild?: boolean;
+}
+interface ShelterProp {
+  id: string; label: string; kind: "medical" | "supply" | "rest" | "decor";
+  sprite: keyof typeof SHELTER_PROP_SPRITES;
+  x: number; y: number; radius: number; used: boolean; interactive?: boolean;
 }
 
 const SHELTER_NPC_SEEDS = [
@@ -194,7 +203,77 @@ const SHELTER_ROAMER_SEEDS = [
   { id: "researcher", name: "研究助理", color: "#d8b4fe", dialogueLines: ["暗物質樣本已經安全封存。"] },
   { id: "volunteer", name: "救援志工", color: "#86efac", dialogueLines: ["有需要幫忙的地方請告訴我。"] },
 ] as const;
+const SHELTER_CHILD_SEEDS = [
+  { id: "child-xingya", name: "星芽", color: "#f9a8d4", x: 690, y: 330, dialogueLines: ["我把小隊旗子插在這裡了！"] },
+  { id: "child-lele", name: "樂樂", color: "#fef08a", x: 780, y: 390, dialogueLines: ["避難所的燈亮起來了！"] },
+  { id: "child-doudou", name: "豆豆", color: "#a7f3d0", x: 900, y: 330, dialogueLines: ["我會幫忙把電池送過去。"] },
+  { id: "child-mimi", name: "米米", color: "#c4b5fd", x: 1010, y: 410, dialogueLines: ["我想畫一張新的避難所地圖。"] },
+  { id: "child-che", name: "阿澈", color: "#7dd3fc", x: 1120, y: 340, dialogueLines: ["外面的風聲已經變小了。"] },
+  { id: "child-qingqing", name: "晴晴", color: "#fbcfe8", x: 700, y: 490, dialogueLines: ["我有聽到大家一起笑的聲音。"] },
+  { id: "child-kaikai", name: "凱凱", color: "#86efac", x: 840, y: 520, dialogueLines: ["我想當像機器人一樣的工程師！"] },
+  { id: "child-luna", name: "露娜", color: "#ddd6fe", x: 980, y: 500, dialogueLines: ["星星也會幫我們守夜嗎？"] },
+  { id: "child-taku", name: "拓也", color: "#fde68a", x: 1110, y: 530, dialogueLines: ["等安全了，我要幫忙搬補給箱。"] },
+] as const;
+// CC0 top-down character pack by piano_no_renshu.  Each source sheet is a
+// 4×4 grid (16×24 px cells): rows are facing directions and columns are walk
+// frames.  Assigning distinct silhouettes makes the shelter read as a real
+// group of residents rather than colour-swapped placeholders.
+const SHELTER_NPC_SPRITES: Record<string, string> = {
+  liaison: "/assets/npc/chapter-one/pack/1.png",
+  engineer: "/assets/npc/chapter-one/pack/4.png",
+  scout: "/assets/npc/chapter-one/pack/7.png",
+  medic: "/assets/npc/chapter-one/pack/10.png",
+  courier: "/assets/npc/chapter-one/pack/12.png",
+  resident: "/assets/npc/chapter-one/pack/2.png",
+  technician: "/assets/npc/chapter-one/pack/15.png",
+  researcher: "/assets/npc/chapter-one/pack/6.png",
+  volunteer: "/assets/npc/chapter-one/pack/9.png",
+};
+const ADULT_NPC_FRAMES: Record<string, { x: number; y: number }> = {
+  liaison: { x: 54, y: 0 }, engineer: { x: 108, y: 0 }, scout: { x: 54, y: 96 }, medic: { x: 162, y: 0 },
+  courier: { x: 54, y: 64 }, resident: { x: 0, y: 0 }, technician: { x: 108, y: 64 }, researcher: { x: 162, y: 64 }, volunteer: { x: 0, y: 64 },
+};
+const CHILD_SPRITE_IDS: Record<string, string> = { "child-xingya": "liaison", "child-lele": "engineer", "child-doudou": "scout", "child-mimi": "medic", "child-che": "courier", "child-qingqing": "resident", "child-kaikai": "technician", "child-luna": "researcher", "child-taku": "volunteer" };
 const SHELTER_NPC_INTERACTION_RANGE = 94;
+const SHELTER_PROP_INTERACTION_RANGE = 76;
+// All shelter dressing comes from the same 32px post-apocalyptic interior set.
+// This keeps the furniture scale, palette and camera angle cohesive rather than
+// mixing unrelated platformer and town assets.
+const SHELTER_PROP_SPRITES = {
+  locker: { x: 0, y: 0, w: 1, h: 2 },
+  water: { x: 32, y: 0, w: 1, h: 2 },
+  chair: { x: 96, y: 0, w: 1, h: 2 },
+  radio: { x: 256, y: 0, w: 1, h: 2 },
+  rations: { x: 320, y: 0, w: 2, h: 2 },
+  bed: { x: 480, y: 0, w: 2, h: 2 },
+  bunk: { x: 544, y: 0, w: 2, h: 3 },
+  workbench: { x: 224, y: 96, w: 2, h: 2 },
+  cabinet: { x: 288, y: 96, w: 1, h: 2 },
+  divider: { x: 352, y: 96, w: 1, h: 2 },
+  medkit: { x: 256, y: 224, w: 1, h: 1 },
+  tarp: { x: 384, y: 224, w: 2, h: 2 },
+  crate: { x: 416, y: 352, w: 2, h: 1 },
+  crates: { x: 480, y: 352, w: 2, h: 1 },
+  barrel: { x: 192, y: 480, w: 1, h: 1 },
+  warning: { x: 352, y: 480, w: 1, h: 1 },
+} as const;
+const SHELTER_PROP_SEEDS: Omit<ShelterProp, "used">[] = [
+  { id: "supply", label: "應急補給箱", kind: "supply", sprite: "crates", x: 430, y: 255, radius: 32, interactive: true },
+  { id: "medical", label: "醫療櫃", kind: "medical", sprite: "medkit", x: 1370, y: 320, radius: 28, interactive: true },
+  { id: "rest", label: "值勤休息床", kind: "rest", sprite: "bed", x: 1240, y: 850, radius: 40, interactive: true },
+  { id: "ration-rack", label: "罐頭與飲水", kind: "decor", sprite: "rations", x: 875, y: 960, radius: 32 },
+  { id: "bunk-a", label: "", kind: "decor", sprite: "bunk", x: 1165, y: 846, radius: 42 },
+  { id: "bunk-b", label: "", kind: "decor", sprite: "bunk", x: 1310, y: 848, radius: 42 },
+  { id: "radio", label: "", kind: "decor", sprite: "radio", x: 735, y: 298, radius: 26 },
+  { id: "repair-bench", label: "", kind: "decor", sprite: "workbench", x: 535, y: 282, radius: 42 },
+  { id: "tool-locker", label: "", kind: "decor", sprite: "locker", x: 600, y: 254, radius: 26 },
+  { id: "water-barrel", label: "", kind: "decor", sprite: "water", x: 805, y: 860, radius: 25 },
+  { id: "barrel-stack", label: "", kind: "decor", sprite: "barrel", x: 760, y: 884, radius: 22 },
+  { id: "privacy-screen", label: "", kind: "decor", sprite: "divider", x: 1325, y: 333, radius: 28 },
+  { id: "field-tarp", label: "", kind: "decor", sprite: "tarp", x: 1060, y: 850, radius: 38 },
+  { id: "warning-sign", label: "", kind: "decor", sprite: "warning", x: 960, y: 420, radius: 20 },
+];
+const SHELTER_FURNITURE_ASSET = "/assets/shelter-props/post-apoc/Post%20Apoc%20Shelter%20-%20Asset%20Pack/Post%20Apoc%20-%20Shelter%2032x32%20Grid/Shelter_Furniture_32x32.png";
 const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
 const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
 const SHELTER_PERIMETER_FINAL_AREA = 5;
@@ -462,12 +541,15 @@ export function MissionGame({
   setCoins,
   purchasedUpgrades,
   robotUpgrades,
+  equippedRobotUltimate,
+  onBossUltimateUnlocked,
   onMaterialsEarned,
   unlockedChapters,
   setUnlockedChapters
 }: MissionGameProps) {
   const { config: gameConfig } = useGameConfig();
   const gameplayConfig = gameConfig.gameplay;
+  const activeUltimate = getRobotUltimate(equippedRobotUltimate);
   const supplyEffects = getSupplyEffectTotals(gameConfig.supplyShopItems, purchasedUpgrades);
   // Screens state
   const [stage, setStage] = useState<GameStage>(entrySource === "exhibition" && resumeBossChapter ? "BOSS_WARNING" : "START");
@@ -734,6 +816,10 @@ export function MissionGame({
 
   const bossRobotActImgRef = useRef<HTMLImageElement | null>(null);
   const [bossRobotActLoaded, setBossRobotActLoaded] = useState<boolean>(false);
+  const combatEffectImagesRef = useRef<Record<string, HTMLImageElement>>({});
+  const shelterNpcImagesRef = useRef<Record<string, HTMLImageElement>>({});
+  const shelterAdultNpcImageRef = useRef<HTMLImageElement | null>(null);
+  const shelterPropImagesRef = useRef<Record<string, HTMLImageElement>>({});
 
   const companionRobotImagesRef = useRef<Record<string, HTMLImageElement>>({});
   const [companionsLoaded, setCompanionsLoaded] = useState<Record<string, boolean>>({});
@@ -761,6 +847,44 @@ export function MissionGame({
         image.onload = null;
         image.onerror = null;
       });
+    };
+  }, []);
+
+  useEffect(() => { const image = new Image(); image.onload = () => { shelterAdultNpcImageRef.current = image; }; image.src = "/assets/npc/chapter-one/adult-npcs.png"; }, []);
+
+  useEffect(() => {
+    const image = new Image();
+    image.onload = () => { shelterPropImagesRef.current.furniture = image; };
+    image.src = SHELTER_FURNITURE_ASSET;
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    combatEffectImagesRef.current = {};
+    gameConfig.combatEffects.forEach((effect) => {
+      const assets = Object.entries(effect.layers || { impact: effect.asset }).filter(([, asset]) => Boolean((asset as { image?: string } | undefined)?.image)) as Array<[string, { image: string }]>;
+      assets.forEach(([phase, asset]) => {
+        const image = new Image();
+        image.onload = () => { if (!disposed) combatEffectImagesRef.current[`${effect.id}:${phase}`] = image; };
+        image.src = asset.image;
+      });
+    });
+    return () => { disposed = true; };
+  }, [gameConfig.combatEffects]);
+
+  useEffect(() => {
+    let disposed = false;
+    const images: HTMLImageElement[] = [];
+    Object.entries(SHELTER_NPC_SPRITES).forEach(([id, url]) => {
+      const image = new Image();
+      image.onload = () => { if (!disposed) shelterNpcImagesRef.current[id] = image; };
+      image.onerror = () => { if (!disposed) delete shelterNpcImagesRef.current[id]; };
+      image.src = url;
+      images.push(image);
+    });
+    return () => {
+      disposed = true;
+      images.forEach((image) => { image.onload = null; image.onerror = null; });
     };
   }, []);
 
@@ -1066,6 +1190,7 @@ export function MissionGame({
       bossRobotActImgRef.current = null;
       setBossRobotActLoaded(false);
     };
+
   }, []);
 
   useEffect(() => {
@@ -1178,6 +1303,7 @@ export function MissionGame({
     },
     enemies: [] as EnemyEntity[],
     enemyDeathEffects: [] as EnemyDeathEffect[],
+    spriteEffects: [] as Array<{ id: string; phase: "charge" | "travel" | "impact" | "residue"; x: number; y: number; diameter: number; life: number; maxLife: number; alpha?: number }>,
     darkCores: [] as DarkCoreEntity[],
     darkCoreGuardian: null as DarkCoreGuardian | null,
     chapterTwoGate: null as ChapterTwoGate | null,
@@ -1188,9 +1314,10 @@ export function MissionGame({
     playerDialogueText: null as string | null,
     playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
+    shelterProps: [] as ShelterProp[],
     collectibles: [] as Array<{ x: number; y: number; type: "battery" | "gem" | "material" | "coin"; amount: number; materialType?: string; radius: number; pulse: number }>,
     particles: [] as Array<{ x: number; y: number; vx: number; vy: number; radius: number; color: string; life: number; maxLife: number; alpha: number; text?: string; textStyle?: "damage" }>,
-    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool"; rotation?: number; angularVelocity?: number }>,
+    bullets: [] as Array<{ x: number; y: number; vx: number; vy: number; damage: number; radius: number; color: string; isLaserBeam?: boolean; laserEndX?: number; laserEndY?: number; maxLife?: number; life?: number; isEnemy?: boolean; isHoming?: boolean; visual?: "rock" | "tool" | "water"; rotation?: number; angularVelocity?: number }>,
     lightZones: [] as Array<{ x: number; y: number; radius: number; damage: number; duration: number; maxDuration: number; highMode: boolean }>,
     bombingZones: [] as BombingZone[],
     boss: null as { 
@@ -1248,6 +1375,9 @@ export function MissionGame({
     lowBatteryCooldown: 0,
     sessionCoins: 0,
     screenShake: 0,
+    // Uses real time instead of simulation ticks: the world can freeze while
+    // the camera still performs a readable ultimate close-up.
+    ultimateCinematic: null as null | { startAt: number; endAt: number; startX: number; startY: number; dashTargetX?: number; dashTargetY?: number },
     companionSkills: {} as Record<string, number>
   });
 
@@ -1478,6 +1608,13 @@ export function MissionGame({
 
   // Keyboard and mouse handlers
   useEffect(() => {
+    // A browser can swallow keyup/pointerup when focus changes (for example
+    // after a modal, address bar, or an interrupted touch gesture). Clear all
+    // controls, including C laser, so no action remains latched on.
+    const clearStuckInput = () => {
+      keysRef.current = {};
+      setJoystickPosition({ x: 0, y: 0 });
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCombatStage = stage === "PLAYING" || stage === "BOSSBATTLE";
       if (isCombatStage && (e.code === "Escape" || e.code === "KeyP")) {
@@ -1593,11 +1730,34 @@ export function MissionGame({
       keysRef.current[e.code] = false;
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") clearStuckInput();
+    };
+
+    // The touch laser button is hold-to-fire.  If a touch ends outside the
+    // button, React may not receive that button's pointer-up callback, so
+    // release the fire-only controls at the window level as well.  This keeps
+    // a released touch from being interpreted as a permanently held C key.
+    const releasePointerActions = () => {
+      keysRef.current.c = false;
+      keysRef.current.keyc = false;
+      keysRef.current.C = false;
+      keysRef.current.KeyC = false;
+    };
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", clearStuckInput);
+    window.addEventListener("pointerup", releasePointerActions);
+    window.addEventListener("pointercancel", releasePointerActions);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", clearStuckInput);
+      window.removeEventListener("pointerup", releasePointerActions);
+      window.removeEventListener("pointercancel", releasePointerActions);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [stage, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, memoryFollowUpStep, chapterOneNpcEventStep, firstMissionLightGuideStep, bossCombatTutorialStep, onClose]);
 
@@ -1846,6 +2006,7 @@ export function MissionGame({
       },
       enemies: [],
       enemyDeathEffects: [],
+      spriteEffects: [],
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
@@ -1856,6 +2017,7 @@ export function MissionGame({
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       shelterNpcs: [],
+      shelterProps: [],
       collectibles: [],
       particles: [],
       bullets: [],
@@ -1930,7 +2092,13 @@ export function MissionGame({
           radius: 18, interactionCount: 0, dialogueText: null, dialogueUntilTick: 0,
         };
       });
-      engineRef.current.shelterNpcs = [...cornerNpcs, ...roamerNpcs];
+      const childNpcs = SHELTER_CHILD_SEEDS.map((seed) => ({
+        ...seed, homeX: seed.x, homeY: seed.y, movement: "corner" as const, wanderRadius: 54,
+        targetX: seed.x, targetY: seed.y, nextWanderTick: 0, radius: 14, isChild: true,
+        interactionCount: 0, dialogueText: null, dialogueUntilTick: 0,
+      }));
+      engineRef.current.shelterNpcs = [...cornerNpcs, ...roamerNpcs, ...childNpcs];
+      engineRef.current.shelterProps = SHELTER_PROP_SEEDS.map((prop) => ({ ...prop, used: false }));
 
       // The cleared shelter remains a quiet social space. Its upper iron gate
       // is the one route into the combat-enabled surrounding area.
@@ -2251,6 +2419,7 @@ export function MissionGame({
       }, // Mecha is bigger
       enemies: [],
       enemyDeathEffects: [],
+      spriteEffects: [],
       darkCores: [],
       darkCoreGuardian: null,
       chapterTwoGate: null,
@@ -2337,6 +2506,7 @@ export function MissionGame({
     const activeChapter = CHAPTERS.find((c) => c.id === selectedChapter) || CHAPTERS[0];
     const isPeacefulShelter = selectedChapter === 1 && chapterOnePeacefulRef.current;
     const bossBehavior = getEffectiveBossBehaviorProfile(selectedChapter);
+    const bossDamageMultiplier = bossBehavior.damageMultiplier ?? 1;
 
     const isMobileDevice = window.innerWidth < 640;
     const spawnParticle = (st: any, p: any) => {
@@ -2375,6 +2545,70 @@ export function MissionGame({
       });
     };
 
+    // Original procedural pixel VFX inspired by modular beam / lightning and
+    // crisp water-spell conventions: hard edges, a bright core, segmented
+    // arcs, and deliberate 1:1-looking block sparks. No external sprites are
+    // copied into the project.
+    const drawPixelBeam = (drawCtx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, width: number, seed: number) => {
+      const dx = x2 - x1; const dy = y2 - y1; const length = Math.max(1, Math.hypot(dx, dy));
+      const nx = -dy / length; const ny = dx / length; const segments = Math.max(3, Math.floor(length / 18));
+      const path = (jitter: number) => {
+        drawCtx.beginPath(); drawCtx.moveTo(Math.round(x1), Math.round(y1));
+        for (let index = 1; index < segments; index++) {
+          const ratio = index / segments;
+          const wobble = Math.sin(seed * 1.73 + index * 4.31) * jitter;
+          drawCtx.lineTo(Math.round(x1 + dx * ratio + nx * wobble), Math.round(y1 + dy * ratio + ny * wobble));
+        }
+        drawCtx.lineTo(Math.round(x2), Math.round(y2));
+      };
+      drawCtx.save(); drawCtx.lineCap = "square"; drawCtx.lineJoin = "miter";
+      drawCtx.strokeStyle = color; drawCtx.lineWidth = width + 5; drawCtx.globalAlpha = .42; path(7); drawCtx.stroke();
+      drawCtx.strokeStyle = color; drawCtx.lineWidth = width; drawCtx.globalAlpha = 1; path(4); drawCtx.stroke();
+      drawCtx.strokeStyle = "#f8fafc"; drawCtx.lineWidth = Math.max(1, width * .33); path(1.5); drawCtx.stroke();
+      for (let index = 0; index <= segments; index += 2) {
+        const ratio = index / segments;
+        const px = Math.round(x1 + dx * ratio); const py = Math.round(y1 + dy * ratio);
+        drawCtx.fillStyle = index % 4 === 0 ? "#ffffff" : color;
+        drawCtx.fillRect(px - 2, py - 2, 4, 4);
+      }
+      drawCtx.restore();
+    };
+
+    const drawPixelOrb = (drawCtx: CanvasRenderingContext2D, bullet: { x: number; y: number; vx: number; vy: number; radius: number; color: string; isEnemy?: boolean }, tick: number) => {
+      const radius = Math.max(4, bullet.radius);
+      drawCtx.save();
+      drawCtx.fillStyle = `${bullet.color}55`; drawCtx.fillRect(Math.round(bullet.x - radius * 1.55), Math.round(bullet.y - radius * 1.55), Math.round(radius * 3.1), Math.round(radius * 3.1));
+      drawCtx.fillStyle = bullet.color; drawCtx.fillRect(Math.round(bullet.x - radius), Math.round(bullet.y - radius), Math.round(radius * 2), Math.round(radius * 2));
+      drawCtx.fillStyle = "#ffffff"; drawCtx.fillRect(Math.round(bullet.x - radius * .45), Math.round(bullet.y - radius * .45), Math.max(2, Math.round(radius * .7)), Math.max(2, Math.round(radius * .7)));
+      const speed = Math.max(1, Math.hypot(bullet.vx, bullet.vy));
+      const tail = Math.min(22, speed * 3);
+      drawCtx.fillStyle = bullet.color; drawCtx.globalAlpha = .75;
+      drawCtx.fillRect(Math.round(bullet.x - bullet.vx / speed * tail), Math.round(bullet.y - bullet.vy / speed * tail), Math.max(3, Math.round(radius * .8)), Math.max(3, Math.round(radius * .8)));
+      for (let spark = 0; spark < 3; spark++) { const a = tick * .2 + spark * 2.1; drawCtx.fillStyle = spark === 0 ? "#ffffff" : bullet.color; drawCtx.fillRect(Math.round(bullet.x + Math.cos(a) * (radius + 5)), Math.round(bullet.y + Math.sin(a) * (radius + 5)), 3, 3); }
+      drawCtx.restore();
+    };
+
+    // Shared sprite-sheet playback for impacts and destruction.  The caller
+    // supplies the on-screen diameter because a missile strike, a small enemy
+    // and a Boss breakup must not all use the same visual footprint.
+    const drawConfiguredEffect = (effectId: string, phase: "charge" | "travel" | "impact" | "residue", x: number, y: number, diameter: number, progress: number, alpha = 1) => {
+      const binding = gameConfig.combatEffects.find((effect) => effect.id === effectId);
+      const asset = binding?.layers?.[phase] || (phase === "impact" ? binding?.asset : undefined);
+      const frames = asset?.manifest?.frames;
+      const image = combatEffectImagesRef.current[`${effectId}:${phase}`];
+      if (!image?.complete || !frames?.length) return false;
+
+      const normalizedProgress = Math.min(0.999, Math.max(0, progress));
+      const frame = frames[Math.min(frames.length - 1, Math.floor(normalizedProgress * frames.length))];
+      const size = diameter * Math.max(0.1, binding?.scale ?? 1);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, frame.x, frame.y, frame.width, frame.height, x - size / 2, y - size / 2, size, size);
+      ctx.restore();
+      return true;
+    };
+
     const simulateAndRender = (shouldRender: boolean) => {
       const state = engineRef.current as any;
       const player = state.player;
@@ -2394,7 +2628,27 @@ export function MissionGame({
         state.lastSessionCoinsSynced = -1;
       }
       
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null;
+      const cinematic = state.ultimateCinematic;
+      const cinematicNow = performance.now();
+      const isUltimateCinematic = Boolean(cinematic && cinematicNow < cinematic.endAt);
+      if (cinematic && !isUltimateCinematic) state.ultimateCinematic = null;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null || isUltimateCinematic;
+
+      // The ultimate cut-in intentionally freezes combat time, but not the
+      // camera. Dash Punch also interpolates the robot here so the camera can
+      // follow a real on-screen charge instead of jumping to its end point.
+      if (isUltimateCinematic && cinematic && stage === "BOSSBATTLE") {
+        const progress = Math.min(1, Math.max(0, (cinematicNow - cinematic.startAt) / (cinematic.endAt - cinematic.startAt)));
+        if (cinematic.dashTargetX !== undefined && cinematic.dashTargetY !== undefined) {
+          const dashProgress = Math.min(1, progress / 0.72);
+          player.x = cinematic.startX + (cinematic.dashTargetX - cinematic.startX) * dashProgress;
+          player.y = cinematic.startY + (cinematic.dashTargetY - cinematic.startY) * dashProgress;
+        }
+        const targetCameraX = Math.max(0, Math.min(state.mapSize.width - canvas.width, player.x - canvas.width / 2));
+        const targetCameraY = Math.max(0, Math.min(state.mapSize.height - canvas.height, player.y - canvas.height / 2));
+        state.camera.x += (targetCameraX - state.camera.x) * 0.3;
+        state.camera.y += (targetCameraY - state.camera.y) * 0.3;
+      }
 
       if (stage === "BOSSBATTLE" && state.boss && bossIntroPhase) {
         const boss = state.boss;
@@ -2655,6 +2909,7 @@ export function MissionGame({
 
       // -- MECHA BOSSBATTLE CUSTOM SKILL CONTROLS --
       if (stage === "BOSSBATTLE") {
+        if (!Array.isArray(state.spriteEffects)) state.spriteEffects = [];
         const priorities: Record<string, number> = { defend: 1, laser: 2, punch: 3, ult: 4 };
         const setMechaAction = (action: "defend" | "punch" | "laser" | "ult", duration: number) => {
           const now = Date.now();
@@ -2716,6 +2971,15 @@ export function MissionGame({
           const targetX = state.boss ? state.boss.x : player.x;
           const targetY = state.boss ? state.boss.y : player.y - 100;
           const punchAngle = Math.atan2(targetY - player.y, targetX - player.x);
+          state.spriteEffects.push({
+            id: "robot_punch",
+            phase: "charge",
+            x: player.x + Math.cos(punchAngle) * 26,
+            y: player.y + Math.sin(punchAngle) * 10,
+            diameter: 76,
+            life: 0,
+            maxLife: 9,
+          });
           
           // Generous melee reach keeps the large robot sprite and the actual
           // collision zone aligned, especially on smaller touch screens.
@@ -2734,6 +2998,7 @@ export function MissionGame({
               color: bossBehavior.usesRockProjectiles ? "#d6a35d" : "#fbbf24",
               heavy: true,
             });
+            state.spriteEffects.push({ id: "robot_punch", phase: "impact", x: state.boss.x, y: state.boss.y, diameter: Math.max(96, state.boss.radius * 2.6), life: 0, maxLife: 13 });
 
             // The punch wave and C2-932 combo feedback only exist after a confirmed melee hit.
             // This keeps the visual language consistent with the actual effective range.
@@ -2854,8 +3119,10 @@ export function MissionGame({
         // 3. Fire Laser Beam (C) with Battery Consumption
         if (player.laserBattery === undefined) player.laserBattery = 100;
         const isHoldingLaserKey = keysRef.current["c"] || keysRef.current["keyc"];
-        if (isHoldingLaserKey && !(player as any).wasLaserHeld) recordAction("useMechaLaser");
+        const laserJustStarted = isHoldingLaserKey && !(player as any).wasLaserHeld;
+        if (laserJustStarted) recordAction("useMechaLaser");
         (player as any).wasLaserHeld = !!isHoldingLaserKey;
+        if (laserJustStarted) state.spriteEffects.push({ id: "robot_laser", phase: "charge", x: player.x + player.lastAimX * 25, y: player.y + player.lastAimY * 8, diameter: 72, life: 0, maxLife: 10 });
 
         if (isHoldingLaserKey && player.laserBattery >= 10 && player.shieldBrokenTimer === 0) {
           if (player.laserCooldown === 0) {
@@ -2912,7 +3179,9 @@ export function MissionGame({
               isLaserBeam: true,
               laserEndX: targetX,
               laserEndY: targetY,
-              maxLife: 4,
+              // Keep the visual actor alive long enough for the uploaded
+              // sprite-sheet's complete hit / cutoff sequence to play.
+              maxLife: 8,
               life: 0
             });
 
@@ -2966,28 +3235,81 @@ export function MissionGame({
           player.ultEnergy = 0;
           setMechaUltEnergy(0);
           setMechaAction("ult", 140);
+          const cinematicStartAt = performance.now();
+          const ultimateBombingTargets = activeUltimate.style === "lockOnBombardment"
+            ? Array.from({ length: 5 }, (_, index) => {
+              const angle = -Math.PI / 2 + index * Math.PI * 2 / 5;
+              const distance = index === 0 ? 0 : 78 + (index % 2) * 22;
+              return {
+                x: Math.max(70, Math.min(state.mapSize.width - 70, (state.boss?.x ?? player.x) + Math.cos(angle) * distance)),
+                y: Math.max(70, Math.min(state.mapSize.height - 70, (state.boss?.y ?? player.y) + Math.sin(angle) * distance)),
+              };
+            })
+            : undefined;
+          state.ultimateCinematic = {
+            startAt: cinematicStartAt,
+            endAt: cinematicStartAt + 780,
+            startX: player.x,
+            startY: player.y,
+          };
+          state.ultimateFx = { style: activeUltimate.style, color: activeUltimate.color, name: activeUltimate.name, startTick: state.ticks, endTick: state.ticks + 96, startAt: cinematicStartAt, cinematicEndAt: cinematicStartAt + 780, sourceX: player.x, sourceY: player.y, targetX: state.boss?.x ?? player.x, targetY: state.boss?.y ?? player.y, bombingTargets: ultimateBombingTargets, lastImpactStep: -1 };
           triggerSound("power");
           triggerSound("explosion");
 
           // Ultra Heavy screen shake for complete immersion!
           state.screenShake = 35;
 
-          // Clear all hostile bullets
-          state.bullets = state.bullets.filter(b => !b.isEnemy);
+          // Every unlocked Boss module has a different tactical operation.
+          // Do not give them a shared screen-clear: their effects intentionally
+          // mirror the Boss technology from which each module was recovered.
+          if (activeUltimate.clearsProjectiles) state.bullets = state.bullets.filter(b => !b.isEnemy);
+          if (activeUltimate.clearsMinions) state.enemies = [];
+          if (activeUltimate.invulnerabilityTicks) player.invincibleTime = Math.max(player.invincibleTime || 0, activeUltimate.invulnerabilityTicks);
 
-          // Clear any common enemies
-          state.enemies = [];
+          if (state.boss && !state.boss.submerged && activeUltimate.style === "dashPunch") {
+            const boss = state.boss;
+            const startX = player.x;
+            const startY = player.y;
+            const distance = Math.max(1, Math.hypot(boss.x - startX, boss.y - startY));
+            const dirX = (boss.x - startX) / distance;
+            const dirY = (boss.y - startY) / distance;
+            // A visible C2-932 ram: trail from its current point, end beside
+            // the Boss, then force the target backwards like the AAPEX charge.
+            for (let step = 0; step <= 12; step++) state.particles.push({ x: startX + (boss.x - startX) * step / 12, y: startY + (boss.y - startY) * step / 12, vx: -dirX * 1.5, vy: -dirY * 1.5, radius: 5 - step * .22, color: activeUltimate.color, life: 0, maxLife: 28, alpha: .85 });
+            state.ultimateCinematic.dashTargetX = boss.x - dirX * (boss.radius + player.radius - 6);
+            state.ultimateCinematic.dashTargetY = boss.y - dirY * (boss.radius + player.radius - 6);
+            boss.x += dirX * 118;
+            boss.y += dirY * 118;
+            boss.vx = dirX * 10;
+            boss.vy = dirY * 10;
+            boss.dashTimer = 0;
+            state.particles.push({ x: boss.x, y: boss.y - boss.radius, vx: 0, vy: -1, radius: 6, color: activeUltimate.color, life: 0, maxLife: 54, alpha: 1, text: "👊 APEX RAM // KNOCKBACK" });
+          }
+
+          if (state.boss && !state.boss.submerged && activeUltimate.style === "lockOnBombardment") {
+            const boss = state.boss;
+            for (let lock = 0; lock < 5; lock++) {
+              const angle = lock * Math.PI * 2 / 5;
+              state.particles.push({ x: boss.x + Math.cos(angle) * (boss.radius + 28), y: boss.y + Math.sin(angle) * (boss.radius + 28), vx: 0, vy: 0, radius: 4, color: activeUltimate.color, life: 0, maxLife: 48 + lock * 4, alpha: 1, text: lock === 0 ? "🎯 TARGET LOCK // FRANKFURT BARRAGE" : undefined });
+            }
+          }
 
           // Deal colossal damage to Boss
           if (state.boss && !state.boss.submerged) {
-            const ultDamage = gameplayConfig.mechaUltimateDamage;
-            const appliedUltDamage = ultDamage * ((state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
+            const strikeCount = activeUltimate.strikeCount || 1;
+            const ultDamage = gameplayConfig.mechaUltimateDamage * activeUltimate.damageMultiplier * strikeCount;
+            const appliedUltDamage = ultDamage * (!activeUltimate.ignoresDefense && (state.boss.defenseTimer || 0) > 0 ? bossBehavior.defenseDamageMultiplier : 1);
             state.boss.hp -= appliedUltDamage;
             spawnDamageNumber(state, state.boss, appliedUltDamage);
             setBossHp(Math.max(0, Math.ceil(state.boss.hp)));
+            if (activeUltimate.stunTicks) {
+              state.boss.stunTimer = Math.max(state.boss.stunTimer || 0, activeUltimate.stunTicks);
+              state.boss.defenseTimer = 0;
+              state.particles.push({ x: state.boss.x, y: state.boss.y - state.boss.radius - 18, vx: 0, vy: -0.8, radius: 3, color: activeUltimate.color, life: 0, maxLife: 72, alpha: 1, text: `⚠ ${activeUltimate.name}｜BOSS 停止 ${Math.round(activeUltimate.stunTicks / 60)} 秒` });
+            }
             applyHitFeedback(state, state.boss, triggerSound, {
               strength: 8,
-              color: "#67e8f9",
+              color: activeUltimate.color,
               heavy: true,
             });
 
@@ -2995,76 +3317,8 @@ export function MissionGame({
               handleVictory();
             }
 
-            // Orbital Strike Column visualizer
-            // Particles spawning all along the vertical column from Y=0 down to Boss.y
-            for (let yOffset = 0; yOffset < state.boss.y; yOffset += 20) {
-              for (let j = 0; j < 3; j++) {
-                state.particles.push({
-                  x: state.boss.x + (Math.random() - 0.5) * 50,
-                  y: yOffset + (Math.random() - 0.5) * 15,
-                  vx: (Math.random() - 0.5) * 2,
-                  vy: 2 + Math.random() * 4,
-                  radius: 3 + Math.random() * 4,
-                  color: "#06b6d4", // Electric cyan column
-                  life: 0,
-                  maxLife: 20,
-                  alpha: 1
-                });
-              }
-            }
-
-            // Massive boss explosion visual burst!
-            for (let i = 0; i < 45; i++) {
-              const theta = Math.random() * Math.PI * 2;
-              const spd = 4 + Math.random() * 8;
-              state.particles.push({
-                x: state.boss.x,
-                y: state.boss.y,
-                vx: Math.cos(theta) * spd,
-                vy: Math.sin(theta) * spd,
-                radius: 4 + Math.random() * 5,
-                color: i % 2 === 0 ? "#38bdf8" : "#facc15", // Cyan & Gold plasma
-                life: 0,
-                maxLife: 30,
-                alpha: 1,
-                text: i === 0 ? "⚡ OMNI-BEAM ORBITAL STRIKE!!! ⚡" : undefined
-              });
-            }
-          }
-
-          // Massive radial expanding bubble sparks! (Magenta blast wave)
-          for (let angle = 0; angle < Math.PI * 2; angle += 0.08) {
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
-            state.particles.push({
-              x: player.x,
-              y: player.y,
-              vx: cos * 11,
-              vy: sin * 11,
-              radius: 5 + Math.random() * 4,
-              color: "#d946ef", // Vibrant Pink-Fuchsia
-              life: 0,
-              maxLife: 35,
-              alpha: 1,
-              text: angle === 0 ? "⚡ MECHA ULTIMATE BLAST!!! ⚡" : undefined
-            });
-          }
-
-          // Outer golden electrical ring sparks
-          for (let angle = 0; angle < Math.PI * 2; angle += 0.16) {
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
-            state.particles.push({
-              x: player.x,
-              y: player.y,
-              vx: cos * 6,
-              vy: sin * 6,
-              radius: 3,
-              color: "#eab308",
-              life: 0,
-              maxLife: 25,
-              alpha: 0.9
-            });
+            // Canvas overlay below owns each ultimate's distinct animation.
+            state.particles.push({ x: state.boss.x, y: state.boss.y - state.boss.radius - 26, vx: 0, vy: -0.6, radius: 1, color: activeUltimate.color, life: 0, maxLife: 62, alpha: 1, text: `⚡ ${activeUltimate.battleCall}` });
           }
         }
       }
@@ -3801,6 +4055,10 @@ export function MissionGame({
         effect.life += 1;
         return effect.life < effect.maxLife;
       });
+      state.spriteEffects = (state.spriteEffects || []).filter((effect: { life: number; maxLife: number }) => {
+        effect.life += 1;
+        return effect.life < effect.maxLife;
+      });
 
       // 6. UPDATE BULLETS / LIGHT SHOTS
       state.bullets = state.bullets.filter((b) => {
@@ -4066,6 +4324,9 @@ export function MissionGame({
           if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
           return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
         }, null) : null;
+        const nearbyProp = !state.shelterPerimeterActive
+          ? (state.shelterProps as ShelterProp[] || []).find((prop) => prop.interactive && Math.hypot(prop.x - player.x, prop.y - player.y) <= SHELTER_PROP_INTERACTION_RANGE)
+          : undefined;
         const enterShelterPerimeterArea = (area: number, destination: { x: number; y: number }) => {
           const threat = getShelterPerimeterThreat(area);
           player.x = destination.x;
@@ -4138,6 +4399,18 @@ export function MissionGame({
             interactionTargetRef.current = {
               label: `深入避難所周邊-${String(nextGate.nextArea).padStart(2, "0")}`,
               onTap: () => enterShelterPerimeterArea(nextGate.nextArea, { x: nextGate.destinationX, y: nextGate.destinationY }),
+            };
+          } else if (nearbyProp) {
+            interactionTargetRef.current = {
+              label: nearbyProp.used ? `${nearbyProp.label}・已使用` : `使用${nearbyProp.label}`,
+              onTap: () => {
+                if (nearbyProp.used) { setInteractionFeedback(`${nearbyProp.label}目前正在補充。`); return; }
+                nearbyProp.used = true;
+                if (nearbyProp.kind === "medical") { player.hp = Math.min(player.maxHp, player.hp + 1); setHp(player.hp); setInteractionFeedback("醫療監測完成：生命值 +1"); }
+                else if (nearbyProp.kind === "supply") { player.batteryVal = Math.min(100, player.batteryVal + 28); setBatteryPercent(Math.ceil(player.batteryVal)); setInteractionFeedback("取得應急電池：能量 +28%"); }
+                else setInteractionFeedback("短暫休息完成：避難所士氣提升。 ");
+                triggerSound("power");
+              },
             };
           } else if (nearbyNpc) {
           interactionTargetRef.current = {
@@ -4517,7 +4790,8 @@ export function MissionGame({
             }
             const impactDistance = Math.hypot(player.x - zone.x, player.y - zone.y);
             if (impactDistance <= zone.radius + player.radius && player.invincibleTime === 0) {
-              const actualDamage = player.isShieldActive ? Math.ceil(28 * 0.2) : 28;
+              const baseDamage = 28 * bossDamageMultiplier;
+              const actualDamage = player.isShieldActive ? Math.ceil(baseDamage * 0.2) : baseDamage;
               recordAction("takeDamage");
               player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
               setHp(player.hp);
@@ -4597,7 +4871,8 @@ export function MissionGame({
             const closestX = boss.x + beamDx * projection;
             const closestY = boss.y + beamDy * projection;
             if (Math.hypot(player.x - closestX, player.y - closestY) <= player.radius + 24 && player.invincibleTime === 0) {
-              const actualDamage = player.isShieldActive ? Math.ceil(32 * 0.2) : 32;
+              const baseDamage = 32 * bossDamageMultiplier;
+              const actualDamage = player.isShieldActive ? Math.ceil(baseDamage * 0.2) : baseDamage;
               recordAction("takeDamage");
               player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
               setHp(player.hp);
@@ -4624,7 +4899,7 @@ export function MissionGame({
                 y: boss.y + Math.sin(angle) * boss.radius * 0.55,
                 vx: Math.cos(angle) * 5.4,
                 vy: Math.sin(angle) * 5.4,
-                damage: 10,
+                damage: 10 * bossDamageMultiplier,
                 radius: 5,
                 color: lane === 0 ? "#fef3c7" : "#fb923c",
                 isEnemy: true,
@@ -4716,7 +4991,8 @@ export function MissionGame({
 
             const ambushDistance = Math.hypot(player.x - boss.x, player.y - boss.y);
             if (ambushDistance <= boss.radius + 64 && player.invincibleTime === 0) {
-              const actualDamage = player.isShieldActive ? Math.ceil(34 * 0.2) : 34;
+              const baseDamage = 34 * bossDamageMultiplier;
+              const actualDamage = player.isShieldActive ? Math.ceil(baseDamage * 0.2) : baseDamage;
               recordAction("takeDamage");
               player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
               setHp(player.hp);
@@ -4756,7 +5032,8 @@ export function MissionGame({
 
             const tentacleDistance = Math.hypot(player.x - strikeX, player.y - strikeY);
             if (tentacleDistance <= 118 + player.radius && player.invincibleTime === 0) {
-              const actualDamage = player.isShieldActive ? Math.ceil(26 * 0.2) : 26;
+              const baseDamage = 26 * bossDamageMultiplier;
+              const actualDamage = player.isShieldActive ? Math.ceil(baseDamage * 0.2) : baseDamage;
               recordAction("takeDamage");
               player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
               setHp(player.hp);
@@ -4798,7 +5075,8 @@ export function MissionGame({
             const dyFromRoar = player.y - roarY;
             const distanceFromRoar = Math.max(1, Math.hypot(dxFromRoar, dyFromRoar));
             if (distanceFromRoar <= 220 + player.radius && player.invincibleTime === 0) {
-              const actualDamage = player.isShieldActive ? Math.ceil(18 * 0.2) : 18;
+              const baseDamage = 18 * bossDamageMultiplier;
+              const actualDamage = player.isShieldActive ? Math.ceil(baseDamage * 0.2) : baseDamage;
               recordAction("takeDamage");
               player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
               setHp(player.hp);
@@ -5081,7 +5359,7 @@ export function MissionGame({
                 y: boss.y,
                 vx: Math.cos(angle) * 2.2, // Slower bullet
                 vy: Math.sin(angle) * 2.2, // Slower bullet
-                damage: 15,
+                damage: 15 * bossDamageMultiplier,
                 radius: 8,
                 color: "#a855f7", // Purple dark bullet
                 isEnemy: true
@@ -5118,11 +5396,11 @@ export function MissionGame({
                   y: boss.y,
                   vx: Math.cos(angle) * 3.0, // Slower bullet
                   vy: Math.sin(angle) * 3.0, // Slower bullet
-                  damage: bossBehavior.usesRockProjectiles ? 22 : 18,
+                  damage: (bossBehavior.usesRockProjectiles ? 22 : 18) * bossDamageMultiplier,
                   radius: bossBehavior.usesRockProjectiles ? 13 : 7,
-                  color: bossBehavior.usesRockProjectiles ? "#78716c" : "#eab308",
+                  color: bossBehavior.usesRockProjectiles ? "#78716c" : bossBehavior.usesDiveAmbush ? "#22d3ee" : "#eab308",
                   isEnemy: true,
-                  visual: bossBehavior.usesRockProjectiles ? "rock" : undefined,
+                  visual: bossBehavior.usesRockProjectiles ? "rock" : bossBehavior.usesDiveAmbush ? "water" : undefined,
                   rotation: Math.random() * Math.PI * 2,
                   angularVelocity: (Math.random() - 0.5) * 0.22
                 });
@@ -5164,7 +5442,7 @@ export function MissionGame({
               vx: 0,
               vy: -1,
               radius: 1,
-              color: bossBehavior.usesRockProjectiles ? "#a8a29e" : "#ec4899",
+              color: bossBehavior.usesRockProjectiles ? "#a8a29e" : bossBehavior.usesDiveAmbush ? "#22d3ee" : "#ec4899",
               life: 0,
               maxLife: 40,
               alpha: 1,
@@ -5178,12 +5456,12 @@ export function MissionGame({
                 y: boss.y + Math.sin(angle) * 35,
                 vx: Math.cos(angle) * 0.9, // Slower initial homing velocity
                 vy: Math.sin(angle) * 0.9, // Slower initial homing velocity
-                damage: bossBehavior.usesRockProjectiles ? 17 : 12,
+                damage: (bossBehavior.usesRockProjectiles ? 17 : 12) * bossDamageMultiplier,
                 radius: bossBehavior.usesRockProjectiles ? 12 : 9,
-                color: bossBehavior.usesRockProjectiles ? "#57534e" : "#ec4899",
+                color: bossBehavior.usesRockProjectiles ? "#57534e" : bossBehavior.usesDiveAmbush ? "#0891b2" : "#ec4899",
                 isEnemy: true,
                 isHoming: true,
-                visual: bossBehavior.usesRockProjectiles ? "rock" : undefined,
+                visual: bossBehavior.usesRockProjectiles ? "rock" : bossBehavior.usesDiveAmbush ? "water" : undefined,
                 rotation: Math.random() * Math.PI * 2,
                 angularVelocity: (Math.random() - 0.5) * 0.18
               });
@@ -5296,7 +5574,7 @@ export function MissionGame({
                 y: boss.y,
                 vx: Math.cos(angle) * (3.1 + Math.abs(i) * 0.08),
                 vy: Math.sin(angle) * (3.1 + Math.abs(i) * 0.08),
-                damage: 16,
+                damage: 16 * bossDamageMultiplier,
                 radius: 10,
                 color: i % 2 === 0 ? "#f59e0b" : "#94a3b8",
                 isEnemy: true,
@@ -5402,7 +5680,7 @@ export function MissionGame({
           const isChainDashImpact = bossBehavior.usesChainDash
             && (boss.dashTimer || 0) > 0
             && (boss.dashTimer || 0) <= bossBehavior.dashExecutionThreshold;
-          const contactDamage = isChainDashImpact ? 30 : 22;
+          const contactDamage = (isChainDashImpact ? 30 : 22) * bossDamageMultiplier;
           const actualDamage = player.isShieldActive ? Math.ceil(contactDamage * 0.2) : contactDamage;
           recordAction("takeDamage");
           player.hp = Math.max(0, (player.hp ?? 100) - actualDamage);
@@ -5520,6 +5798,14 @@ export function MissionGame({
 
       // A. Draw Background Terrain / Grid
       ctx.save();
+      const cinematicZoom = isUltimateCinematic && cinematic
+        ? 1.06 + Math.sin(Math.min(1, Math.max(0, (cinematicNow - cinematic.startAt) / (cinematic.endAt - cinematic.startAt))) * Math.PI) * 0.22
+        : 1;
+      if (cinematicZoom !== 1) {
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(cinematicZoom, cinematicZoom);
+        ctx.translate(-canvas.width / 2, -canvas.height / 2);
+      }
       const shakeStrength = Math.max(0, state.screenShake || 0);
       const shakeX = shakeStrength > 0.15 ? (Math.random() - 0.5) * shakeStrength : 0;
       const shakeY = shakeStrength > 0.15 ? (Math.random() - 0.5) * shakeStrength : 0;
@@ -5833,12 +6119,64 @@ export function MissionGame({
       // C. Draw Bullets / Beam Tracks
       state.bullets.forEach((b) => {
         if (b.isLaserBeam) {
-          ctx.strokeStyle = b.color;
-          ctx.lineWidth = isHigh ? 3 : 1.5;
-          ctx.beginPath();
-          ctx.moveTo(b.x, b.y);
-          ctx.lineTo(b.laserEndX!, b.laserEndY!);
-          ctx.stroke();
+          const laserBinding = gameConfig.combatEffects.find((effect) => effect.id === "robot_laser");
+          const travelAsset = laserBinding?.layers?.travel || laserBinding?.asset;
+          const impactAsset = laserBinding?.layers?.impact || laserBinding?.asset;
+          const hasConfiguredRobotLaser = stage === "BOSSBATTLE" && Boolean(travelAsset?.image && impactAsset?.image);
+          const laserFx = hasConfiguredRobotLaser ? combatEffectImagesRef.current["robot_laser:travel"] : null;
+          const impactFx = hasConfiguredRobotLaser ? combatEffectImagesRef.current["robot_laser:impact"] : null;
+          if (laserFx?.complete && laserFx.naturalWidth > 0) {
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            const frames = travelAsset?.manifest?.frames;
+            const effectScale = Math.max(1.65, laserBinding?.scale ?? 1);
+            // The supplied sheet has real transparent pixels, so draw it as
+            // authored instead of blending away its cyan/white core.
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+
+            const lifetime = Math.max(1, b.maxLife || 8);
+            const progress = Math.min(1, (b.life || 0) / lifetime);
+            const dx = b.laserEndX! - b.x; const dy = b.laserEndY! - b.y;
+            const fullLength = Math.max(1, Math.hypot(dx, dy));
+            const unitX = dx / fullLength; const unitY = dy / fullLength;
+            // Offset from the body centre to the robot's forward weapon port.
+            const muzzleX = b.x + unitX * 34; const muzzleY = b.y + unitY * 8;
+            const beamProgress = Math.min(1, progress / .34);
+            const liveFrame = frames?.[Math.min(2, Math.floor(progress * 8) % 3)];
+            if (liveFrame) {
+              ctx.save();
+              ctx.translate(muzzleX, muzzleY);
+              ctx.rotate(Math.atan2(dy, dx));
+              ctx.drawImage(laserFx, liveFrame.x, liveFrame.y, liveFrame.width, liveFrame.height, 0, -48 * effectScale, Math.max(8, (fullLength - 34) * beamProgress), 96 * effectScale);
+              ctx.restore();
+            }
+            // Only after the beam reaches its destination does the supplied
+            // cutoff-burst sequence play at the Boss, producing a clear hit.
+            const impactFrames = impactAsset?.manifest?.frames;
+            if (progress >= .34 && impactFx?.complete && impactFrames?.length) {
+              // beam-cutoff-burst frames 0–2 are a live horizontal beam;
+              // impact begins at frame 3 so no extra line appears by the Boss.
+              const impactStart = Math.min(3, impactFrames.length - 1);
+              const hitFrame = impactFrames[Math.min(impactFrames.length - 1, impactStart + Math.floor(((progress - .34) / .66) * (impactFrames.length - impactStart)))];
+              ctx.drawImage(impactFx, hitFrame.x, hitFrame.y, hitFrame.width, hitFrame.height, b.laserEndX! - 70 * effectScale, b.laserEndY! - 48 * effectScale, 96 * effectScale, 96 * effectScale);
+            }
+            ctx.restore();
+          }
+          // C2-932's configured sprite sheet completely owns its Boss-battle
+          // laser visual. Other modes retain the lightweight procedural beam.
+          if (!hasConfiguredRobotLaser) drawPixelBeam(ctx, b.x, b.y, b.laserEndX!, b.laserEndY!, b.color, isHigh ? 3 : 2, state.ticks * .11);
+        } else if (b.visual === "water") {
+          const wave = 1 + Math.sin(state.ticks * .28 + b.x) * .16;
+          ctx.save();
+          ctx.translate(Math.round(b.x), Math.round(b.y));
+          ctx.rotate(Math.atan2(b.vy, b.vx));
+          ctx.fillStyle = "rgba(8, 145, 178, .28)"; ctx.fillRect(-b.radius * 2.2, -b.radius * 1.25, b.radius * 4.4, b.radius * 2.5);
+          ctx.fillStyle = "#0891b2"; ctx.fillRect(-b.radius * 1.25, -b.radius * wave, b.radius * 2.5, b.radius * 2 * wave);
+          ctx.fillStyle = "#67e8f9"; ctx.fillRect(-b.radius * .45, -b.radius * .62, b.radius * 1.15, b.radius * 1.1);
+          ctx.fillStyle = "#ecfeff"; ctx.fillRect(0, -Math.max(2, b.radius * .32), Math.max(3, b.radius * .75), Math.max(3, b.radius * .58));
+          for (let drop = 0; drop < 3; drop++) { ctx.fillStyle = drop === 0 ? "#cffafe" : "#22d3ee"; ctx.fillRect(-b.radius * (2 + drop * .65), (drop - 1) * b.radius, 3, 3); }
+          ctx.restore();
         } else if (b.visual === "rock") {
           ctx.save();
           ctx.translate(b.x, b.y);
@@ -5883,11 +6221,15 @@ export function MissionGame({
           ctx.stroke();
           ctx.restore();
         } else {
-          ctx.fillStyle = b.color;
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-          ctx.fill();
+          drawPixelOrb(ctx, b, state.ticks);
         }
+      });
+
+      // Event-driven effects sit above travel paths but below character art:
+      // the player can still read who caused a hit while the impact remains
+      // bright and immediate.
+      (state.spriteEffects || []).forEach((effect: { id: string; phase: "charge" | "travel" | "impact" | "residue"; x: number; y: number; diameter: number; life: number; maxLife: number; alpha?: number }) => {
+        drawConfiguredEffect(effect.id, effect.phase, effect.x, effect.y, effect.diameter, effect.life / Math.max(1, effect.maxLife), effect.alpha ?? 1);
       });
 
       // D. Draw Enemies (Shadow monsters)
@@ -6019,6 +6361,14 @@ export function MissionGame({
         ctx.drawImage(enemyImage, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
         ctx.restore();
 
+        // A small enemy breaks apart in a compact burst; this deliberately
+        // stays much smaller than the Boss and missile versions below.
+        const destroyDiameter = Math.max(48, effect.radius * 2.8);
+        drawConfiguredEffect("battle_destruction", "impact", effect.x, effect.y, destroyDiameter, progress);
+        if (progress > 0.5) {
+          drawConfiguredEffect("battle_destruction", "residue", effect.x, effect.y - effect.radius * 0.25, destroyDiameter * 1.12, (progress - 0.5) * 2, 1 - progress);
+        }
+
         ctx.save();
         ctx.globalAlpha = (1 - progress) * 0.65;
         ctx.strokeStyle = "#ffffff";
@@ -6074,18 +6424,67 @@ export function MissionGame({
       // Cleared Chapter 1 turns into a small, testable NPC hub. These are
       // rendered in the world (not the HUD), so speech bubbles follow each NPC.
       if (stage === "PLAYING" && isPeacefulShelter && !state.shelterPerimeterActive) {
+        (state.shelterProps as ShelterProp[] || []).forEach((prop) => {
+          const near = Boolean(prop.interactive) && Math.hypot(prop.x - player.x, prop.y - player.y) <= SHELTER_PROP_INTERACTION_RANGE;
+          const image = shelterPropImagesRef.current.furniture;
+          const sprite = SHELTER_PROP_SPRITES[prop.sprite];
+          const scale = prop.sprite === "bunk" ? 1.15 : prop.sprite === "tarp" ? 1.28 : 1.05;
+          const width = sprite.w * 32 * scale;
+          const height = sprite.h * 32 * scale;
+          ctx.save(); ctx.imageSmoothingEnabled = false;
+          ctx.globalAlpha = prop.used ? .48 : .96;
+          // A soft, shared ground shadow makes every object feel anchored to the
+          // same shelter floor even where the original tile has no shadow baked in.
+          ctx.fillStyle = "rgba(5, 12, 18, 0.28)";
+          ctx.beginPath(); ctx.ellipse(prop.x, prop.y + height * .2, width * .42, Math.max(7, height * .12), 0, 0, Math.PI * 2); ctx.fill();
+          if (image?.complete && image.naturalWidth > 0) {
+            ctx.drawImage(image, sprite.x, sprite.y, sprite.w * 32, sprite.h * 32, prop.x - width / 2, prop.y - height * .76, width, height);
+          } else { ctx.fillStyle = prop.kind === "medical" ? "#cbd5e1" : "#64748b"; ctx.fillRect(prop.x - 15, prop.y - 15, 30, 30); }
+          if (near && !prop.used) { ctx.strokeStyle = "#fef08a"; ctx.lineWidth = 2; ctx.strokeRect(prop.x - 27, prop.y - 27, 54, 54); }
+          ctx.restore();
+          if (prop.interactive) {
+            ctx.save(); ctx.textAlign = "center"; ctx.font = "bold 9px monospace"; ctx.fillStyle = prop.used ? "#94a3b8" : "#fef3c7";
+            ctx.fillText(prop.used ? `${prop.label} ✓` : prop.label, prop.x, prop.y + Math.max(37, height * .45));
+            if (near) ctx.fillText("按 Z／互動", prop.x, prop.y + Math.max(51, height * .45 + 14)); ctx.restore();
+          }
+        });
         (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
           const nearNpc = Math.hypot(npc.x - player.x, npc.y - player.y) <= SHELTER_NPC_INTERACTION_RANGE;
           const bob = Math.sin(state.ticks * 0.08 + npc.x * 0.02) * 2;
+          const npcSprite = npc.isChild ? shelterNpcImagesRef.current[CHILD_SPRITE_IDS[npc.id]] : null;
+          const adultSprite = shelterAdultNpcImageRef.current;
           ctx.save();
           ctx.translate(npc.x, npc.y + bob);
           ctx.fillStyle = `${npc.color}33`;
           ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = npc.color;
-          ctx.beginPath(); ctx.arc(0, -8, 11, 0, Math.PI * 2); ctx.fill();
-          ctx.fillRect(-10, 3, 20, 22);
-          ctx.fillStyle = "#0f172a";
-          ctx.fillRect(-5, -10, 3, 3); ctx.fillRect(2, -10, 3, 3);
+          if (npc.isChild && npcSprite?.complete && npcSprite.naturalWidth > 0) {
+            const moveX = npc.targetX - npc.x;
+            const moveY = npc.targetY - npc.y;
+            const moving = Math.hypot(moveX, moveY) >= 4;
+            const horizontal = Math.abs(moveX) > Math.abs(moveY);
+            const directionRow = horizontal ? 2 : moveY < 0 ? 3 : 0;
+            const walkFrame = moving ? Math.floor(state.ticks / 9) % 4 : 0;
+            ctx.imageSmoothingEnabled = false;
+            ctx.shadowColor = npc.color;
+            ctx.shadowBlur = nearNpc ? 14 : 5;
+            if (horizontal && moveX < 0) ctx.scale(-1, 1);
+            ctx.drawImage(npcSprite, walkFrame * 16, directionRow * 24, 16, 24, -16, -31, 32, 48);
+          } else if (!npc.isChild && adultSprite?.complete && adultSprite.naturalWidth > 0 && ADULT_NPC_FRAMES[npc.id]) {
+            const moveX = npc.targetX - npc.x; const moveY = npc.targetY - npc.y;
+            const horizontal = Math.abs(moveX) > Math.abs(moveY); const moving = Math.hypot(moveX, moveY) >= 4;
+            const base = ADULT_NPC_FRAMES[npc.id]; const row = horizontal ? 1 : moveY < 0 ? 3 : 0;
+            const frame = moving ? Math.floor(state.ticks / 10) % 3 : 1;
+            ctx.imageSmoothingEnabled = false; ctx.shadowColor = npc.color; ctx.shadowBlur = nearNpc ? 13 : 4;
+            if (horizontal && moveX < 0) ctx.scale(-1, 1);
+            ctx.drawImage(adultSprite, base.x + frame * 18, base.y + row * 16, 18, 16, -20, -26, 40, 36);
+          } else {
+            // Keep the original lightweight silhouette as an offline fallback.
+            ctx.fillStyle = npc.color;
+            ctx.beginPath(); ctx.arc(0, -8, 11, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(-10, 3, 20, 22);
+            ctx.fillStyle = "#0f172a";
+            ctx.fillRect(-5, -10, 3, 3); ctx.fillRect(2, -10, 3, 3);
+          }
           ctx.restore();
           ctx.save();
           ctx.font = "bold 10px monospace";
@@ -6123,6 +6522,10 @@ export function MissionGame({
           ctx.stroke();
         } else {
           const impactProgress = Math.min(1, Math.abs(zone.timer) / 18);
+          // Bombing targets are larger than a robot-sized hit so their burst
+          // fills most of the marked circle, rather than looking like a tiny
+          // spark in the middle of a warning zone.
+          drawConfiguredEffect("frankfurt_bombing", "impact", zone.x, zone.y, zone.radius * 2.75, impactProgress);
           ctx.globalAlpha = 1 - impactProgress;
           ctx.fillStyle = "rgba(255, 237, 213, 0.9)";
           ctx.strokeStyle = "#f97316";
@@ -6150,23 +6553,13 @@ export function MissionGame({
 
         if ((boss.laserAttackTimer || 0) > 0 && boss.laserTargetX !== undefined && boss.laserTargetY !== undefined) {
           const firing = (boss.laserAttackTimer || 0) <= 28;
-          ctx.save();
-          ctx.strokeStyle = firing ? "rgba(254, 242, 242, 0.98)" : "rgba(248, 113, 113, 0.72)";
-          ctx.lineWidth = firing ? 15 : 3;
-          ctx.shadowColor = firing ? "#ef4444" : "transparent";
-          ctx.shadowBlur = firing ? 24 : 0;
-          ctx.setLineDash(firing ? [] : [12, 8]);
-          ctx.beginPath();
-          ctx.moveTo(boss.x, boss.y);
-          ctx.lineTo(boss.laserTargetX, boss.laserTargetY);
-          ctx.stroke();
-          if (firing) {
-            ctx.strokeStyle = "#ef4444";
-            ctx.lineWidth = 5;
-            ctx.shadowBlur = 10;
-            ctx.stroke();
+          if (!firing) {
+            const lockProgress = 1 - Math.min(1, ((boss.laserAttackTimer || 0) - 28) / 42);
+            drawConfiguredEffect("frankfurt_bombing", "charge", boss.laserTargetX, boss.laserTargetY, 104, lockProgress, 0.85);
           }
-          ctx.setLineDash([]);
+          ctx.save();
+          if (firing) drawPixelBeam(ctx, boss.x, boss.y, boss.laserTargetX, boss.laserTargetY, "#ef4444", 11, state.ticks * .13);
+          else drawPixelBeam(ctx, boss.x, boss.y, boss.laserTargetX, boss.laserTargetY, "#fb7185", 3, state.ticks * .08);
           ctx.restore();
         }
 
@@ -6191,6 +6584,16 @@ export function MissionGame({
             ctx.arc(boss.diveTargetX, boss.diveTargetY, 20 + ring * 18 + (state.ticks % 18), 0, Math.PI * 2);
             ctx.stroke();
           }
+          if (warningProgress > .72) {
+            const pillarHeight = 108 + Math.sin(state.ticks * .22) * 12;
+            ctx.globalAlpha = .82;
+            for (let band = 0; band < 5; band++) {
+              const width = 28 + (4 - band) * 12;
+              ctx.fillStyle = band % 2 ? "#0891b2" : "#22d3ee";
+              ctx.fillRect(Math.round(boss.diveTargetX - width / 2), Math.round(boss.diveTargetY - pillarHeight + band * 22), width, 27);
+            }
+            ctx.fillStyle = "#ecfeff"; ctx.fillRect(Math.round(boss.diveTargetX - 8), Math.round(boss.diveTargetY - pillarHeight), 16, Math.round(pillarHeight * .8));
+          }
           ctx.restore();
         }
 
@@ -6200,8 +6603,8 @@ export function MissionGame({
           const beforeImpact = (boss.tentacleTimer || 0) > 24;
           const warningProgress = beforeImpact ? 1 - ((boss.tentacleTimer || 0) - 24) / 46 : 1;
           ctx.save();
-          ctx.fillStyle = beforeImpact ? "rgba(126, 34, 206, 0.12)" : "rgba(217, 70, 239, 0.25)";
-          ctx.strokeStyle = beforeImpact ? "rgba(232, 121, 249, 0.8)" : "rgba(250, 232, 255, 0.95)";
+          ctx.fillStyle = beforeImpact ? "rgba(8, 145, 178, 0.14)" : "rgba(6, 182, 212, 0.28)";
+          ctx.strokeStyle = beforeImpact ? "rgba(103, 232, 249, 0.84)" : "rgba(236, 254, 255, 0.96)";
           ctx.lineWidth = beforeImpact ? 3 : 6;
           ctx.setLineDash(beforeImpact ? [8, 6] : []);
           ctx.beginPath();
@@ -6209,6 +6612,16 @@ export function MissionGame({
           ctx.fill();
           ctx.stroke();
           ctx.setLineDash([]);
+
+          // Water Whirl: a layered, rotating pool makes the tentacle strike
+          // read as a deep-sea attack before the impact lands.
+          for (let whirl = 0; whirl < 3; whirl++) {
+            ctx.strokeStyle = whirl === 0 ? "#a5f3fc" : "#0891b2";
+            ctx.lineWidth = 4 - whirl;
+            ctx.beginPath();
+            ctx.ellipse(strikeX, strikeY, 48 + whirl * 23, 17 + whirl * 12, state.ticks * .08 + whirl, 0, Math.PI * 2);
+            ctx.stroke();
+          }
 
           for (let i = 0; i < 8; i++) {
             const angle = (i / 8) * Math.PI * 2 + state.ticks * 0.018;
@@ -6264,13 +6677,7 @@ export function MissionGame({
 
           // Drawing dynamic warning guide laser line to player
           ctx.save();
-          ctx.strokeStyle = "rgba(239, 68, 68, 0.65)";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([6, 4]);
-          ctx.beginPath();
-          ctx.moveTo(boss.x, boss.y);
-          ctx.lineTo(player.x, player.y);
-          ctx.stroke();
+          drawPixelBeam(ctx, boss.x, boss.y, player.x, player.y, "#fb7185", 2, state.ticks * .1);
           ctx.restore();
 
           // Outer warning energy circle
@@ -6279,6 +6686,11 @@ export function MissionGame({
           ctx.beginPath();
           ctx.arc(bx, by, boss.radius + 15 + Math.sin(state.ticks * 0.3) * 5, 0, Math.PI * 2);
           ctx.stroke();
+        }
+
+        if (selectedChapter === 4 && (boss.dashTimer || 0) > 0) {
+          const dashDirection = Math.sign(boss.dashVx || boss.vx || -1);
+          drawConfiguredEffect("aapex_charge", "travel", bx - dashDirection * boss.radius * 0.75, by, boss.radius * 2.8, 1 - Math.min(1, (boss.dashTimer || 0) / 70), 0.86);
         }
 
         // Pulse size calculation
@@ -6416,6 +6828,17 @@ export function MissionGame({
         ctx.beginPath();
         ctx.arc(bx, by, rad, 0, Math.PI * 2);
         ctx.stroke();
+
+        if (bossDeathCinematicRef.current) {
+          // The final breakup deliberately uses the largest instance of the
+          // same destruction asset: Boss mass needs a broad, readable blast.
+          const startedAt = state.bossDestructionStartedAt || performance.now();
+          const burstProgress = ((performance.now() - startedAt) % 720) / 720;
+          drawConfiguredEffect("battle_destruction", "impact", bx, by, boss.radius * 5.6, burstProgress, 0.95);
+          if (burstProgress > 0.45) {
+            drawConfiguredEffect("battle_destruction", "residue", bx, by + boss.radius * 0.15, boss.radius * 6.2, (burstProgress - 0.45) / 0.55, 0.78);
+          }
+        }
 
         // Electric arc visual leakage from the core
         if (state.ticks % 6 === 0) {
@@ -6684,7 +7107,7 @@ export function MissionGame({
           // Draw cyber defensive shield if active!
           if (player.isShieldActive) {
             ctx.save();
-            const shieldRadius = player.radius + 40;
+            const shieldRadius = player.radius + 22;
             
             // Outer neon cyan glowing ring
             ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
@@ -6833,7 +7256,7 @@ export function MissionGame({
           // Draw cyber defensive shield if active!
           if (player.isShieldActive) {
             ctx.save();
-            const shieldRadius = player.radius + 40;
+            const shieldRadius = player.radius + 22;
             
             // Outer neon cyan glowing ring
             ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
@@ -6944,8 +7367,116 @@ export function MissionGame({
         ctx.restore();
       }
 
+      // G. Draw authored ultimate overlays. These deliberately use beams,
+      // targeting UI, impact frames, and vortex geometry rather than a shared
+      // cloud of particle dots, so each Boss module reads at a glance.
+      const ultimateFx = state.ultimateFx;
+      if (ultimateFx && state.ticks < ultimateFx.endTick) {
+        const tickProgress = Math.min(1, Math.max(0, (state.ticks - ultimateFx.startTick) / (ultimateFx.endTick - ultimateFx.startTick)));
+        const cinematicProgress = ultimateFx.cinematicEndAt
+          ? Math.min(1, Math.max(0, (performance.now() - ultimateFx.startAt) / (ultimateFx.cinematicEndAt - ultimateFx.startAt)))
+          : 0;
+        const progress = Math.max(tickProgress, cinematicProgress);
+        const fade = Math.sin(progress * Math.PI);
+        const sx = ultimateFx.sourceX; const sy = ultimateFx.sourceY;
+        const tx = ultimateFx.targetX; const ty = ultimateFx.targetY;
+        ctx.save();
+        ctx.globalAlpha = fade;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        if (ultimateFx.style === "orbital") {
+          const beam = ctx.createLinearGradient(tx, 0, tx, ty + 70);
+          beam.addColorStop(0, "rgba(255,255,255,0)"); beam.addColorStop(.35, "#e0f2fe"); beam.addColorStop(.55, ultimateFx.color); beam.addColorStop(1, "rgba(14,165,233,0)");
+          ctx.fillStyle = beam; ctx.fillRect(tx - 26, 0, 52, ty + 70);
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.strokeRect(tx - 34, ty - 34, 68, 68);
+        } else if (ultimateFx.style === "nova") {
+          const glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, 220 * progress);
+          glow.addColorStop(0, "#ffffff"); glow.addColorStop(.2, "#fef08a"); glow.addColorStop(.58, "rgba(250,204,21,.4)"); glow.addColorStop(1, "rgba(250,204,21,0)");
+          ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(sx, sy, 220 * progress, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#fff7ae"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(sx, sy, 32 + 150 * progress, 0, Math.PI * 2); ctx.stroke();
+        } else if (ultimateFx.style === "lockOnBombardment") {
+          // Reuse the Frankfurt Boss language: several separate ground
+          // markers warn in sequence, then each turns into a full missile hit.
+          const targets = ultimateFx.bombingTargets || [{ x: tx, y: ty }];
+          const impactStep = Math.min(targets.length - 1, Math.floor(progress * targets.length));
+          if (impactStep > ultimateFx.lastImpactStep) {
+            ultimateFx.lastImpactStep = impactStep;
+            state.screenShake = Math.max(state.screenShake || 0, 12 + impactStep * 2);
+            triggerSound("bossImpact");
+          }
+          targets.forEach((target: { x: number; y: number }, index: number) => {
+            const strikeAt = 0.22 + index * 0.14;
+            const detonated = progress >= strikeAt;
+            const localProgress = detonated ? Math.min(1, (progress - strikeAt) / 0.22) : Math.max(0, progress / strikeAt);
+            const pulse = 1 + Math.sin((cinematicNow * 0.018) + index) * 0.08;
+            if (!detonated) {
+              ctx.fillStyle = "rgba(127, 29, 29, .26)";
+              ctx.strokeStyle = localProgress > .72 ? "#fff7ed" : ultimateFx.color;
+              ctx.lineWidth = localProgress > .72 ? 6 : 3;
+              ctx.setLineDash(localProgress > .72 ? [] : [10, 7]);
+              ctx.beginPath(); ctx.arc(target.x, target.y, 58 * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.strokeStyle = "rgba(251, 191, 36, .85)"; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.moveTo(target.x - 15, target.y); ctx.lineTo(target.x + 15, target.y); ctx.moveTo(target.x, target.y - 15); ctx.lineTo(target.x, target.y + 15); ctx.stroke();
+            } else {
+              const blastRadius = 36 + localProgress * 105;
+              const blast = ctx.createRadialGradient(target.x, target.y, 2, target.x, target.y, blastRadius);
+              blast.addColorStop(0, "#ffffff"); blast.addColorStop(.16, "#fef3c7"); blast.addColorStop(.42, "#fb923c"); blast.addColorStop(1, "rgba(239,68,68,0)");
+              ctx.fillStyle = blast; ctx.beginPath(); ctx.arc(target.x, target.y, blastRadius, 0, Math.PI * 2); ctx.fill();
+              ctx.strokeStyle = "#fff7ed"; ctx.lineWidth = Math.max(2, 8 * (1 - localProgress)); ctx.beginPath(); ctx.arc(target.x, target.y, blastRadius * .72, 0, Math.PI * 2); ctx.stroke();
+              for (let shard = 0; shard < 8; shard++) { const a = shard * Math.PI / 4 + index; ctx.strokeStyle = shard % 2 ? "#fde68a" : ultimateFx.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(target.x + Math.cos(a) * 18, target.y + Math.sin(a) * 18); ctx.lineTo(target.x + Math.cos(a) * blastRadius, target.y + Math.sin(a) * blastRadius); ctx.stroke(); }
+            }
+          });
+          ctx.fillStyle = "#fff1f2"; ctx.font = "bold 16px monospace"; ctx.textAlign = "center"; ctx.fillText("FRANKFURT // GROUND LOCK BARRAGE", tx, ty - 118);
+        } else if (ultimateFx.style === "toolBarrage") {
+          ctx.strokeStyle = ultimateFx.color; ctx.lineWidth = 5;
+          for (let tool = 0; tool < 6; tool++) { const a = progress * 9 + tool * Math.PI / 3; const x = tx + Math.cos(a) * 118; const y = ty + Math.sin(a) * 82; ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.strokeRect(-18, -5, 36, 10); ctx.beginPath(); ctx.arc(22, 0, 9, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+          ctx.strokeStyle = "rgba(34,211,238,.7)"; ctx.beginPath(); ctx.ellipse(tx, ty, 132, 92, progress * 4, 0, Math.PI * 2); ctx.stroke();
+        } else if (ultimateFx.style === "dashPunch") {
+          const dash = ctx.createLinearGradient(sx, sy, tx, ty); dash.addColorStop(0, "rgba(251,146,60,0)"); dash.addColorStop(.5, ultimateFx.color); dash.addColorStop(1, "#fff7ed");
+          ctx.strokeStyle = dash; ctx.lineWidth = 30; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(tx, ty, 60 + progress * 35, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = "#fff7ed"; ctx.font = "bold 30px sans-serif"; ctx.textAlign = "center"; ctx.fillText("👊", tx, ty + 10);
+        } else if (ultimateFx.style === "abyssalLance") {
+          const lance = ctx.createLinearGradient(sx, sy, tx, ty); lance.addColorStop(0, "rgba(14,165,233,0)"); lance.addColorStop(.42, "#e0f2fe"); lance.addColorStop(.7, ultimateFx.color); lance.addColorStop(1, "#ffffff");
+          ctx.strokeStyle = lance; ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+          // Water Pillar + Water Whirl: a unique deep-sea impact rather than
+          // another generic beam. The stepped rectangles keep it crisp.
+          const pillarHeight = 68 + progress * 178;
+          for (let band = 0; band < 6; band++) {
+            const width = 18 + (5 - band) * 9 + Math.sin(progress * 13 + band) * 5;
+            ctx.fillStyle = band % 2 ? "#22d3ee" : "#0e7490";
+            ctx.fillRect(Math.round(tx - width / 2), Math.round(ty - pillarHeight + band * pillarHeight / 6), Math.round(width), Math.round(pillarHeight / 6 + 4));
+          }
+          ctx.fillStyle = "#ecfeff"; ctx.fillRect(Math.round(tx - 8), Math.round(ty - pillarHeight), 16, Math.round(pillarHeight * .78));
+          for (let swirl = 0; swirl < 3; swirl++) {
+            ctx.strokeStyle = swirl === 0 ? "#cffafe" : "#0891b2"; ctx.lineWidth = 4 - swirl;
+            ctx.beginPath(); ctx.ellipse(tx, ty, 46 + swirl * 22, 17 + swirl * 10, progress * 8 + swirl, 0, Math.PI * 2); ctx.stroke();
+          }
+        } else if (ultimateFx.style === "singularity") {
+          const voidCore = ctx.createRadialGradient(tx, ty, 2, tx, ty, 150); voidCore.addColorStop(0, "#ffffff"); voidCore.addColorStop(.12, ultimateFx.color); voidCore.addColorStop(.48, "rgba(136,19,55,.62)"); voidCore.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = voidCore; ctx.beginPath(); ctx.arc(tx, ty, 150, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#fda4af"; ctx.lineWidth = 4; for (let spiral = 0; spiral < 3; spiral++) { ctx.beginPath(); for (let t = 0; t < Math.PI * 2.4; t += .12) { const radius = 140 - t * 16; const a = t + spiral * Math.PI * 2 / 3 + progress * 8; const x = tx + Math.cos(a) * radius; const y = ty + Math.sin(a) * radius; if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); }
+        }
+        // Every ultimate culminates in an authored impact burst. This is
+        // canvas geometry rather than the generic particle cloud, giving even
+        // support/control ultimates a satisfying, high-contrast hit frame.
+        const hitProgress = Math.min(1, Math.max(0, (progress - .16) / .72));
+        const hitRadius = 42 + hitProgress * 142;
+        const impact = ctx.createRadialGradient(tx, ty, 2, tx, ty, hitRadius);
+        impact.addColorStop(0, "rgba(255,255,255,.96)");
+        impact.addColorStop(.18, ultimateFx.color);
+        impact.addColorStop(.52, "rgba(251,146,60,.42)");
+        impact.addColorStop(1, "rgba(251,146,60,0)");
+        ctx.globalAlpha = Math.max(.18, 1 - hitProgress * .4) * fade;
+        ctx.fillStyle = impact; ctx.beginPath(); ctx.arc(tx, ty, hitRadius, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(2, 9 * (1 - hitProgress)); ctx.beginPath(); ctx.arc(tx, ty, hitRadius * .7, 0, Math.PI * 2); ctx.stroke();
+        for (let ray = 0; ray < 12; ray++) { const angle = ray * Math.PI / 6 + progress * 3; ctx.strokeStyle = ray % 2 ? "#fef3c7" : ultimateFx.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tx + Math.cos(angle) * 18, ty + Math.sin(angle) * 18); ctx.lineTo(tx + Math.cos(angle) * hitRadius, ty + Math.sin(angle) * hitRadius); ctx.stroke(); }
+        ctx.restore();
+      }
 
-      // G. Draw Particles
+      // H. Draw Particles
       state.particles.forEach((p) => {
         ctx.globalAlpha = p.alpha;
         if (p.text) {
@@ -7065,6 +7596,21 @@ export function MissionGame({
       }
 
       ctx.restore(); // matches camera translate
+
+      if (isUltimateCinematic && state.ultimateFx) {
+        const remaining = Math.max(0, Math.ceil((cinematic.endAt - cinematicNow) / 100));
+        ctx.save();
+        ctx.fillStyle = "rgba(2, 6, 23, .22)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = state.ultimateFx.color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 15px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`C2-932 ULTIMATE FOCUS // ${state.ultimateFx.name} // ${remaining}`, canvas.width / 2, 34);
+        ctx.restore();
+      }
 
       // ==========================================
       // H. REAL-TIME SUBTRACTIVE LIGHTING FOG OF WAR
@@ -7268,7 +7814,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -7277,6 +7823,8 @@ export function MissionGame({
     bossDeathCinematicRef.current = true;
     setBossDeathCinematic(true);
     recordAction("bossDefeated");
+    const ultimateReward = getBossUltimateReward(selectedChapter);
+    if (ultimateReward) onBossUltimateUnlocked(ultimateReward);
     if (entrySource === "exhibition" && selectedChapter === 1) markAmpaBossDefeated();
     if (!bossOutcomeRecordedRef.current) {
       bossOutcomeRecordedRef.current = true;
@@ -7299,13 +7847,14 @@ export function MissionGame({
         feedbackState.camera.y = Math.max(0, Math.min(feedbackState.mapSize.height - canvas.height, feedbackState.boss.y - canvas.height / 2));
       }
       applyDeathFeedback(feedbackState, feedbackState.boss, triggerSound, true);
+      feedbackState.bossDestructionStartedAt = performance.now();
       const destructionTimer = window.setInterval(() => {
         if (!bossDeathCinematicRef.current || !feedbackState.boss) return;
         feedbackState.screenShake = Math.max(feedbackState.screenShake, 8);
-        for (let index = 0; index < 10; index++) {
+        for (let index = 0; index < 18; index++) {
           const angle = Math.random() * Math.PI * 2;
-          const speed = 2 + Math.random() * 7;
-          feedbackState.particles.push({ x: feedbackState.boss.x, y: feedbackState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: 2 + Math.random() * 5, color: index % 3 === 0 ? "#fff7ed" : index % 2 ? "#fb7185" : "#f59e0b", life: 0, maxLife: 28, alpha: 1 });
+          const speed = 3 + Math.random() * 9;
+          feedbackState.particles.push({ x: feedbackState.boss.x, y: feedbackState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, radius: index % 4 === 0 ? 7 : 3 + Math.random() * 4, color: index % 4 === 0 ? "#ffffff" : index % 3 === 0 ? "#fff7ed" : index % 2 ? "#fb7185" : "#f59e0b", life: 0, maxLife: 34, alpha: 1 });
         }
         triggerSound("explosion");
       }, 260);
@@ -7866,7 +8415,7 @@ export function MissionGame({
 
             <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
               <div className="mb-1 ml-1 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-1 font-mono text-[10px] text-zinc-200 backdrop-blur-sm"><span>🔋</span><b>{batteryPercent}%</b>{batteryPercent <= 20 && <span className="font-black text-rose-400">LOW</span>}</div>
-              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-orange-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
+              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-orange-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick} onLostPointerCapture={releaseJoystick}>
                 <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/80 bg-orange-500/35 shadow-[0_0_14px_rgba(249,115,22,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
               </div>
             </div>
@@ -8228,7 +8777,7 @@ export function MissionGame({
 
             <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
               <div className="mb-1 ml-1 flex w-fit items-center gap-2 rounded bg-black/65 px-2 py-1 font-mono text-[9px] backdrop-blur-sm"><span className={mechaLaserBattery < 15 ? "font-black text-rose-400" : "text-sky-300"}>⚡ {Math.floor(mechaLaserBattery)}%</span><span className="text-fuchsia-300">ULT {mechaUltEnergy}%</span></div>
-              <div ref={joystickRef} className={`relative h-[88px] w-[88px] touch-none rounded-full border bg-black/45 backdrop-blur-[3px] ${bossCombatTutorialStep === 1 ? "animate-pulse border-cyan-200 shadow-[0_0_28px_rgba(34,211,238,.95)]" : "border-cyan-500/40 shadow-[inset_0_0_22px_rgba(0,0,0,.8)]"}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick}>
+              <div ref={joystickRef} className={`relative h-[88px] w-[88px] touch-none rounded-full border bg-black/45 backdrop-blur-[3px] ${bossCombatTutorialStep === 1 ? "animate-pulse border-cyan-200 shadow-[0_0_28px_rgba(34,211,238,.95)]" : "border-cyan-500/40 shadow-[inset_0_0_22px_rgba(0,0,0,.8)]"}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick} onLostPointerCapture={releaseJoystick}>
                 <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-300/80 bg-cyan-500/30 shadow-[0_0_14px_rgba(34,211,238,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
               </div>
             </div>
@@ -8236,7 +8785,7 @@ export function MissionGame({
             <div className="pointer-events-auto absolute bottom-[max(14px,env(safe-area-inset-bottom))] right-3 grid grid-cols-2 gap-2">
               <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.z = true; }} onPointerUp={() => { keysRef.current.z = false; }} onPointerCancel={() => { keysRef.current.z = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : "border-orange-500/70"}`}><span className="text-base">👊<b className="block text-[8px] text-orange-300">重拳</b></span></button>
               <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.x = true; }} onPointerUp={() => { keysRef.current.x = false; }} onPointerCancel={() => { keysRef.current.x = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : mechaActiveShield ? "border-cyan-300 text-cyan-200" : "border-cyan-500/60"}`}><span className="text-base">🛡️<b className="block text-[8px] text-cyan-300">防禦</b></span></button>
-              <button type="button" onPointerDown={(e) => { e.preventDefault(); keysRef.current.c = true; }} onPointerUp={() => { keysRef.current.c = false; }} onPointerCancel={() => { keysRef.current.c = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : "border-sky-500/70"}`}><span className="text-base">⚡<b className="block text-[8px] text-sky-300">雷射</b></span></button>
+              <button type="button" onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); keysRef.current.c = true; }} onPointerUp={() => { keysRef.current.c = false; }} onPointerCancel={() => { keysRef.current.c = false; }} onLostPointerCapture={() => { keysRef.current.c = false; }} className={`grid h-14 w-14 place-items-center rounded-full border bg-black/65 text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_22px_rgba(34,211,238,.95)]" : "border-sky-500/70"}`}><span className="text-base">⚡<b className="block text-[8px] text-sky-300">雷射</b></span></button>
               <button type="button" disabled={mechaUltEnergy < 100} onPointerDown={(e) => { e.preventDefault(); keysRef.current.v = true; }} onPointerUp={() => { keysRef.current.v = false; }} onPointerCancel={() => { keysRef.current.v = false; }} className={`grid h-14 w-14 place-items-center rounded-full border text-center backdrop-blur-sm ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 4 ? "animate-pulse border-cyan-200 bg-cyan-950/85 opacity-100 shadow-[0_0_22px_rgba(34,211,238,.95)]" : mechaUltEnergy >= 100 ? "animate-pulse border-fuchsia-400 bg-fuchsia-950/85" : "border-zinc-700 bg-black/55 opacity-55"}`}><span className="text-base">💥<b className="block text-[8px] text-fuchsia-300">大招</b></span></button>
             </div>
           </div>
@@ -8353,6 +8902,7 @@ export function MissionGame({
                       onMouseLeave={() => { keysRef.current["c"] = false; }}
                       onTouchStart={(e) => { e.preventDefault(); keysRef.current["c"] = true; }}
                       onTouchEnd={(e) => { e.preventDefault(); keysRef.current["c"] = false; }}
+                      onTouchCancel={(e) => { e.preventDefault(); keysRef.current["c"] = false; }}
                       className={`bg-zinc-900 hover:bg-zinc-850 border rounded px-1.5 py-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer active:scale-95 text-white ${bossCombatTutorialStep === 2 || bossCombatTutorialStep === 3 ? "animate-pulse border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,.85)]" : "border-sky-500/40 hover:border-sky-400"}`}
                     >
                       <div className="text-sm text-sky-400">⚡</div>
@@ -8378,9 +8928,9 @@ export function MissionGame({
                           : "bg-zinc-950 border-zinc-850 text-zinc-600 opacity-60 cursor-not-allowed"
                       }`}
                     >
-                      <div className="text-sm">💥</div>
+                      <div className="text-sm">{activeUltimate.icon}</div>
                       <div className="text-[8px] xs:text-[9px] font-extrabold text-fuchsia-400">大招 [V]</div>
-                      <div className="text-[8px] text-zinc-500 hidden xs:block">超載爆裂</div>
+                      <div className="text-[8px] text-zinc-500 hidden xs:block">{activeUltimate.name}</div>
                     </button>
                   </div>
 
@@ -8496,6 +9046,8 @@ export function MissionGame({
             <p className="text-[11px] sm:text-xs text-zinc-300 leading-relaxed font-sans max-w-xs sm:max-w-none">
               做得好！{selectedAgent.name} 駕駛燈燈機器人成功部署了完美的 SCI 全光能防護網，完全照亮並淨化了 <b>{CHAPTERS[selectedChapter - 1].name}</b>，驅散了暗影首領！
             </p>
+
+            {getBossUltimateReward(selectedChapter) && (() => { const reward = getRobotUltimate(getBossUltimateReward(selectedChapter)); return <div className="w-full border border-amber-400/70 bg-amber-950/35 p-3 text-left"><p className="text-[9px] font-black tracking-[.18em] text-amber-300">BOSS REWARD UNLOCKED</p><p className="mt-1 font-black text-amber-100">{reward.icon} 新大招模組：{reward.name}</p><p className="mt-1 text-[10px] text-zinc-300">{reward.effect}。請至技術研發部 → 特殊系統裝備；同時只能裝備一個大招。</p></div>; })()}
 
             {/* Stats card */}
             <div className="w-full bg-zinc-900 border border-zinc-800 p-2.5 sm:p-4 space-y-1.5 sm:space-y-2 rounded text-left font-mono text-[11px] sm:text-xs text-zinc-300">

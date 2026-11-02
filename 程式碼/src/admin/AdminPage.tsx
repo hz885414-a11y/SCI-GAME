@@ -12,6 +12,7 @@ import { CharacterPresentationAdmin } from "./CharacterPresentationAdmin";
 import { AmbientDialogueAdmin } from "./AmbientDialogueAdmin";
 import { RhythmChartAdmin } from "./RhythmChartAdmin";
 import { CardAlignmentCalibration } from "./CardAlignmentCalibration";
+import { CombatEffectsAdmin } from "./CombatEffectsAdmin";
 import { getAllRhythmEdits, syncRhythmEdits } from "../rhythm/charts";
 
 type ModuleId = (typeof ADMIN_MODULES)[number]["id"];
@@ -19,6 +20,7 @@ type ModuleId = (typeof ADMIN_MODULES)[number]["id"];
 const IMPACT: Record<ModuleId, string> = {
   gameplay: "影響位置：行動任務與 Boss 戰。重新進入戰鬥後套用。",
   bosses: "影響位置：六個展覽 Boss 戰；重新進入該 Boss 戰後套用。",
+  effects: "影響位置：機器人與六個 Boss 的戰鬥技能；儲存後重新進入戰鬥即可套用。",
   supply: "影響位置：基地的後勤補給部；重新進入該畫面後套用。",
   prologue: "影響位置：開始畫面後的「SCI // 前情提要」。設定選單也可重新播放。",
   ending: "影響位置：六個魔王皆擊敗後的三頁階段性結局，以及 /END 測試畫面。",
@@ -258,6 +260,8 @@ export function AdminPage() {
         {active === "gameplay" && <div className="admin-gameplay-sections">{[...new Set(GAMEPLAY_FIELDS.map((field) => field.group))].map((group) => <section className={`admin-gameplay-section ${group.startsWith("C2-932") ? "robot-section" : "squad-section"}`} key={group}><h3>{group}</h3><div className="admin-grid">{GAMEPLAY_FIELDS.filter((field) => field.group === group).map(({ key, label, hint, step }) => <label className="admin-field-card" key={key}><span>{label}</span><small>{hint}</small><input type="number" step={step} min={key.includes("Chance") ? 0 : undefined} max={key.includes("Chance") ? 1 : undefined} value={config.gameplay[key]} onChange={(e) => setConfig({ ...config, gameplay: { ...config.gameplay, [key]: Number(e.target.value) } })} /></label>)}</div></section>)}</div>}
 
         {active === "bosses" && <BossAdmin bosses={config.bosses} onChange={(bosses) => setConfig({ ...config, bosses })} />}
+
+        {active === "effects" && <CombatEffectsAdmin effects={config.combatEffects} onChange={(combatEffects) => setConfig({ ...config, combatEffects })} />}
 
         {active === "supply" && <SupplyShopAdmin items={config.supplyShopItems} onChange={(supplyShopItems) => setConfig({ ...config, supplyShopItems })} />}
 

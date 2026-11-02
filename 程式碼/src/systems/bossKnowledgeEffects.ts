@@ -38,6 +38,8 @@ export function getEffectiveBossBehaviorProfile(chapter: number): BossBehaviorPr
   const modifiers = getBossKnowledgeModifiers(chapter);
   return {
     ...base,
+    // Configurations saved before this control existed remain compatible.
+    damageMultiplier: Math.max(0.1, Number(base.damageMultiplier) || 1),
     moveSpeed: base.moveSpeed * modifiers.moveSpeedMultiplier,
     dashSpeed: base.dashSpeed * modifiers.dashSpeedMultiplier,
     attackInterval: Math.round(base.attackInterval * modifiers.attackIntervalMultiplier),

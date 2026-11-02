@@ -1,10 +1,19 @@
 export type CardLayoutSlotKey = "image" | "title" | "category" | "descriptionLabel" | "descriptionContent" | "extraLabel" | "extraContent";
+export type CardTextKey = Exclude<CardLayoutSlotKey, "image">;
 
 export interface CardLayoutRect { left: number; top: number; width: number; height: number; }
-export type CardLayoutConfig = Record<CardLayoutSlotKey, CardLayoutRect> & { titleAlign: "left" | "center" };
+export type CardLayoutConfig = Record<CardLayoutSlotKey, CardLayoutRect> & {
+  titleAlign: "left" | "center";
+  /** Percentage trimmed from each corner of the event-card image frame. */
+  imageCornerCut: number;
+  /** Per-field size multiplier for event-card text. */
+  textScale: Record<CardTextKey, number>;
+};
 
 export const DEFAULT_CARD_LAYOUT: CardLayoutConfig = {
   titleAlign: "center",
+  imageCornerCut: 8,
+  textScale: { title: 1, category: 1, descriptionLabel: 1, descriptionContent: 1, extraLabel: 1, extraContent: 1 },
   image: { left: 6.6, top: 7, width: 86.8, height: 31 },
   title: { left: 9, top: 39.4, width: 66, height: 6.8 },
   category: { left: 77, top: 40.5, width: 15, height: 4 },

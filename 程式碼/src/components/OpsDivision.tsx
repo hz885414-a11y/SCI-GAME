@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { EXHIBITION_MISSIONS, type ExhibitionMission } from "../data/exhibitionMissions";
 import { canEnterExhibitionBoss, getBossLockReason } from "../systems/bossProgression";
+import { useGameConfig } from "../config/GameConfigContext";
 interface OpsDivisionProps {
   isMuted: boolean;
   playSound: (sound: string) => void;
@@ -47,6 +48,7 @@ export function OpsDivision({
   onStartBossMission,
   openMissionCenterToken,
 }: OpsDivisionProps) {
+  const { config } = useGameConfig();
   // Taskbar windows open/close states - all closed by default
   const [isOpenPortal, setIsOpenPortal] = useState<boolean>(false);
   const [isOpenLogs, setIsOpenLogs] = useState<boolean>(false);
@@ -114,9 +116,9 @@ export function OpsDivision({
       return;
     }
     playSound("click");
-    addLog(
-      `[BOSS_DEPLOY] ${exhibition.name} // 第 ${exhibition.bossMission.chapter} 章 // ${exhibition.bossMission.bossName}`
-    );
+    const configuredBossName = config.bosses.find((boss) => boss.chapter === exhibition.bossMission.chapter)?.name
+      || exhibition.bossMission.bossName;
+    addLog(`[BOSS_DEPLOY] ${exhibition.name} // 第 ${exhibition.bossMission.chapter} 章 // ${configuredBossName}`);
     setIsOpenPortal(false);
     setIsOpenLogs(false);
     onStartBossMission(exhibition.bossMission.chapter);

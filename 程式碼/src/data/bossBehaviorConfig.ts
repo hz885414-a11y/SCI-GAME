@@ -1,5 +1,7 @@
 export interface BossBehaviorProfile {
   radius: number;
+  /** Multiplies every source of damage dealt by this Boss. */
+  damageMultiplier: number;
   moveSpeed: number;
   prefersMelee: boolean;
   meleeStopDistance: number;
@@ -24,6 +26,7 @@ export interface BossBehaviorProfile {
 
 const DEFAULT_BOSS_BEHAVIOR: BossBehaviorProfile = {
   radius: 65,
+  damageMultiplier: 1,
   moveSpeed: 1.1,
   prefersMelee: false,
   meleeStopDistance: 150,
@@ -52,6 +55,7 @@ export const BOSS_BEHAVIOR_BY_CHAPTER: Partial<Record<number, BossBehaviorProfil
   // with dense machine-gun strafing fire.
   2: {
     radius: 68,
+    damageMultiplier: 1,
     moveSpeed: 1.35,
     prefersMelee: false,
     meleeStopDistance: 170,
@@ -77,6 +81,7 @@ export const BOSS_BEHAVIOR_BY_CHAPTER: Partial<Record<number, BossBehaviorProfil
   // then controls lanes with a rotating magnetic tool barrage.
   3: {
     radius: 70,
+    damageMultiplier: 1,
     moveSpeed: 1.15,
     prefersMelee: false,
     meleeStopDistance: 150,
@@ -102,6 +107,7 @@ export const BOSS_BEHAVIOR_BY_CHAPTER: Partial<Record<number, BossBehaviorProfil
   // knocks the robot away on impact, and uses a roar to control nearby space.
   4: {
     radius: 72,
+    damageMultiplier: 1,
     moveSpeed: 1.5,
     prefersMelee: true,
     meleeStopDistance: 145,
@@ -127,6 +133,7 @@ export const BOSS_BEHAVIOR_BY_CHAPTER: Partial<Record<number, BossBehaviorProfil
   // near the player and controls space with telegraphed tentacle strikes.
   5: {
     radius: 72,
+    damageMultiplier: 1,
     moveSpeed: 1.2,
     prefersMelee: false,
     meleeStopDistance: 150,
@@ -152,6 +159,7 @@ export const BOSS_BEHAVIOR_BY_CHAPTER: Partial<Record<number, BossBehaviorProfil
   // performs a long charge and throws chunks of rock at range.
   6: {
     radius: 84,
+    damageMultiplier: 1,
     moveSpeed: 1.65,
     prefersMelee: true,
     meleeStopDistance: 118,

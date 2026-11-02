@@ -15,6 +15,7 @@ const DEFAULT_DIALOGUE_PORTRAITS = Object.fromEntries(Object.entries(RESPONSE_DA
 }])) as GameConfig["dialoguePortraits"];
 
 const layout = (x: number, scale: number, imageScale: number, offsetY: number, baseHeightPx = 800) => ({ x, scale, imageScale, offsetX: 0, offsetY, baseHeightPx });
+const vfxAsset = (id: string, frames = 14, loopMode: "none" | "loop" = "none") => ({ image: `/assets/vfx/library/${id}/sprite-sheet.png`, manifest: { loopMode, frames: Array.from({ length: frames }, (_, index) => ({ x: (index % 5) * 96, y: Math.floor(index / 5) * 96, width: 96, height: 96, durationMs: 50 })) }, imageName: "sprite-sheet.png", manifestName: "manifest.json" });
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {
   version: 1,
@@ -93,6 +94,13 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   bosses: BOSS_ADMIN_DEFAULTS,
   supplyShopItems: SUPPLY_SHOP_DEFAULTS,
   rhythmEdits: {},
+  combatEffects: [
+    { id: "robot_laser", label: "C2-932｜雷射", group: "robot", scale: 1.65, layers: { charge: vfxAsset("focus-charge"), travel: vfxAsset("lattice-beam", 16, "loop"), impact: { image: "/assets/vfx/beam-cutoff-burst/sprite-sheet.png", manifest: { loopMode: "none", frames: Array.from({ length: 14 }, (_, index) => ({ x: (index % 5) * 96, y: Math.floor(index / 5) * 96, width: 96, height: 96, durationMs: 50 })) }, imageName: "sprite-sheet.png", manifestName: "manifest.json" } } },
+    { id: "robot_punch", label: "C2-932｜重拳", group: "robot", scale: 1, layers: { charge: vfxAsset("focus-charge"), impact: vfxAsset("electric-impact") } }, { id: "robot_shield", label: "C2-932｜防禦力場", group: "robot", scale: 1 }, { id: "robot_ultimate", label: "C2-932｜特殊大招", group: "robot", scale: 1, layers: { impact: vfxAsset("void-implosion"), residue: vfxAsset("solar-shrapnel") } },
+    { id: "battle_destruction", label: "戰場｜擊破／爆炸", group: "boss", scale: 1, layers: { impact: vfxAsset("warm-explosion", 15), residue: vfxAsset("smoke-puff") } },
+    { id: "boss_projectile", label: "Boss 共通｜彈幕／射擊", group: "boss", scale: 1 }, { id: "boss_dash", label: "Boss 共通｜衝刺／碰撞", group: "boss", scale: 1 }, { id: "boss_area", label: "Boss 共通｜範圍攻擊", group: "boss", scale: 1 }, { id: "boss_defense", label: "Boss 共通｜防禦／護盾", group: "boss", scale: 1 },
+    { id: "ampa_blackout", label: "AMPA｜停電核心", group: "boss", scale: 1, layers: { travel: vfxAsset("magical-projectile"), impact: vfxAsset("electric-impact") } }, { id: "frankfurt_bombing", label: "Frankfurt｜鎖定轟炸／雷射", group: "boss", scale: 1, layers: { charge: vfxAsset("focus-charge"), impact: vfxAsset("warm-explosion") } }, { id: "tite_tools", label: "TITE｜工具暴雨／硬體召喚", group: "boss", scale: 1, layers: { impact: vfxAsset("electric-impact") } }, { id: "aapex_charge", label: "AAPEX｜連鎖衝刺／怒吼", group: "boss", scale: 1, layers: { travel: vfxAsset("ember-jet"), impact: vfxAsset("electric-impact") } }, { id: "metstrade_water", label: "METSTRADE｜潛行／水柱／觸手", group: "boss", scale: 1, layers: { impact: vfxAsset("splash-crown"), residue: vfxAsset("dripping-runoff", 16, "loop") } }, { id: "bauma_mining", label: "bauma｜岩塊／礦業裝甲", group: "boss", scale: 1, layers: { impact: vfxAsset("warm-explosion"), residue: vfxAsset("smoke-puff") } },
+  ],
 };
 
 // These operator-created cards predate the artwork field.  Preserve any
@@ -103,6 +111,18 @@ const LEGACY_CUSTOM_CARD_ART: Record<string, string> = {
   "IP68 防護等級": "/assets/cards/ip68-deep-waterproof.png",
   "勇氣の證明": "/assets/cards/courage-proof.png",
   "BOM表": "/assets/cards/bom-parts.png",
+};
+
+// The original shipped Boss values were balanced before the robot's full
+// enhancement system existed. Upgrade only those exact legacy values so a
+// deliberately tuned operator value is never overwritten.
+const LEGACY_BOSS_HP: Record<number, number> = {
+  1: 4000,
+  2: 5200,
+  3: 6400,
+  4: 7600,
+  5: 8800,
+  6: 10000,
 };
 
 /** Adds newly shipped default cards/events to older Firebase documents while
@@ -128,12 +148,49 @@ export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined):
       });
     return [...known, ...additions];
   };
+  const savedBosses = new Map((remote?.bosses || []).map((boss) => [boss.chapter, boss]));
+  const bosses = BOSS_ADMIN_DEFAULTS.map((defaultBoss) => {
+    const savedBoss = savedBosses.get(defaultBoss.chapter);
+    if (!savedBoss) return defaultBoss;
+    const usesLegacyHp = savedBoss.hp === LEGACY_BOSS_HP[defaultBoss.chapter];
+    return {
+      ...defaultBoss,
+      ...savedBoss,
+      hp: usesLegacyHp ? defaultBoss.hp : savedBoss.hp,
+      behavior: { ...defaultBoss.behavior, ...savedBoss.behavior },
+    };
+  });
+  // Combat effects are intentionally layered.  Preserve an operator's
+  // uploaded layer while inheriting newly shipped phases (for example a new
+  // muzzle charge on an existing laser), instead of replacing the whole
+  // layer map with an older Firebase record.
+  const savedCombatEffects = new Map((remote?.combatEffects || []).map((effect) => [effect.id, effect]));
+  const combatEffects = [
+    ...DEFAULT_GAME_CONFIG.combatEffects.map((defaultEffect) => {
+      const savedEffect = savedCombatEffects.get(defaultEffect.id);
+      return savedEffect
+        ? { ...defaultEffect, ...savedEffect, layers: { ...defaultEffect.layers, ...savedEffect.layers } }
+        : defaultEffect;
+    }),
+    ...(remote?.combatEffects || []).filter((effect) => !DEFAULT_GAME_CONFIG.combatEffects.some((defaultEffect) => defaultEffect.id === effect.id)),
+  ];
   return {
     ...DEFAULT_GAME_CONFIG,
     ...remote,
     gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote?.gameplay },
     cards: mergeById(DEFAULT_GAME_CONFIG.cards, remote?.cards),
-    cardLayout: { ...DEFAULT_CARD_LAYOUT, ...remote?.cardLayout, titleAlign: remote?.cardLayout?.titleAlign || DEFAULT_CARD_LAYOUT.titleAlign },
+    cardLayout: {
+      ...DEFAULT_CARD_LAYOUT,
+      ...remote?.cardLayout,
+      titleAlign: remote?.cardLayout?.titleAlign || DEFAULT_CARD_LAYOUT.titleAlign,
+      textScale: { ...DEFAULT_CARD_LAYOUT.textScale, ...remote?.cardLayout?.textScale },
+      // Existing Firebase configurations predate the adjustable octagonal image frame.
+      imageCornerCut: Number.isFinite(remote?.cardLayout?.imageCornerCut)
+        ? Math.max(0, Math.min(24, Number(remote?.cardLayout?.imageCornerCut)))
+        : DEFAULT_CARD_LAYOUT.imageCornerCut,
+    },
     events: mergeById(DEFAULT_GAME_CONFIG.events, remote?.events),
+    bosses,
+    combatEffects,
   };
 }
