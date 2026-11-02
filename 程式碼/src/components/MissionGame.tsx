@@ -230,8 +230,10 @@ const SHELTER_NPC_SPRITES: Record<string, string> = {
   volunteer: "/assets/npc/chapter-one/pack/9.png",
 };
 const ADULT_NPC_FRAMES: Record<string, { x: number; y: number }> = {
-  liaison: { x: 54, y: 0 }, engineer: { x: 108, y: 0 }, scout: { x: 54, y: 96 }, medic: { x: 162, y: 0 },
-  courier: { x: 54, y: 64 }, resident: { x: 0, y: 0 }, technician: { x: 108, y: 64 }, researcher: { x: 162, y: 64 }, volunteer: { x: 0, y: 64 },
+  // The first three columns of this sheet are portrait heads, not walk
+  // frames.  Adult NPCs therefore only use the six verified 3×4 body blocks.
+  liaison: { x: 54, y: 0 }, engineer: { x: 108, y: 0 }, scout: { x: 162, y: 0 }, medic: { x: 54, y: 64 },
+  courier: { x: 108, y: 64 }, resident: { x: 162, y: 64 }, technician: { x: 54, y: 0 }, researcher: { x: 108, y: 0 }, volunteer: { x: 162, y: 0 },
 };
 const CHILD_SPRITE_IDS: Record<string, string> = { "child-xingya": "liaison", "child-lele": "engineer", "child-doudou": "scout", "child-mimi": "medic", "child-che": "courier", "child-qingqing": "resident", "child-kaikai": "technician", "child-luna": "researcher", "child-taku": "volunteer" };
 const SHELTER_NPC_INTERACTION_RANGE = 94;
@@ -6506,7 +6508,10 @@ export function MissionGame({
           const near = Boolean(prop.interactive) && Math.hypot(prop.x - player.x, prop.y - player.y) <= SHELTER_PROP_INTERACTION_RANGE;
           const image = shelterPropImagesRef.current.furniture;
           const sprite = SHELTER_PROP_SPRITES[prop.sprite];
-          const scale = prop.sprite === "bunk" ? 1.15 : prop.sprite === "tarp" ? 1.28 : 1.05;
+          // Single-tile props contain generous transparent padding in the
+          // source sheet. Give them a stronger in-world scale so cabinets,
+          // lamps and supplies never read as missing pixels.
+          const scale = prop.sprite === "bunk" ? 1.15 : prop.sprite === "tarp" ? 1.28 : sprite.w === 1 ? 1.55 : 1.18;
           const width = sprite.w * 32 * scale;
           const height = sprite.h * 32 * scale;
           ctx.save(); ctx.imageSmoothingEnabled = false;
@@ -6533,8 +6538,6 @@ export function MissionGame({
           const adultSprite = shelterAdultNpcImageRef.current;
           ctx.save();
           ctx.translate(npc.x, npc.y + bob);
-          ctx.fillStyle = `${npc.color}33`;
-          ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.fill();
           if (npc.isChild && npcSprite?.complete && npcSprite.naturalWidth > 0) {
             const moveX = npc.targetX - npc.x;
             const moveY = npc.targetY - npc.y;
