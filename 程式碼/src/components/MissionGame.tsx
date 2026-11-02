@@ -6445,8 +6445,10 @@ export function MissionGame({
             const drawWidth = npc.isChild ? 32 : 38;
             const drawHeight = npc.isChild ? 48 : 57;
             ctx.imageSmoothingEnabled = false;
-            ctx.shadowColor = npc.color;
-            ctx.shadowBlur = nearNpc ? 14 : 5;
+            // Shelter residents should read as grounded characters, not
+            // interactable light sources. Interaction remains text-based.
+            ctx.shadowColor = "transparent";
+            ctx.shadowBlur = 0;
             if (horizontal && moveX < 0) ctx.scale(-1, 1);
             ctx.drawImage(npcSprite, walkFrame * 16, directionRow * 24, 16, 24, -drawWidth / 2, -drawHeight * .66, drawWidth, drawHeight);
           } else {
