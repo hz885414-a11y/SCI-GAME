@@ -8,7 +8,8 @@ import './admin/admin.css';
 import { GameConfigProvider } from './config/GameConfigContext.tsx';
 
 const route = window.location.pathname.replace(/\/$/, '');
-const RootPage = route.endsWith('/admin') ? AdminPage : route.endsWith('/pixel-studio') ? PixelArtStudio : App;
+const preview = new URLSearchParams(window.location.search).get('view');
+const RootPage = route.endsWith('/admin') ? AdminPage : (route.endsWith('/pixel-studio') || preview === 'pixel-studio') ? PixelArtStudio : App;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
