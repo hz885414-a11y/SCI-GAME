@@ -224,6 +224,7 @@ const SHELTER_CHILD_SEEDS = [
 // frames.  Assigning distinct silhouettes makes the shelter read as a real
 // group of residents rather than colour-swapped placeholders.
 const SHELTER_NPC_SPRITES: Record<string, string> = {
+  "coat-resident": "/assets/npc/chapter-one/pack/2.png",
   liaison: "/assets/npc/chapter-one/pack/1.png",
   engineer: "/assets/npc/chapter-one/pack/4.png",
   scout: "/assets/npc/chapter-one/pack/7.png",
@@ -265,6 +266,7 @@ const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
 const SHELTER_PERIMETER_FINAL_AREA = 5;
 const DAWN_CITY_MAP_SIZE = { width: 2400, height: 1600 };
 const DAWN_CITY_NPC_SEEDS = [
+  { id: "coat-resident", name: "抱著外套的居民・茉", color: "#fda4af", x: 1260, y: 1190, dialogueLines: ["這件外套是我女兒的。我一直帶著，卻想不起為什麼。", "她離開那天下著雨。我知道我應該難過，可是心裡什麼也沒有。", "如果那份難過還在，請先問我願不願意把它拿回來。"] },
   { id: "liaison", name: "城市聯絡員・遙", color: "#67e8f9", x: 1080, y: 1120, dialogueLines: ["城內已經安全，出城後請保持照明。"] },
   { id: "engineer", name: "鐵道維修師・柊", color: "#fbbf24", x: 1320, y: 1080, dialogueLines: ["列車軌道延伸到城外，那邊仍有黑影活動。"] },
   { id: "medic", name: "巡迴醫護・晴", color: "#f9a8d4", x: 1170, y: 1290, dialogueLines: ["先在曙光城補給，再往北側城門出發吧。"] },
@@ -1888,6 +1890,12 @@ export function MissionGame({
 
   const startGame = () => {
     if (!missionMapReady) return;
+    if (selectedChapter === 6 && storyChoices[6]) {
+      const next = { ...storyChoices };
+      delete next[6];
+      setStoryChoices(next);
+      try { localStorage.setItem("sci_main_story_choices_v1", JSON.stringify(next)); } catch { /* local persistence is optional */ }
+    }
     const chapterOneAlreadyCleared = selectedChapter === 1 && (() => {
       try { return localStorage.getItem(CHAPTER_ONE_SHELTER_CLEARED_KEY) === "true"; } catch { return false; }
     })();
@@ -2150,6 +2158,20 @@ export function MissionGame({
       const gatePosition = findCityGate() || { x: DAWN_CITY_MAP_SIZE.width / 2, y: 540 };
       const outskirts = findWalkableSpawn(18, gatePosition, 520) || { x: DAWN_CITY_MAP_SIZE.width / 2, y: 300 };
       engineRef.current.dawnCityGate = { ...gatePosition, destinationX: outskirts.x, destinationY: outskirts.y, entered: false };
+    }
+
+    if (selectedChapter === 6) {
+      const center = { x: mapSize.width / 2, y: mapSize.height / 2 };
+      let corePosition: { x: number; y: number } | null = null;
+      for (const distance of [0, 80, 160, 240, 320, 400]) {
+        corePosition = findWalkableSpawn(28, center, distance);
+        if (corePosition) break;
+      }
+      corePosition ||= findWalkableSpawn(28) || center;
+      engineRef.current.darkCores.push({
+        id: "central-core", ...corePosition, radius: 34, phase: "corrupted",
+        progress: 0, initialVariant: 0, purifiedVariant: 0, completionUntilTick: 0,
+      });
     }
 
     // Chapter two introduces an immobile objective: three dark cores are
@@ -4360,8 +4382,13 @@ export function MissionGame({
           };
         } else if (nearbyNpc) {
           interactionTargetRef.current = {
-            label: `與${nearbyNpc.name}交談`,
-            onTap: () => { nearbyNpc.dialogueText = nearbyNpc.dialogueLines[nearbyNpc.interactionCount % nearbyNpc.dialogueLines.length]; nearbyNpc.dialogueUntilTick = state.ticks + 210; nearbyNpc.interactionCount += 1; },
+            label: nearbyNpc.id === "coat-resident" ? `聽${nearbyNpc.name}說外套的故事` : `與${nearbyNpc.name}交談`,
+            onTap: () => {
+              nearbyNpc.dialogueText = nearbyNpc.dialogueLines[nearbyNpc.interactionCount % nearbyNpc.dialogueLines.length];
+              nearbyNpc.dialogueUntilTick = state.ticks + 300;
+              nearbyNpc.interactionCount += 1;
+              if (nearbyNpc.id === "coat-resident") setInteractionFeedback(`茉的故事 ${Math.min(nearbyNpc.interactionCount, nearbyNpc.dialogueLines.length)}/${nearbyNpc.dialogueLines.length}：${nearbyNpc.dialogueText}`);
+            },
           };
         } else interactionTargetRef.current = null;
       }
@@ -4500,6 +4527,15 @@ export function MissionGame({
             interactionTargetRef.current = null;
           }
         }
+      } else if (stage === "PLAYING" && selectedChapter === 6 && state.darkCores?.length) {
+        const core = (state.darkCores as DarkCoreEntity[]).find((item) => item.id === "central-core");
+        interactionTargetRef.current = core && core.phase === "corrupted" && Math.hypot(core.x - player.x, core.y - player.y) <= DARK_CORE_INTERACTION_RANGE
+          ? { label: "調查中央核心・決定處置", onTap: () => {
+            setChapterTransitionChapter(6);
+            setChapterTransitionStep(0);
+            triggerSound("click");
+          } }
+          : null;
       } else if (stage === "PLAYING" && state.darkCores && !(selectedChapter === 5 && !state.dawnCityExpeditionActive)) {
         let nearestCore: DarkCoreEntity | null = null;
         let nearestDistance = Infinity;
@@ -6070,6 +6106,12 @@ export function MissionGame({
           const pulse = (Math.sin(state.ticks * 0.11 + core.x) + 1) / 2;
 
           ctx.save();
+          if (core.id === "central-core") {
+            ctx.fillStyle = "#fef3c7";
+            ctx.font = "bold 12px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("中央核心・靠近後互動", core.x, core.y - 78);
+          }
           // Layered, inexpensive canvas effects make this read as a dangerous
           // world objective rather than a flat image: corruption breathes in
           // place, purification projects a vertical beam, and success leaves
@@ -6152,7 +6194,7 @@ export function MissionGame({
             ctx.fillStyle = "#fef3c7";
             ctx.font = "bold 10px monospace";
             ctx.textAlign = "center";
-            ctx.fillText("按 Z／互動淨化", core.x, core.y + 68);
+            ctx.fillText(selectedChapter === 6 ? "按 Z／決定核心命運" : "按 Z／互動淨化", core.x, core.y + 68);
           }
           ctx.restore();
         });
@@ -8036,6 +8078,11 @@ export function MissionGame({
     }
     setChapterTransitionStep(null);
     if (chapterTransitionChapter === 1) onChapterOneShelterCleared();
+    if (chapterTransitionChapter === 6 && stage === "PLAYING" && storyChoices[6]) {
+      const core = (engineRef.current.darkCores as DarkCoreEntity[]).find((item) => item.id === "central-core");
+      if (core) { core.phase = "purified"; core.progress = 1; }
+      enterReport();
+    }
   };
   const chooseStoryAction = (id: string) => {
     if (chapterTransitionStep === null || chapterTransitionChapter < 2) return;
@@ -8716,7 +8763,8 @@ export function MissionGame({
             <div className="text-center">
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300"><Award className="h-4 w-4" />任務素材回收完成</div>
               <h2 className="mt-2 text-2xl font-black text-white sm:text-4xl">小隊任務結算</h2>
-              <p className="mt-2 text-xs text-zinc-400">小隊清怪任務到此完成。機器人 Boss 作戰請從營業機動部的任務中心個別啟動。</p>
+              {selectedChapter === 6 && storyChoices[6] && <p className="mt-2 text-base font-black text-amber-200">中央核心結局：{storyChoices[6] === "coexist" ? "繁星時代" : storyChoices[6] === "seal" ? "封存之環" : "無影之日"}</p>}
+              <p className="mt-2 text-xs text-zinc-400">{selectedChapter === 6 ? "小隊已完成中央核心的處置；可重看 Leo、Ethan、Claire 的結局。" : "小隊清怪任務到此完成。機器人 Boss 作戰請從營業機動部的任務中心個別啟動。"}</p>
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2 text-center sm:grid-cols-4">
@@ -8737,13 +8785,13 @@ export function MissionGame({
             </div>
 
             <div className="mt-4">
-              {selectedChapter >= 2 && selectedChapter <= 5 && (
+              {selectedChapter >= 2 && selectedChapter <= 6 && (selectedChapter !== 6 || Boolean(storyChoices[6])) && (
                 <button
                   type="button"
                   onClick={() => { setChapterTransitionChapter(selectedChapter); setChapterTransitionStep(0); }}
                   className="mb-2 min-h-12 w-full rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 text-sm font-black text-amber-200"
                 >
-                  重看本章劇情：{MAIN_STORY_SCENES[selectedChapter].title}
+                  {selectedChapter === 6 ? "重看三位角色的結局" : `重看本章劇情：${MAIN_STORY_SCENES[selectedChapter].title}`}
                 </button>
               )}
               <button

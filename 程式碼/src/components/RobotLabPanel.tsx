@@ -103,7 +103,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
   return (
     <section className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden border border-zinc-700 bg-[#070b0e]/95 font-sans shadow-[0_0_50px_rgba(0,0,0,0.75)]">
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[250px_minmax(320px,1fr)_470px] xl:overflow-hidden">
-        <aside className="order-2 border-b border-zinc-700 bg-[#0a0f13]/95 p-3 xl:order-1 xl:overflow-y-auto xl:border-b-0 xl:border-r">
+        <aside className="order-3 border-b border-zinc-700 bg-[#0a0f13]/95 p-3 xl:order-1 xl:overflow-y-auto xl:border-b-0 xl:border-r">
           <button
             type="button"
             onClick={() => { setIsMaterialPanelOpen((open) => !open); playSound("click"); }}
@@ -147,7 +147,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
         </aside>
 
         <div
-          className="relative order-1 flex min-h-[480px] flex-col overflow-hidden border-b border-zinc-700 bg-cover bg-center bg-no-repeat xl:order-2 xl:min-h-0 xl:border-b-0 xl:border-r"
+          className="relative order-2 flex min-h-[240px] flex-col overflow-hidden border-b border-zinc-700 bg-cover bg-center bg-no-repeat sm:min-h-[360px] xl:min-h-0 xl:border-b-0 xl:border-r"
           style={{ backgroundImage: `url(${BACKGROUND_ASSETS.tech})` }}
         >
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/5 to-black/20" />
@@ -181,7 +181,8 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
 
         </div>
 
-        <aside className="order-3 flex min-h-[440px] flex-col bg-[#0a0f13]/95 xl:min-h-0">
+        <aside className="order-1 flex min-h-[440px] flex-col bg-[#0a0f13]/95 xl:order-3 xl:min-h-0">
+          <div className="border-b border-red-800/60 bg-red-950/30 px-3 py-2 text-sm font-black text-red-100">C2-932 機器人改裝 <span className="ml-2 text-[10px] font-normal text-zinc-300">選部件 → 開始改裝 → 完成焊接</span></div>
           <div className="grid shrink-0 grid-cols-4 border-b border-zinc-700 bg-black/40">
             {UPGRADE_CATEGORIES.map((item) => {
               const Icon = item.icon;
@@ -196,7 +197,7 @@ export function RobotLabPanel({ materials, setMaterials, upgrades, setUpgrades, 
                   className={`flex min-h-16 flex-col items-center justify-center gap-1 border-r border-zinc-800 text-[11px] font-black transition-all last:border-r-0 ${active ? "bg-red-950/60 text-red-300 shadow-[inset_0_-3px_0_#ef4444]" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"}`}
                 >
                   <Icon className={`h-5 w-5 ${active ? "text-red-400" : "text-zinc-600"}`} />
-                  <span className="hidden sm:inline">{item.shortName}</span>
+                  <span>{item.shortName}</span>
                 </button>
               );
             })}

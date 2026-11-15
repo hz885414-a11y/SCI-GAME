@@ -1282,7 +1282,7 @@ export default function App() {
             `}
           >
             <Wrench className="hidden h-4 w-4 text-orange-500 sm:block" />
-            <span className="whitespace-nowrap">技術研發部</span>
+            <span className="whitespace-nowrap">機器人改裝</span>
             {affordableRobotUpgradeCount > 0 && (
               <span
                 aria-label={`${affordableRobotUpgradeCount} 個部件可改裝`}
