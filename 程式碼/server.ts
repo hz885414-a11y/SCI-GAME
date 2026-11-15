@@ -140,6 +140,44 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
   app.use(express.json({ limit: "64kb" }));
 
+  app.post("/api/pixel-character", async (req, res) => {
+    const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim().slice(0, 600) : "";
+    const width = Number.isInteger(Number(req.body?.width)) ? Math.min(128, Math.max(8, Number(req.body.width))) : 16;
+    const height = Number.isInteger(Number(req.body?.height)) ? Math.min(128, Math.max(8, Number(req.body.height))) : width;
+    const style = typeof req.body?.style === "string" ? req.body.style.slice(0, 80) : "科幻像素遊戲";
+    const pose = typeof req.body?.pose === "string" ? req.body.pose.slice(0, 80) : "正面待機";
+    const assetType = typeof req.body?.assetType === "string" ? req.body.assetType.slice(0, 80) : "角色";
+    if (!prompt) return res.status(400).json({ error: "請先描述你想製作的角色。" });
+    if (!env.OPENAI_API_KEY) return res.status(503).json({ error: "尚未設定 OPENAI_API_KEY；請在伺服器環境設定 OpenAI API 金鑰後再生成。" });
+    try {
+      const apiResponse = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          input: `You are a pixel game art director. Design a ${width}x${height} pixel game asset. Asset type: ${assetType}. Style: ${style}. Pose or composition: ${pose}. Asset concept: ${prompt}. Create a readable, centered, game-ready asset with a limited cohesive palette. For tiles, ensure edges are suitable for seamless repetition.`,
+          max_output_tokens: 12000,
+          text: { format: { type: "json_schema", name: "pixel_asset", strict: true, schema: {
+            type: "object", additionalProperties: false, required: ["name", "pixels"], properties: {
+              name: { type: "string" },
+              pixels: { type: "array", minItems: height, maxItems: height, items: { type: "array", minItems: width, maxItems: width, items: { anyOf: [{ type: "string", pattern: "^#[0-9A-Fa-f]{6}$" }, { type: "null" }] } } },
+            },
+          } } },
+        }),
+      });
+      const apiBody = await apiResponse.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; error?: { message?: string } };
+      if (!apiResponse.ok) throw new Error(apiBody.error?.message || "OpenAI API 無法生成素材。");
+      const outputText = apiBody.output_text || apiBody.output?.flatMap((item) => item.content || []).find((item) => item.type === "output_text")?.text;
+      const result = JSON.parse(outputText || "{}") as { name?: unknown; pixels?: unknown };
+      if (!Array.isArray(result.pixels) || result.pixels.length !== height || !result.pixels.every((row) => Array.isArray(row) && row.length === width)) throw new Error("AI 回傳的像素格尺寸不正確，請再試一次。");
+      const pixels = result.pixels.flat().map((pixel) => typeof pixel === "string" && /^#[0-9a-f]{6}$/i.test(pixel) ? pixel : null);
+      const name = typeof result.name === "string" ? result.name.replace(/[^a-z0-9_-]/gi, "-").slice(0, 32) : "generated-character";
+      res.json({ name: name || "generated-character", pixels });
+    } catch (error) {
+      res.status(502).json({ error: error instanceof Error ? error.message : "AI 角色生成失敗，請稍後再試。" });
+    }
+  });
+
   app.get("/api/card-event-admin/config", async (_req, res) => {
     try {
       const [remoteCards, remoteRules] = await Promise.all([

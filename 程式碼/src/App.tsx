@@ -1898,7 +1898,7 @@ export default function App() {
       )}
 
       {appPhase === "main" && isTutorialActive && (
-        <TutorialOverlay characterLayouts={gameConfig.characterLayouts} characterBreakpoint={characterBreakpoint} onComplete={() => {
+        <TutorialOverlay characterLayouts={gameConfig.characterLayouts} characterBreakpoint={characterBreakpoint} storyTextOverrides={gameConfig.storyText} onComplete={() => {
           markTutorialCompleted();
           setIsTutorialActive(false);
           setCurrentScene("ops");

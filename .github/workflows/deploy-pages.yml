@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -38,6 +40,9 @@ jobs:
           VITE_FIREBASE_DATABASE_URL: https://deng-deng-squad-default-rtdb.asia-southeast1.firebasedatabase.app
           VITE_FIREBASE_CONFIG_PATH: gameConfig/v1
         run: npm run build
+
+      - name: Keep direct story routes working
+        run: cp '程式碼/dist/index.html' '程式碼/dist/404.html'
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

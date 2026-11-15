@@ -3,11 +3,13 @@ import { createPortal } from "react-dom";
 import { characterImages } from "../data/characterImages";
 import { CHARACTERS } from "../data/responses";
 import { tutorialSteps, type TutorialSpeaker, type TutorialTarget } from "../data/tutorial";
+import { storyText, type StoryTextOverrides } from "../data/storyText";
 import { playSound } from "../utils/audio";
 import type { CharacterBreakpoint, CharacterId, CharacterLayoutConfig } from "../config/types";
 
 interface TutorialOverlayProps {
   onComplete: () => void;
+  storyTextOverrides: StoryTextOverrides;
   characterLayouts: CharacterLayoutConfig;
   characterBreakpoint: CharacterBreakpoint;
 }
@@ -46,10 +48,15 @@ function getSpotlightRect(target: TutorialTarget | null): SpotlightRect | null {
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
-export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete, characterLayouts, characterBreakpoint }) => {
+export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete, characterLayouts, characterBreakpoint, storyTextOverrides }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
-  const step = tutorialSteps[stepIndex];
+  const steps = useMemo(() => tutorialSteps.map((item) => ({
+    ...item,
+    title: storyText(storyTextOverrides, `tutorial.base.${item.id}.title`, item.title),
+    dialogue: item.dialogue.map((entry, index) => ({ ...entry, text: storyText(storyTextOverrides, `tutorial.base.${item.id}.${index}`, entry.text) })),
+  })), [storyTextOverrides]);
+  const step = steps[stepIndex];
   const line = step?.dialogue[lineIndex];
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [dialogueTop, setDialogueTop] = useState<number | null>(null);
@@ -114,7 +121,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete, ch
       setLineIndex((index) => index + 1);
       return;
     }
-    if (stepIndex < tutorialSteps.length - 1) {
+    if (stepIndex < steps.length - 1) {
       setStepIndex((index) => index + 1);
       setLineIndex(0);
       return;
@@ -228,8 +235,8 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ onComplete, ch
                 {line.text}
               </span>
               <span className="mt-2 flex items-center justify-between border-t border-zinc-800 pt-2 font-mono text-[9px] text-zinc-500 sm:text-[10px]">
-                <span>{stepIndex + 1} / {tutorialSteps.length}　•　{lineIndex + 1} / {step.dialogue.length}</span>
-                <span className="font-bold text-amber-400">{stepIndex === tutorialSteps.length - 1 && lineIndex === step.dialogue.length - 1 ? "完成導覽　▼" : "下一步　▼"}</span>
+                <span>{stepIndex + 1} / {steps.length}　•　{lineIndex + 1} / {step.dialogue.length}</span>
+                <span className="font-bold text-amber-400">{stepIndex === steps.length - 1 && lineIndex === step.dialogue.length - 1 ? "完成導覽　▼" : "下一步　▼"}</span>
               </span>
             </button>
         </div>

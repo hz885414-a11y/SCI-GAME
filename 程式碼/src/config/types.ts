@@ -17,7 +17,20 @@ export type RhythmEditsByDifficulty = Partial<Record<RhythmDifficulty, RhythmCha
 export interface CombatEffectFrame { x: number; y: number; width: number; height: number; durationMs: number; }
 export interface CombatEffectAsset { image: string; manifest?: { frames: CombatEffectFrame[]; loopMode?: "loop" | "none" }; imageName?: string; manifestName?: string; }
 export type CombatEffectPhase = "charge" | "travel" | "impact" | "residue";
-export interface CombatEffectBinding { id: string; label: string; group: "robot" | "boss"; asset?: CombatEffectAsset; layers?: Partial<Record<CombatEffectPhase, CombatEffectAsset>>; scale: number; }
+export interface CombatEffectEditorSettings {
+  attacker: { x: number; y: number; scale: number };
+  defender: { x: number; y: number; scale: number };
+  effect: { x: number; y: number; scale: number };
+  releaseFrame: number; hitFrame: number; damageFrame?: number; totalFrames: number;
+  muzzle?: { x: number; y: number }; impact?: { x: number; y: number };
+  actorKeys?: Array<{ at: number; spriteFrame: number }>;
+  targetKeys?: Array<{ at: number; spriteFrame: number }>;
+  effectKeys?: Array<{ at: number; spriteFrame: number }>;
+  direction?: "right" | "left"; distance?: number;
+  beamMode?: "stretch" | "tile"; beamThickness?: number;
+  interrupt?: "stop" | "finish"; pierce?: boolean;
+}
+export interface CombatEffectBinding { id: string; label: string; group: "robot" | "boss"; asset?: CombatEffectAsset; layers?: Partial<Record<CombatEffectPhase, CombatEffectAsset>>; sourceEffectId?: string; scale: number; editor?: CombatEffectEditorSettings; }
 
 export interface GameplayConfig {
   playerBaseAttack: number;
@@ -115,6 +128,8 @@ export interface GameConfig {
   scenarios: Scenario[];
   prologue: ProloguePage[];
   ending: ProloguePage[];
+  /** Text edited from the story timeline; stable keys keep branch logic in code. */
+  storyText: Record<string, string>;
   bosses: BossAdminDefinition[];
   supplyShopItems: SupplyShopItem[];
   /** Versioned, shared rhythm chart edits. The JSON source files remain the base chart. */

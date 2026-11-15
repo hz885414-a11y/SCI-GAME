@@ -13,6 +13,7 @@ import { AmbientDialogueAdmin } from "./AmbientDialogueAdmin";
 import { RhythmChartAdmin } from "./RhythmChartAdmin";
 import { CardAlignmentCalibration } from "./CardAlignmentCalibration";
 import { CombatEffectsAdmin } from "./CombatEffectsAdmin";
+import { StoryTimelineAdmin } from "./StoryTimelineAdmin";
 import { getAllRhythmEdits, syncRhythmEdits } from "../rhythm/charts";
 
 type ModuleId = (typeof ADMIN_MODULES)[number]["id"];
@@ -21,8 +22,10 @@ const IMPACT: Record<ModuleId, string> = {
   gameplay: "影響位置：行動任務與 Boss 戰。重新進入戰鬥後套用。",
   bosses: "影響位置：六個展覽 Boss 戰；重新進入該 Boss 戰後套用。",
   effects: "影響位置：機器人與六個 Boss 的戰鬥技能；儲存後重新進入戰鬥即可套用。",
+  pixelfx: "用途：預覽與挑選日後要導入遊戲的 PixelFX 特效；不會直接變更遊戲內容。",
   supply: "影響位置：基地的後勤補給部；重新進入該畫面後套用。",
   prologue: "影響位置：開始畫面後的「SCI // 前情提要」。設定選單也可重新播放。",
+  timeline: "影響位置：序章、新手教學、章節過場與三種結局；儲存到 Firebase 後，重新進入遊戲即可讀取。",
   ending: "影響位置：六個魔王皆擊敗後的三頁階段性結局，以及 /END 測試畫面。",
   knowledge: "影響位置：累積指定行為後顯示知識事件，並發放對應的圖鑑卡片。",
   cardEvents: "影響位置：伺服器統一處理玩家事件、累積 stats、卡片規則與 pendingCards。",
@@ -262,8 +265,11 @@ export function AdminPage() {
         {active === "bosses" && <BossAdmin bosses={config.bosses} onChange={(bosses) => setConfig({ ...config, bosses })} />}
 
         {active === "effects" && <CombatEffectsAdmin effects={config.combatEffects} onChange={(combatEffects) => setConfig({ ...config, combatEffects })} />}
+        {active === "pixelfx" && <section className="admin-stack"><div className="admin-card-event-note"><b>PixelFX 特效展示與候選清單</b><p>在獨立展示頁逐一播放、搜尋與挑選特效。選擇會保存在目前瀏覽器，之後可依識別碼匯出 Sprite Sheet 或接入遊戲。</p></div><a className="admin-add" href={`${import.meta.env.BASE_URL}effects`}>開啟 PixelFX 特效展示 →</a></section>}
 
         {active === "supply" && <SupplyShopAdmin items={config.supplyShopItems} onChange={(supplyShopItems) => setConfig({ ...config, supplyShopItems })} />}
+
+        {active === "timeline" && <StoryTimelineAdmin config={config} onChange={setConfig} />}
 
         {active === "prologue" && <div className="admin-stack">{config.prologue.map((page, pageIndex) => <details className="admin-record" key={page.id} open={pageIndex === 0}><summary><b>第 {pageIndex + 1} 頁｜{page.title}</b><span>遊戲前情提要 STORY {String(pageIndex + 1).padStart(2, "0")}</span></summary><div className="admin-record-body"><label>頁面標題<input value={page.title} onChange={(e) => updateArrayItem("prologue", pageIndex, { title: e.target.value })} /></label><label>背景圖片網址<input value={page.backgroundImage || ""} onChange={(e) => updateArrayItem("prologue", pageIndex, { backgroundImage: e.target.value || null })} /></label>{(page.segments || [{ paragraphs: page.paragraphs }]).map((segment, segmentIndex) => <div className="admin-subsection" key={segmentIndex}><h3>第 {segmentIndex + 1} 段</h3>{segment.paragraphs.map((paragraph, paragraphIndex) => <div className="admin-line" key={paragraphIndex}><textarea value={paragraph.text} onChange={(e) => { const segments = structuredClone(page.segments || [{ paragraphs: page.paragraphs }]); segments[segmentIndex].paragraphs[paragraphIndex].text = e.target.value; updateArrayItem("prologue", pageIndex, { segments }); }} /><label className="admin-check"><input type="checkbox" checked={Boolean(paragraph.emphasis)} onChange={(e) => { const segments = structuredClone(page.segments || [{ paragraphs: page.paragraphs }]); segments[segmentIndex].paragraphs[paragraphIndex].emphasis = e.target.checked; updateArrayItem("prologue", pageIndex, { segments }); }} />重點高亮</label></div>)}</div>)}</div></details>)}</div>}
 

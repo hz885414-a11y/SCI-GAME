@@ -5,6 +5,12 @@ import {
   Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock, Menu
 } from "lucide-react";
 import { SpriteAnimator } from "./SpriteAnimator";
+import { ChapterTransition } from "./ChapterTransition";
+import { CHAPTER_ONE_TO_TWO } from "../data/chapterTransitions";
+import { MAIN_STORY_SCENES } from "../data/mainStory";
+import { getStoryBeats, type StoryChoices } from "../data/storyBranches";
+import { editStoryBeat, storyText } from "../data/storyText";
+import { FIRST_MISSION_LIGHT_GUIDE_LINES, BOSS_COMBAT_TUTORIAL_LINES } from "../data/tutorialStory";
 import { BossWarningTransition } from "./BossWarningTransition";
 import { gameCharacterSprites, walkSprites } from "../data/gameCharacterSprites";
 import { getBossVisualSet, type BossVisualState } from "../data/bossVisualConfig";
@@ -163,6 +169,9 @@ interface ShelterPerimeterDepthGate {
   destinationY: number;
   nextArea: number;
 }
+interface DawnCityGate {
+  x: number; y: number; destinationX: number; destinationY: number; entered: boolean;
+}
 
 interface ShelterNpc {
   id: string;
@@ -254,6 +263,13 @@ const SHELTER_FURNITURE_ASSET = "/assets/shelter-props/post-apoc/Post%20Apoc%20S
 const SHELTER_PERIMETER_GATE_INTERACTION_RANGE = 104;
 const SHELTER_PERIMETER_INITIAL_ENEMIES = 4;
 const SHELTER_PERIMETER_FINAL_AREA = 5;
+const DAWN_CITY_MAP_SIZE = { width: 2400, height: 1600 };
+const DAWN_CITY_NPC_SEEDS = [
+  { id: "liaison", name: "城市聯絡員・遙", color: "#67e8f9", x: 1080, y: 1120, dialogueLines: ["城內已經安全，出城後請保持照明。"] },
+  { id: "engineer", name: "鐵道維修師・柊", color: "#fbbf24", x: 1320, y: 1080, dialogueLines: ["列車軌道延伸到城外，那邊仍有黑影活動。"] },
+  { id: "medic", name: "巡迴醫護・晴", color: "#f9a8d4", x: 1170, y: 1290, dialogueLines: ["先在曙光城補給，再往北側城門出發吧。"] },
+  { id: "volunteer", name: "廣場志工・洛", color: "#86efac", x: 1450, y: 1240, dialogueLines: ["我們會守著城裡的燈，外面就交給你了。"] },
+] as const;
 const SHELTER_PERIMETER_THREATS = [
   { hpMultiplier: 1, speedMultiplier: 1, densityMultiplier: 1 },
   { hpMultiplier: 1.45, speedMultiplier: 1.1, densityMultiplier: 1.15 },
@@ -293,21 +309,6 @@ const CHAPTER_ONE_NPC_LINES = [
 const CHAPTER_ONE_SHELTER_CLEARED_KEY = "squad_chapter_one_shelter_cleared";
 const CHAPTER_ONE_SHIELD_REWARD_KEY = "squad_chapter_one_shield_materials_awarded";
 const FIRST_MISSION_LIGHT_GUIDE_KEY = "squad_first_mission_light_guide_seen";
-const FIRST_MISSION_LIGHT_GUIDE_LINES = [
-  "任務開始前，先認識右下角的工作燈。",
-  "關閉工作燈時，暗物質較不容易發現你。",
-  "按一下會切換成弱光：照亮前方，同時維持較低耗電。",
-  "再按一下是強光：照射範圍更大，但會快速耗電並吸引暗物質。",
-  "善用關閉、弱光與強光，安全清除避難所內的暗物質。",
-  "本關沒有倒數。清除全部 30 隻暗物質後，就能完成第一章。",
-] as const;
-const BOSS_COMBAT_TUTORIAL_LINES = [
-  "這是 C2-932 的機器人作戰。先看清戰場與底部控制列；教學期間不會開始戰鬥。",
-  "發光的是移動控制：用 WASD／方向鍵，或左下搖桿走位，避開 Boss 的攻擊範圍。",
-  "右下發光的是技能按鈕：Z 重拳、X 防禦、C 雷射、V 大招；手機可直接點按。",
-  "現在注意 X 防禦與 C 雷射：危險時按住防禦，拉開距離時用雷射輸出。",
-  "最後是 V 大招：能量累積到 100% 後才可使用。擊敗 AMPA 後會開放其餘 Boss 戰。",
-] as const;
 type AdventureUpgradeId = "batteryCapacity" | "energySaver" | "mobility" | "protection" | "lightDamage" | "lightRange";
 type AdventureUpgradeChoice = { id: AdventureUpgradeId; name: string; desc: string; icon: string; level: number; maxLevel: number; nextEffect: string };
 const ADVENTURE_UPGRADE_CONFIG: Record<AdventureUpgradeId, { name: string; icon: string; maxLevel: number; description: string; effect: (nextLevel: number) => string }> = {
@@ -633,6 +634,12 @@ export function MissionGame({
   const [memoryFollowUpStep, setMemoryFollowUpStep] = useState<number | null>(null);
   const [chapterOneNpcEventStep, setChapterOneNpcEventStep] = useState<number | null>(null);
   const [chapterOneCompletionComm, setChapterOneCompletionComm] = useState(false);
+  const [chapterTransitionStep, setChapterTransitionStep] = useState<number | null>(null);
+  const [chapterTransitionChapter, setChapterTransitionChapter] = useState(1);
+  const [storyChoices, setStoryChoices] = useState<StoryChoices>(() => {
+    try { return JSON.parse(localStorage.getItem("sci_main_story_choices_v1") || "{}") as StoryChoices; }
+    catch { return {}; }
+  });
   const [chapterOneReturnGuideActive, setChapterOneReturnGuideActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [isOvertime, setIsOvertime] = useState(false);
@@ -1019,10 +1026,11 @@ export function MissionGame({
   const isMissionPositionWalkable = (x: number, y: number, radius = 0) => {
     const mask = missionMaskDataRef.current;
     if (!mask) return false;
+    const missionWorld = selectedChapter === 5 ? DAWN_CITY_MAP_SIZE : MISSION_MAP_CONFIG.worldSize;
 
     const samplePoint = (sampleX: number, sampleY: number) => {
-      const pixelX = Math.floor(sampleX);
-      const pixelY = Math.floor(sampleY);
+      const pixelX = Math.floor(sampleX / missionWorld.width * mask.width);
+      const pixelY = Math.floor(sampleY / missionWorld.height * mask.height);
       if (pixelX < 0 || pixelX >= mask.width || pixelY < 0 || pixelY >= mask.height) return false;
       return mask.walkable[pixelY * mask.width + pixelX] === 1;
     };
@@ -1038,7 +1046,7 @@ export function MissionGame({
   };
 
   const findWalkableSpawn = (radius: number, center?: { x: number; y: number }, distance = 0) => {
-    const { width, height } = MISSION_MAP_CONFIG.worldSize;
+    const { width, height } = selectedChapter === 5 ? DAWN_CITY_MAP_SIZE : MISSION_MAP_CONFIG.worldSize;
     for (let attempt = 0; attempt < MISSION_MAP_CONFIG.spawnAttempts; attempt++) {
       const angle = Math.random() * Math.PI * 2;
       const candidateDistance = center ? distance * (0.8 + Math.random() * 0.4) : 0;
@@ -1286,6 +1294,8 @@ export function MissionGame({
     shelterPerimeterArea: 0,
     shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
     shelterPerimeterArrivalUntilTick: 0,
+    dawnCityGate: null as DawnCityGate | null,
+    dawnCityExpeditionActive: false,
     playerDialogueText: null as string | null,
     playerDialogueUntilTick: 0,
     shelterNpcs: [] as ShelterNpc[],
@@ -1362,10 +1372,10 @@ export function MissionGame({
   useEffect(() => {
     if (firstMissionLightGuideStep === null) return;
     const state = engineRef.current;
-    const line = FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep];
+    const line = storyText(gameConfig.storyText, `tutorial.light.${firstMissionLightGuideStep}`, FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep]);
     state.playerDialogueText = line;
     state.playerDialogueUntilTick = Number.MAX_SAFE_INTEGER;
-  }, [firstMissionLightGuideStep]);
+  }, [firstMissionLightGuideStep, gameConfig.storyText]);
 
   useEffect(() => {
     if (bossIntroPhase === "entrance") {
@@ -1893,6 +1903,7 @@ export function MissionGame({
     setMemoryFollowUpStep(null);
     setChapterOneNpcEventStep(null);
     setChapterOneCompletionComm(false);
+    setChapterTransitionStep(null);
     setChapterOneReturnGuideActive(false);
     chapterOnePeacefulRef.current = chapterOneAlreadyCleared;
     chapterOneCompletedThisRunRef.current = false;
@@ -1920,7 +1931,7 @@ export function MissionGame({
     setBatteryMode("OFF");
     // Chapter 1's opening is objective-based, while its cleared version is a
     // peaceful NPC space. Other chapters retain their survival timers.
-    setTimeLeft(selectedChapter === 1 ? 0 : isDemoMode ? 30 : 90);
+    setTimeLeft(selectedChapter === 1 || selectedChapter === 5 ? 0 : isDemoMode ? 30 : 90);
     setIsOvertime(false);
     setTideAlert("idle");
     setAreaTransition(null);
@@ -1939,11 +1950,13 @@ export function MissionGame({
     robotSelectionRef.current = null;
 
     const initMaxBattery = baseAgent.maxBattery + supplyEffects.battery;
-    const configuredSpawn = MISSION_MAP_CONFIG.playerSpawn;
+    const mapSize = selectedChapter === 5 ? { ...DAWN_CITY_MAP_SIZE } : { ...MISSION_MAP_CONFIG.worldSize };
+    const configuredSpawn = selectedChapter === 5
+      ? { x: mapSize.width / 2, y: mapSize.height * .72 }
+      : MISSION_MAP_CONFIG.playerSpawn;
     const initialPlayerPosition = isMissionPositionWalkable(configuredSpawn.x, configuredSpawn.y, 14)
       ? configuredSpawn
       : findWalkableSpawn(14) || configuredSpawn;
-    const mapSize = { ...MISSION_MAP_CONFIG.worldSize };
     const viewportWidth = isMobile ? 500 : 1400;
     const viewportHeight = isMobile ? 750 : 900;
     const initialCamera = {
@@ -1990,6 +2003,8 @@ export function MissionGame({
       shelterPerimeterArea: 0,
       shelterPerimeterNextGate: null as ShelterPerimeterDepthGate | null,
       shelterPerimeterArrivalUntilTick: 0,
+      dawnCityGate: null as DawnCityGate | null,
+      dawnCityExpeditionActive: false,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       shelterNpcs: [],
@@ -2113,6 +2128,28 @@ export function MissionGame({
         destinationY: perimeterPosition.y,
         entered: false,
       };
+    }
+
+    if (selectedChapter === 5) {
+      // Dawn City is intentionally a quiet staging space. Four fixed NPCs are
+      // cheaper than an ambient crowd and leave room for the player to read
+      // the enlarged plaza before choosing to leave the city.
+      engineRef.current.shelterNpcs = DAWN_CITY_NPC_SEEDS.map((seed) => ({
+        ...seed, homeX: seed.x, homeY: seed.y, movement: "corner" as const, wanderRadius: 22,
+        targetX: seed.x, targetY: seed.y, nextWanderTick: 0, radius: 16,
+        interactionCount: 0, dialogueText: null, dialogueUntilTick: 0,
+      }));
+      const findCityGate = () => {
+        for (let y = 360; y <= 760; y += 20) for (let offset = 0; offset <= 780; offset += 20) {
+          for (const x of offset === 0 ? [DAWN_CITY_MAP_SIZE.width / 2] : [DAWN_CITY_MAP_SIZE.width / 2 - offset, DAWN_CITY_MAP_SIZE.width / 2 + offset]) {
+            if (isMissionPositionWalkable(x, y, 22)) return { x, y };
+          }
+        }
+        return null;
+      };
+      const gatePosition = findCityGate() || { x: DAWN_CITY_MAP_SIZE.width / 2, y: 540 };
+      const outskirts = findWalkableSpawn(18, gatePosition, 520) || { x: DAWN_CITY_MAP_SIZE.width / 2, y: 300 };
+      engineRef.current.dawnCityGate = { ...gatePosition, destinationX: outskirts.x, destinationY: outskirts.y, entered: false };
     }
 
     // Chapter two introduces an immobile objective: three dark cores are
@@ -2255,6 +2292,10 @@ export function MissionGame({
     }
     triggerSound("victory");
     setStage("REPORT");
+    if (selectedChapter >= 2 && selectedChapter <= 5) {
+      setChapterTransitionChapter(selectedChapter);
+      setChapterTransitionStep(0);
+    }
   };
 
   // Returning to base remains risky: the simulation and incoming damage keep
@@ -2285,7 +2326,11 @@ export function MissionGame({
       evacuationTimerRef.current = window.setTimeout(() => {
         evacuationTimerRef.current = null;
         if (engineRef.current.player.hp <= 0) return;
-        if (isFirstChapterReturn) onChapterOneShelterCleared();
+        if (isFirstChapterReturn) {
+          keysRef.current = {};
+          setChapterTransitionChapter(1);
+          setChapterTransitionStep(0);
+        }
         else enterReport();
       }, EVACUATION_LAUNCH_MS);
     }, 2000);
@@ -2419,6 +2464,8 @@ export function MissionGame({
       shelterPerimeterArea: 0,
       shelterPerimeterNextGate: null,
       shelterPerimeterArrivalUntilTick: 0,
+      dawnCityGate: null,
+      dawnCityExpeditionActive: false,
       playerDialogueText: null,
       playerDialogueUntilTick: 0,
       collectibles: [],
@@ -2624,7 +2671,7 @@ export function MissionGame({
       const cinematicNow = performance.now();
       const isUltimateCinematic = Boolean(cinematic && cinematicNow < cinematic.endAt);
       if (cinematic && !isUltimateCinematic) state.ultimateCinematic = null;
-      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null || isUltimateCinematic;
+      const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || chapterTransitionStep !== null || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null || isUltimateCinematic;
 
       // The ultimate cut-in intentionally freezes combat time, but not the
       // camera. Dash Punch also interpolates the robot here so the camera can
@@ -2694,7 +2741,7 @@ export function MissionGame({
       // 1. UPDATE GAME TIMER. Reaching zero now starts a dangerous overtime
       // instead of silently completing the mission; V evacuation is the
       // player's successful exit route.
-      if (stage === "PLAYING" && (selectedChapter !== 1 || state.shelterPerimeterActive) && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && state.ticks % 60 === 0) {
+      if (stage === "PLAYING" && (selectedChapter !== 1 || state.shelterPerimeterActive) && (selectedChapter !== 5 || state.dawnCityExpeditionActive) && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && state.ticks % 60 === 0) {
         setTimeLeft((prev) => {
           if (prev === 11 && (selectedChapter !== 1 || state.shelterPerimeterActive) && !tideCountdownAnnouncedRef.current) {
             tideCountdownAnnouncedRef.current = true;
@@ -2867,7 +2914,7 @@ export function MissionGame({
       }
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
-      if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive)) {
+      if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && (selectedChapter !== 5 || state.dawnCityExpeditionActive)) {
         const drainRate = (batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
           : 0.03) * (0.9 ** adventureUpgradeLevels.energySaver);
@@ -3676,7 +3723,7 @@ export function MissionGame({
       // Spawn enemies in survivors mode
       // The cleared Chapter 1 shelter itself stays peaceful. Its newly opened
       // perimeter map is an exception: it uses the regular survivor spawner.
-      if (stage === "PLAYING" && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive)) {
+      if (stage === "PLAYING" && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && (selectedChapter !== 5 || state.dawnCityExpeditionActive)) {
         // Black tide is intentionally hard to outlast: a low, repeated shake
         // sells the unstable world without locking the player's controls.
         if (state.overtime && state.ticks % 12 === 0) triggerCameraShake(state, 3.4);
@@ -4285,6 +4332,32 @@ export function MissionGame({
       // three-second meter stays smooth and does not cause a component render
       // every simulation step. Leaving range pauses purification; interacting
       // again beside the core resumes it from the displayed amount.
+      if (stage === "PLAYING" && selectedChapter === 5 && !state.dawnCityExpeditionActive) {
+        const cityGate = state.dawnCityGate as DawnCityGate | null;
+        const nearbyNpc = (state.shelterNpcs as ShelterNpc[]).reduce<ShelterNpc | null>((nearest, npc) => {
+          if (Math.hypot(npc.x - player.x, npc.y - player.y) > SHELTER_NPC_INTERACTION_RANGE) return nearest;
+          return !nearest || Math.hypot(npc.x - player.x, npc.y - player.y) < Math.hypot(nearest.x - player.x, nearest.y - player.y) ? npc : nearest;
+        }, null);
+        if (cityGate && Math.hypot(cityGate.x - player.x, cityGate.y - player.y) <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE) {
+          interactionTargetRef.current = {
+            label: cityGate.entered ? "前往曙光城外圍" : "穿越北城門・離開曙光城",
+            onTap: () => {
+              player.x = cityGate.destinationX; player.y = cityGate.destinationY;
+              cityGate.entered = true; state.dawnCityExpeditionActive = true;
+              state.shelterNpcs = []; state.enemies = []; state.spawnTimer = 0;
+              setTimeLeft(isDemoMode ? 30 : 90); setIsOvertime(false); setTideAlert("idle");
+              tideCountdownAnnouncedRef.current = false; setAreaTransition("曙光城外圍");
+              setInteractionFeedback("已離開曙光城・外圍偵測到黑影活動"); triggerSound("power");
+            },
+          };
+        } else if (nearbyNpc) {
+          interactionTargetRef.current = {
+            label: `與${nearbyNpc.name}交談`,
+            onTap: () => { nearbyNpc.dialogueText = nearbyNpc.dialogueLines[nearbyNpc.interactionCount % nearbyNpc.dialogueLines.length]; nearbyNpc.dialogueUntilTick = state.ticks + 210; nearbyNpc.interactionCount += 1; },
+          };
+        } else interactionTargetRef.current = null;
+      }
+
       if (stage === "PLAYING" && selectedChapter === 1 && chapterOnePeacefulRef.current) {
         const shelterNpcs = state.shelterNpcs as ShelterNpc[];
         if (!state.shelterPerimeterActive) shelterNpcs.forEach((npc) => {
@@ -4419,7 +4492,7 @@ export function MissionGame({
             interactionTargetRef.current = null;
           }
         }
-      } else if (stage === "PLAYING" && state.darkCores) {
+      } else if (stage === "PLAYING" && state.darkCores && !(selectedChapter === 5 && !state.dawnCityExpeditionActive)) {
         let nearestCore: DarkCoreEntity | null = null;
         let nearestDistance = Infinity;
 
@@ -5834,8 +5907,24 @@ export function MissionGame({
         }
       }
 
+      const isDawnCitySafe = stage === "PLAYING" && selectedChapter === 5 && !state.dawnCityExpeditionActive;
+      if (isDawnCitySafe) {
+        // Static city dressing: only a few vector blocks are drawn per frame,
+        // so the larger 2400×1600 city has no crowd/physics overhead.
+        ctx.save();
+        ctx.fillStyle = "#20242f"; ctx.fillRect(0, 0, state.mapSize.width, state.mapSize.height);
+        ctx.fillStyle = "#303846"; ctx.fillRect(0, 900, state.mapSize.width, 190);
+        ctx.fillStyle = "#171c25"; ctx.fillRect(1050, 0, 300, state.mapSize.height);
+        const blocks: Array<[number, number, number, number]> = [[160,180,370,290],[610,140,290,350],[1490,150,350,280],[1940,210,300,330],[120,1120,360,250],[590,1180,270,250],[1630,1130,340,280],[2050,1080,220,310]];
+        blocks.forEach(([x,y,w,h], index) => { ctx.fillStyle = index % 2 ? "#3b4350" : "#343b47"; ctx.fillRect(x,y,w,h); ctx.fillStyle = "#111827"; for (let wx = x + 34; wx < x + w - 20; wx += 54) for (let wy = y + 34; wy < y + h - 18; wy += 46) ctx.fillRect(wx,wy,18,13); });
+        ctx.strokeStyle = "rgba(196,181,253,.52)"; ctx.lineWidth = 4; ctx.setLineDash([16,14]); ctx.beginPath(); ctx.moveTo(0,995); ctx.lineTo(state.mapSize.width,995); ctx.moveTo(1200,0); ctx.lineTo(1200,state.mapSize.height); ctx.stroke(); ctx.setLineDash([]);
+        [[960,1080],[1440,1060],[1010,1280],[1390,1270],[820,850],[1580,850]].forEach(([x,y]) => { const glow=ctx.createRadialGradient(x,y,2,x,y,58); glow.addColorStop(0,"rgba(250,204,21,.34)"); glow.addColorStop(1,"rgba(250,204,21,0)"); ctx.fillStyle=glow; ctx.beginPath();ctx.arc(x,y,58,0,Math.PI*2);ctx.fill();ctx.fillStyle="#fde68a";ctx.fillRect(x-3,y-24,6,24); });
+        ctx.fillStyle = "#e9d5ff"; ctx.font = "bold 18px monospace"; ctx.textAlign = "center"; ctx.fillText("曙光城・安全廣場", state.mapSize.width / 2, 1180);
+        ctx.restore();
+      }
+
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
-      if (stage === "PLAYING") {
+      if (stage === "PLAYING" && !isDawnCitySafe) {
         ctx.strokeStyle = activeChapter.gridColor;
         ctx.lineWidth = 1;
         const gridSize = 40;
@@ -5893,6 +5982,17 @@ export function MissionGame({
           ctx.fillStyle = "#fef3c7";
           ctx.fillText("點擊互動進入", 0, 40);
         }
+        ctx.restore();
+      }
+      const dawnCityGate = state.dawnCityGate as DawnCityGate | null;
+      if (isDawnCitySafe && dawnCityGate) {
+        const nearGate = Math.hypot(dawnCityGate.x - player.x, dawnCityGate.y - player.y) <= SHELTER_PERIMETER_GATE_INTERACTION_RANGE;
+        ctx.save(); ctx.translate(dawnCityGate.x, dawnCityGate.y);
+        ctx.fillStyle = "#1f2937"; ctx.fillRect(-62, -62, 124, 84);
+        ctx.strokeStyle = "#c4b5fd"; ctx.lineWidth = 4; ctx.strokeRect(-62, -62, 124, 84);
+        ctx.strokeStyle = "#64748b"; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-37, -62); ctx.lineTo(-37, 22); ctx.moveTo(37, -62); ctx.lineTo(37, 22); ctx.stroke();
+        ctx.fillStyle = "#ede9fe"; ctx.font = "bold 11px monospace"; ctx.textAlign = "center"; ctx.fillText("↑ 北城門・城外危險區", 0, -76);
+        if (nearGate) { ctx.fillStyle = "#fef3c7"; ctx.fillText("點擊互動離開城市", 0, 42); }
         ctx.restore();
       }
       const shelterPerimeterGate = state.shelterPerimeterGate as ShelterPerimeterGate | null;
@@ -6124,6 +6224,7 @@ export function MissionGame({
             ctx.imageSmoothingEnabled = false;
             const frames = travelAsset?.manifest?.frames;
             const effectScale = Math.max(1.65, laserBinding?.scale ?? 1);
+            const edit = laserBinding?.editor;
             // The supplied sheet has real transparent pixels, so draw it as
             // authored instead of blending away its cyan/white core.
             ctx.globalCompositeOperation = "source-over";
@@ -6134,26 +6235,39 @@ export function MissionGame({
             const dx = b.laserEndX! - b.x; const dy = b.laserEndY! - b.y;
             const fullLength = Math.max(1, Math.hypot(dx, dy));
             const unitX = dx / fullLength; const unitY = dy / fullLength;
-            // Offset from the body centre to the robot's forward weapon port.
-            const muzzleX = b.x + unitX * 34; const muzzleY = b.y + unitY * 8;
-            const beamProgress = Math.min(1, progress / .34);
-            const liveFrame = frames?.[Math.min(2, Math.floor(progress * 8) % 3)];
+            // Editor anchors are relative to each sprite's feet; gameplay positions are at the sprite centre.
+            const muzzleX = b.x + unitX * (edit?.muzzle?.x ?? 34);
+            const muzzleY = b.y + (edit?.muzzle ? edit.muzzle.y + 56 : 8);
+            const impactX = b.laserEndX! + (edit?.impact?.x ?? 0);
+            const impactY = b.laserEndY! + (edit?.impact ? edit.impact.y + 42 : 0);
+            const startAt = edit ? edit.releaseFrame / Math.max(1, edit.totalFrames) : 0;
+            const hitAt = edit ? edit.hitFrame / Math.max(1, edit.totalFrames) : .34;
+            const beamProgress = Math.min(1, Math.max(0, (progress - startAt) / Math.max(.01, hitAt - startAt)));
+            const effectKey = edit?.effectKeys?.filter((key) => key.at <= progress * (edit.totalFrames || 1)).at(-1)?.spriteFrame;
+            const liveFrame = frames?.[Math.max(0, Math.min(frames.length - 1, effectKey ?? Math.floor(progress * 8) % 3))];
             if (liveFrame) {
               ctx.save();
               ctx.translate(muzzleX, muzzleY);
-              ctx.rotate(Math.atan2(dy, dx));
-              ctx.drawImage(laserFx, liveFrame.x, liveFrame.y, liveFrame.width, liveFrame.height, 0, -48 * effectScale, Math.max(8, (fullLength - 34) * beamProgress), 96 * effectScale);
+              ctx.rotate(Math.atan2(impactY - muzzleY, impactX - muzzleX));
+              const beamLength = Math.max(1, Math.hypot(impactX - muzzleX, impactY - muzzleY) * beamProgress);
+              const beamHeight = edit?.beamThickness ?? 96 * effectScale;
+              if (progress >= startAt && progress < hitAt) {
+                if (edit?.beamMode === "tile") {
+                  const tileWidth = Math.max(4, liveFrame.width * beamHeight / liveFrame.height);
+                  for (let px = 0; px < beamLength; px += tileWidth) ctx.drawImage(laserFx, liveFrame.x, liveFrame.y, liveFrame.width, liveFrame.height, px, -beamHeight / 2, Math.min(tileWidth, beamLength - px), beamHeight);
+                } else ctx.drawImage(laserFx, liveFrame.x, liveFrame.y, liveFrame.width, liveFrame.height, 0, -beamHeight / 2, beamLength, beamHeight);
+              }
               ctx.restore();
             }
             // Only after the beam reaches its destination does the supplied
             // cutoff-burst sequence play at the Boss, producing a clear hit.
             const impactFrames = impactAsset?.manifest?.frames;
-            if (progress >= .34 && impactFx?.complete && impactFrames?.length) {
+            if (progress >= hitAt && impactFx?.complete && impactFrames?.length) {
               // beam-cutoff-burst frames 0–2 are a live horizontal beam;
               // impact begins at frame 3 so no extra line appears by the Boss.
               const impactStart = Math.min(3, impactFrames.length - 1);
-              const hitFrame = impactFrames[Math.min(impactFrames.length - 1, impactStart + Math.floor(((progress - .34) / .66) * (impactFrames.length - impactStart)))];
-              ctx.drawImage(impactFx, hitFrame.x, hitFrame.y, hitFrame.width, hitFrame.height, b.laserEndX! - 70 * effectScale, b.laserEndY! - 48 * effectScale, 96 * effectScale, 96 * effectScale);
+              const hitFrame = impactFrames[Math.min(impactFrames.length - 1, impactStart + Math.floor(((progress - hitAt) / Math.max(.01, 1 - hitAt)) * (impactFrames.length - impactStart)))];
+              ctx.drawImage(impactFx, hitFrame.x, hitFrame.y, hitFrame.width, hitFrame.height, impactX - 48 * effectScale, impactY - 48 * effectScale, 96 * effectScale, 96 * effectScale);
             }
             ctx.restore();
           }
@@ -6417,7 +6531,7 @@ export function MissionGame({
 
       // Cleared Chapter 1 turns into a small, testable NPC hub. These are
       // rendered in the world (not the HUD), so speech bubbles follow each NPC.
-      if (stage === "PLAYING" && isPeacefulShelter && !state.shelterPerimeterActive) {
+      if (stage === "PLAYING" && ((isPeacefulShelter && !state.shelterPerimeterActive) || (selectedChapter === 5 && !state.dawnCityExpeditionActive))) {
         (state.shelterProps as ShelterProp[] || []).forEach((prop) => {
           const near = Boolean(prop.interactive) && Math.hypot(prop.x - player.x, prop.y - player.y) <= SHELTER_PROP_INTERACTION_RANGE;
           const image = shelterPropImagesRef.current.furniture;
@@ -7499,7 +7613,7 @@ export function MissionGame({
 
       // Foreground dialogue layer: speech is rendered after every world
       // entity and particle, so it always remains readable above the scene.
-      if (stage === "PLAYING" && isPeacefulShelter && !state.shelterPerimeterActive) {
+      if (stage === "PLAYING" && ((isPeacefulShelter && !state.shelterPerimeterActive) || (selectedChapter === 5 && !state.dawnCityExpeditionActive))) {
         (state.shelterNpcs as ShelterNpc[]).forEach((npc) => {
           if (!npc.dialogueText || state.ticks >= npc.dialogueUntilTick) return;
           ctx.save();
@@ -7805,7 +7919,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, chapterTransitionStep, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -7824,7 +7938,7 @@ export function MissionGame({
     const bossVictoryActions = ["ampaBossVictory", "frankfurtBossVictory", "titeBossVictory", "aapexBossVictory", "metstradeBossVictory", "baumaBossVictory"] as const;
     const progressionStats = getPlayerStats();
     const defeatedBossCount = bossVictoryActions.filter((action) => progressionStats[action] > 0).length;
-    const shouldShowStageEnding = defeatedBossCount === bossVictoryActions.length && localStorage.getItem("sci_stage_ending_seen") !== "true";
+    const shouldShowStageEnding = selectedChapter !== 6 && defeatedBossCount === bossVictoryActions.length && localStorage.getItem("sci_stage_ending_seen") !== "true";
     recordAction("stagesCleared");
     const feedbackState = engineRef.current as any;
     if (feedbackState.boss) {
@@ -7875,6 +7989,10 @@ export function MissionGame({
         setStage("ENDING");
       } else {
         setStage("VICTORY");
+        if (selectedChapter === 6) {
+          setChapterTransitionChapter(6);
+          setChapterTransitionStep(0);
+        }
       }
 
     // Award squad affection points +150 points to selected agent!
@@ -7897,6 +8015,30 @@ export function MissionGame({
 
   const isFirstChapterClearRun = stage === "PLAYING" && selectedChapter === 1 && !chapterOnePeacefulRef.current;
   const isLightGuideHighlightingControl = firstMissionLightGuideStep === 2 || firstMissionLightGuideStep === 3;
+  const advanceChapterTransition = () => {
+    if (chapterTransitionStep === null) return;
+    triggerSound("click");
+    const beats = chapterTransitionChapter === 1
+      ? CHAPTER_ONE_TO_TWO.map((beat, index) => editStoryBeat(gameConfig.storyText, `transition.1to2.${index}`, beat))
+      : getStoryBeats(chapterTransitionChapter, storyChoices, gameConfig.storyText);
+    if (!beats) { setChapterTransitionStep(null); return; }
+    if (chapterTransitionStep < beats.length - 1) {
+      setChapterTransitionStep(chapterTransitionStep + 1);
+      return;
+    }
+    setChapterTransitionStep(null);
+    if (chapterTransitionChapter === 1) onChapterOneShelterCleared();
+  };
+  const chooseStoryAction = (id: string) => {
+    if (chapterTransitionStep === null || chapterTransitionChapter < 2) return;
+    const currentBeat = getStoryBeats(chapterTransitionChapter, storyChoices, gameConfig.storyText)[chapterTransitionStep];
+    if (!currentBeat?.choice?.some((option) => option.id === id)) return;
+    const next = { ...storyChoices, [chapterTransitionChapter]: id } as StoryChoices;
+    setStoryChoices(next);
+    try { localStorage.setItem("sci_main_story_choices_v1", JSON.stringify(next)); } catch { /* local persistence is optional */ }
+    triggerSound("click");
+    setChapterTransitionStep(chapterTransitionStep + 1);
+  };
 
   return (
     <div ref={gameRootRef} className="mission-game-shell fixed inset-0 bg-zinc-950/95 z-50 flex flex-col justify-between overflow-hidden font-mono text-zinc-100 touch-none overscroll-none" style={{ touchAction: "none", overscrollBehavior: "none" }}>
@@ -8178,7 +8320,7 @@ export function MissionGame({
               <div className="rounded border border-cyan-400/70 bg-cyan-950/70 px-3 py-1 font-mono text-[10px] font-black tracking-wider text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.24)]">
                 清除暗物質 {chapterOneEnemiesDefeated} / {CHAPTER_ONE_ENEMY_TARGET}
               </div>
-            </div> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && <div className="flex items-center justify-center">
+            </div> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && !(selectedChapter === 5 && !engineRef.current.dawnCityExpeditionActive) && <div className="flex items-center justify-center">
               <div className="px-3 py-1 bg-zinc-900/90 border border-zinc-800 rounded flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
                 <span className={`text-[10px] font-bold uppercase tracking-wider hidden sm:inline ${isOvertime ? "text-rose-300" : "text-zinc-400"}`}>{isOvertime ? "暗影暴走：" : "核心集結倒數:"}</span>
@@ -8392,7 +8534,7 @@ export function MissionGame({
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 text-[9px] leading-4 shadow-lg backdrop-blur-[6px]">
                 <span className="text-amber-400">🪙 {sessionCoins}</span><span className="text-orange-300">◆ {score}</span>
                 <span className="text-cyan-300">LV.{level} {Math.floor(Math.min(100, (exp / expNeeded) * 100))}%</span>
-                {isFirstChapterClearRun ? <span className="font-black text-cyan-200">清除 {chapterOneEnemiesDefeated}/{CHAPTER_ONE_ENEMY_TARGET}</span> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>}
+                {isFirstChapterClearRun ? <span className="font-black text-cyan-200">清除 {chapterOneEnemiesDefeated}/{CHAPTER_ONE_ENEMY_TARGET}</span> : !(selectedChapter === 1 && chapterOnePeacefulRef.current) && !(selectedChapter === 5 && !engineRef.current.dawnCityExpeditionActive) && <span className={`font-black ${isOvertime ? "animate-pulse text-rose-300" : "text-white"}`}><Clock className="mr-0.5 inline h-2.5 w-2.5" />{isOvertime ? "暴走 ×2" : `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, "0")}`}</span>}
               </div>
               <div className="relative">
                 <button type="button" onClick={() => setIsMobileGameMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-500/60 bg-[rgba(10,10,14,0.78)] text-orange-400 backdrop-blur-[6px]" aria-label="任務選單" aria-expanded={isMobileGameMenuOpen}><Menu className="h-4 w-4" /></button>
@@ -8587,6 +8729,15 @@ export function MissionGame({
             </div>
 
             <div className="mt-4">
+              {selectedChapter >= 2 && selectedChapter <= 5 && (
+                <button
+                  type="button"
+                  onClick={() => { setChapterTransitionChapter(selectedChapter); setChapterTransitionStep(0); }}
+                  className="mb-2 min-h-12 w-full rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 text-sm font-black text-amber-200"
+                >
+                  重看本章劇情：{MAIN_STORY_SCENES[selectedChapter].title}
+                </button>
+              )}
               <button
                 onClick={() => { bankCollectedMaterials(); onClose(); }}
                 className="min-h-12 w-full rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 text-sm font-black text-cyan-200"
@@ -9027,15 +9178,17 @@ export function MissionGame({
             <div className="text-4xl sm:text-6xl animate-bounce">🏆</div>
             <div className="space-y-1">
               <h1 className="text-xl sm:text-3xl font-black text-green-400 tracking-wider">
-                黑暗核心已被驅除！
+                {selectedChapter === 6 ? "中央核心已停止失控！" : "黑暗核心已被驅除！"}
               </h1>
               <p className="text-[9px] sm:text-xs text-zinc-400 tracking-widest uppercase">
-                CHAPTER PURIFIED SUCCESSFULLY
+                {selectedChapter === 6 ? "CENTRAL CORE SECURED" : "CHAPTER PURIFIED SUCCESSFULLY"}
               </p>
             </div>
 
             <p className="text-[11px] sm:text-xs text-zinc-300 leading-relaxed font-sans max-w-xs sm:max-w-none">
-              做得好！{selectedAgent.name} 駕駛燈燈機器人成功部署了完美的 SCI 全光能防護網，完全照亮並淨化了 <b>{CHAPTERS[selectedChapter - 1].name}</b>，驅散了暗影首領！
+              {selectedChapter === 6
+                ? <>做得好！{selectedAgent.name} 與燈燈小隊阻止了中央核心失控。接下來的處置，會依小隊一路做出的決定展開。</>
+                : <>做得好！{selectedAgent.name} 駕駛燈燈機器人成功部署了完美的 SCI 全光能防護網，完全照亮並淨化了 <b>{CHAPTERS[selectedChapter - 1].name}</b>，驅散了暗影首領！</>}
             </p>
 
             {getBossUltimateReward(selectedChapter) && (() => { const reward = getRobotUltimate(getBossUltimateReward(selectedChapter)); return <div className="w-full border border-amber-400/70 bg-amber-950/35 p-3 text-left"><p className="text-[9px] font-black tracking-[.18em] text-amber-300">BOSS REWARD UNLOCKED</p><p className="mt-1 font-black text-amber-100">{reward.icon} 新大招模組：{reward.name}</p><p className="mt-1 text-[10px] text-zinc-300">{reward.effect}。請至技術研發部 → 特殊系統裝備；同時只能裝備一個大招。</p></div>; })()}
@@ -9068,6 +9221,15 @@ export function MissionGame({
               </div>
             </div>
 
+            {selectedChapter === 6 && (
+              <button
+                type="button"
+                onClick={() => { setChapterTransitionChapter(6); setChapterTransitionStep(0); }}
+                className="min-h-12 w-full rounded border border-amber-400/50 bg-amber-950/35 px-4 text-sm font-bold text-amber-200"
+              >
+                重看最終劇情
+              </button>
+            )}
             <div className="flex items-center gap-2 sm:gap-3 w-full">
               <button
                 onClick={() => {
@@ -9088,7 +9250,7 @@ export function MissionGame({
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>重新挑戰</span>
               </button>
-              {entrySource !== "exhibition" && (
+              {entrySource !== "exhibition" && selectedChapter < 6 && (
                 <button
                   onClick={() => {
                     const nextCh = Math.min(6, selectedChapter + 1);
@@ -9180,6 +9342,20 @@ export function MissionGame({
         </div>
       )}
 
+      {chapterTransitionStep !== null && (
+        <ChapterTransition
+          beats={chapterTransitionChapter === 1
+            ? CHAPTER_ONE_TO_TWO.map((beat, index) => editStoryBeat(gameConfig.storyText, `transition.1to2.${index}`, beat))
+            : getStoryBeats(chapterTransitionChapter, storyChoices, gameConfig.storyText)}
+          index={chapterTransitionStep}
+          onAdvance={advanceChapterTransition}
+          onChoose={chooseStoryAction}
+          choiceSelected={Boolean(storyChoices[chapterTransitionChapter as keyof StoryChoices])}
+          title={chapterTransitionChapter === 1 ? "CHAPTER 01 → 02" : MAIN_STORY_SCENES[chapterTransitionChapter].title}
+          finishLabel={chapterTransitionChapter === 1 ? "返回基地・準備第二章" : MAIN_STORY_SCENES[chapterTransitionChapter].finishLabel}
+        />
+      )}
+
       {stage === "PLAYING" && chapterOneCompletionComm && (
         <div className="absolute inset-0 z-[76] flex items-center justify-center bg-sky-950/75 p-4 backdrop-blur-sm" role="status" aria-live="assertive" aria-label="避難所清除完成通訊">
           <div className="w-full max-w-xl border border-cyan-200/80 bg-zinc-950/95 p-5 text-center shadow-[0_0_60px_rgba(125,211,252,.36)] sm:p-8">
@@ -9213,7 +9389,7 @@ export function MissionGame({
           <div className="w-full max-w-xl border border-amber-300/80 bg-zinc-950/95 p-4 shadow-[0_0_54px_rgba(251,191,36,.24)] sm:p-6">
             <p className="font-mono text-[10px] font-black tracking-[.26em] text-amber-300">WORK LIGHT // BASIC TRAINING</p>
             <div className="mt-3 flex items-center justify-between gap-4"><h2 className="text-xl font-black tracking-wider text-white sm:text-2xl">工作燈操作教學</h2><span className="shrink-0 font-mono text-xs text-amber-200">{firstMissionLightGuideStep + 1} / {FIRST_MISSION_LIGHT_GUIDE_LINES.length}</span></div>
-            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep]}</p>
+            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{storyText(gameConfig.storyText, `tutorial.light.${firstMissionLightGuideStep}`, FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep])}</p>
             {isLightGuideHighlightingControl && <p className="mt-2 border-l-2 border-amber-300 pl-3 text-xs leading-5 text-amber-100">右下角的工作燈按鈕已發光標示。現在先閱讀說明，完成教學後才會開放操作。</p>}
             <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學期間，時間、敵人與角色操作皆已暫停。</p>
             <button type="button" onClick={advanceFirstMissionLightGuide} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-amber-300 bg-amber-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-amber-200">
@@ -9228,7 +9404,7 @@ export function MissionGame({
         <div className="pointer-events-none absolute inset-x-0 top-[max(74px,env(safe-area-inset-top))] z-[78] flex justify-center px-3 sm:top-5 sm:px-8" role="status" aria-live="polite" aria-label="機器人作戰新手教學">
           <div className="pointer-events-auto w-full max-w-md border border-cyan-300/80 bg-zinc-950/92 p-3 shadow-[0_0_34px_rgba(34,211,238,.28)] backdrop-blur-md sm:p-4">
             <div className="flex items-center justify-between gap-3"><p className="font-mono text-[9px] font-black tracking-[.2em] text-cyan-300">C2-932 // CONTROL GUIDE</p><span className="shrink-0 font-mono text-[10px] text-cyan-200">{bossCombatTutorialStep + 1} / {BOSS_COMBAT_TUTORIAL_LINES.length}</span></div>
-            <p className="mt-2 text-xs leading-5 text-zinc-100 sm:text-sm">{BOSS_COMBAT_TUTORIAL_LINES[bossCombatTutorialStep]}</p>
+            <p className="mt-2 text-xs leading-5 text-zinc-100 sm:text-sm">{storyText(gameConfig.storyText, `tutorial.boss.${bossCombatTutorialStep}`, BOSS_COMBAT_TUTORIAL_LINES[bossCombatTutorialStep])}</p>
             <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[9px] leading-4 text-cyan-100/80">畫面中發光的按鈕，就是這一步要認識的操作。</p><button type="button" onClick={advanceBossCombatTutorial} autoFocus className="shrink-0 border border-cyan-300 bg-cyan-300 px-3 py-2 text-[10px] font-black tracking-wider text-zinc-950 hover:bg-cyan-200">{bossCombatTutorialStep >= BOSS_COMBAT_TUTORIAL_LINES.length - 1 ? "開始" : "下一步"}<ChevronRight className="ml-1 inline h-3 w-3" /></button></div>
           </div>
         </div>

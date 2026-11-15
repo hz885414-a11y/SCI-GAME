@@ -91,6 +91,7 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   scenarios: SCENARIOS,
   prologue: prologuePages,
   ending: endingPages,
+  storyText: {},
   bosses: BOSS_ADMIN_DEFAULTS,
   supplyShopItems: SUPPLY_SHOP_DEFAULTS,
   rhythmEdits: {},
@@ -177,6 +178,7 @@ export function mergeGameConfig(remote: Partial<GameConfig> | null | undefined):
   return {
     ...DEFAULT_GAME_CONFIG,
     ...remote,
+    storyText: { ...DEFAULT_GAME_CONFIG.storyText, ...remote?.storyText },
     gameplay: { ...DEFAULT_GAME_CONFIG.gameplay, ...remote?.gameplay },
     cards: mergeById(DEFAULT_GAME_CONFIG.cards, remote?.cards),
     cardLayout: {
