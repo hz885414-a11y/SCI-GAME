@@ -10,7 +10,7 @@ import { GameConfigProvider } from './config/GameConfigContext.tsx';
 
 const route = window.location.pathname.replace(/\/$/, '');
 const preview = new URLSearchParams(window.location.search).get('view');
-const RootPage = route.endsWith('/admin') ? AdminPage : route.endsWith('/effects') ? PixelfxShowcase : (route.endsWith('/pixel-studio') || preview === 'pixel-studio') ? PixelArtStudio : App;
+const RootPage = route.endsWith('/admin') || preview === 'admin' ? AdminPage : route.endsWith('/effects') || preview === 'effects' ? PixelfxShowcase : (route.endsWith('/pixel-studio') || preview === 'pixel-studio') ? PixelArtStudio : App;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
