@@ -80,7 +80,9 @@ export interface GameplayConfig {
   coinDropMin: number;
   coinDropMax: number;
   batteryDropChance: number;
+  chapterOneBatteryDropChance: number;
   batteryRestoreAmount: number;
+  workLightLowDrain: number;
   materialDropChance: number;
   expGemBase: number;
   expGemPerChapter: number;

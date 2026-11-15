@@ -2915,12 +2915,17 @@ export function MissionGame({
 
       // 3. BATTERY DEPLETION (Survivors Mode Only)
       if (stage === "PLAYING" && firstMissionLightGuideStep === null && (!chapterOnePeacefulRef.current || state.shelterPerimeterActive) && (selectedChapter !== 5 || state.dawnCityExpeditionActive)) {
+        const maxBatLimit = getPlayerMaxBattery();
         const drainRate = (batteryMode === "OFF" ? 0 : batteryMode === "HIGH"
           ? (selectedAgent.id === "ethan" ? 0.22 : 0.3) 
-          : 0.03) * (0.9 ** adventureUpgradeLevels.energySaver);
+          : Math.max(0, gameplayConfig.workLightLowDrain)) * (0.9 ** adventureUpgradeLevels.energySaver);
 
-        const maxBatLimit = getPlayerMaxBattery();
-        player.batteryVal = Math.max(0, player.batteryVal - drainRate);
+        // A depleted work light must never soft-lock the adventure. Turning it
+        // off trickle-charges only the first 15%, enough to resume fighting.
+        const emergencyChargeLimit = maxBatLimit * 0.15;
+        player.batteryVal = batteryMode === "OFF" && player.batteryVal < emergencyChargeLimit
+          ? Math.min(emergencyChargeLimit, player.batteryVal + 0.06)
+          : Math.max(0, player.batteryVal - drainRate);
         const nextBatPercent = Math.ceil((player.batteryVal / maxBatLimit) * 100);
         if (state.lastBatteryPercent !== nextBatPercent) {
           state.lastBatteryPercent = nextBatPercent;
@@ -4023,7 +4028,10 @@ export function MissionGame({
           }
 
           const dropChance = Math.random();
-          if (dropChance > 1 - gameplayConfig.batteryDropChance) {
+          const batteryDropChance = selectedChapter === 1
+            ? gameplayConfig.chapterOneBatteryDropChance
+            : gameplayConfig.batteryDropChance;
+          if (dropChance < Math.min(1, Math.max(0, batteryDropChance))) {
             // Drop battery
             state.collectibles.push({
               x: enemy.x,
@@ -8014,7 +8022,7 @@ export function MissionGame({
   };
 
   const isFirstChapterClearRun = stage === "PLAYING" && selectedChapter === 1 && !chapterOnePeacefulRef.current;
-  const isLightGuideHighlightingControl = firstMissionLightGuideStep === 2 || firstMissionLightGuideStep === 3;
+  const isLightGuideHighlightingControl = firstMissionLightGuideStep === 3 || firstMissionLightGuideStep === 4;
   const advanceChapterTransition = () => {
     if (chapterTransitionStep === null) return;
     triggerSound("click");
@@ -8547,7 +8555,7 @@ export function MissionGame({
             </div>
 
             <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
-              <div className="mb-1 ml-1 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-1 font-mono text-[10px] text-zinc-200 backdrop-blur-sm"><span>🔋</span><b>{batteryPercent}%</b>{batteryPercent <= 20 && <span className="font-black text-rose-400">LOW</span>}</div>
+              <div className="mb-1 ml-1 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-1 font-mono text-[10px] text-zinc-200 backdrop-blur-sm"><span>🔋</span><b>{batteryPercent}%</b>{batteryMode === "OFF" && batteryPercent < 15 ? <span className="font-black text-emerald-300">回充中</span> : batteryPercent <= 20 && <span className="font-black text-rose-400">LOW</span>}</div>
               <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-orange-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick} onLostPointerCapture={releaseJoystick}>
                 <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/80 bg-orange-500/35 shadow-[0_0_14px_rgba(249,115,22,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
               </div>
