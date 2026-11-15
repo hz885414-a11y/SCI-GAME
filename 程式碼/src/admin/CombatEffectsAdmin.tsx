@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { CombatEffectAsset, CombatEffectBinding, CombatEffectEditorSettings } from "../config/types";
-import { effects as pixelFxEffects } from "../../third_party/pixelfx/src/fx/index.js";
-import { actTiming, clearFrame, composite, createFrame, createFx, poseAt } from "../../third_party/pixelfx/src/core/index.js";
+import { effects as pixelFxEffects } from "../vendor/pixelfx/fx/index.js";
+import { actTiming, clearFrame, composite, createFrame, createFx, poseAt } from "../vendor/pixelfx/core/index.js";
 import { ENEMY_SPRITE_URLS, ROBOT_BATTLE_SPRITES } from "../data/gameAssetUrls";
 import { ROBOT_CONFIG } from "../data/robotConfig";
 import { getBossVisualSet } from "../data/bossVisualConfig";

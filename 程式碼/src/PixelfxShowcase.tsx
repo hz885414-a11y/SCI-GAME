@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { effects } from "../third_party/pixelfx/src/fx/index.js";
-import { categories } from "../third_party/pixelfx/src/fx/categories.js";
-import { actBounds, actorAlphaOf, backdrop, clearFrame, composite, createAct, createFrame, createFx, drawActor, painterFor, stockActor } from "../third_party/pixelfx/src/core/index.js";
+import { effects } from "./vendor/pixelfx/fx/index.js";
+import { categories } from "./vendor/pixelfx/fx/categories.js";
+import { actBounds, actorAlphaOf, backdrop, clearFrame, composite, createAct, createFrame, createFx, drawActor, painterFor, stockActor } from "./vendor/pixelfx/core/index.js";
 import "./pixelfx-showcase.css";
 
 type FxMeta = { name?: string; desc?: string; tags?: string[]; size?: number[]; origin?: number[]; duration?: number; fps?: number; loop?: boolean; bg?: string; actor?: boolean };
