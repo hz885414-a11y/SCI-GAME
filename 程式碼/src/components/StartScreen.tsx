@@ -57,9 +57,12 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   }, [userInteracted, isMusicMuted]);
 
   const handleScreenClick = () => {
-    if (!userInteracted) {
-      setUserInteracted(true);
-    }
+    if (isStarting) return;
+    playSound("click");
+    setUserInteracted(true);
+    setIsStarting(true);
+    void waitForBackgroundMusicReady("theme");
+    onStart();
   };
 
   const handleMusicToggleClick = (e: React.MouseEvent) => {
@@ -80,20 +83,6 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         startBackgroundMusic("theme");
       }
     }
-  };
-
-  const handleStartClick = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Avoid triggering container click again
-    if (isStarting) return;
-    playSound("click");
-    setUserInteracted(true);
-    setIsStarting(true);
-    setStartError("");
-    // Audio availability must never block the game. Public browsers may delay
-    // or reject remote media despite a valid user click; the boot screen owns
-    // the actual image loading progress and will continue independently.
-    void waitForBackgroundMusicReady("theme");
-    onStart();
   };
 
   return (
@@ -124,7 +113,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         }} 
       />
 
-      <div className="w-full max-w-xl text-center space-y-8 relative z-20">
+      <div className="w-full max-w-xl text-center space-y-8 relative z-20 flex flex-col items-center">
         {/* Subtle top decoration badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] tracking-[0.25em] font-mono uppercase animate-pulse">
           <Cpu className="w-3.5 h-3.5 text-amber-500" />
@@ -132,7 +121,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
         </div>
 
         {/* Main title */}
-        <div className="relative">
+        <div className="relative w-full flex justify-center">
           <img
             src={UI_IMAGE_ASSETS.mainTitle}
             alt="勇氣の燈燈小隊"
@@ -180,32 +169,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           </button>
         </div>
 
-        {/* Start Game Button */}
-        <div className="pt-2">
-          <button
-            onClick={handleStartClick}
-            disabled={isStarting}
-            className="group relative inline-flex items-center gap-3 px-8 py-3.5 bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs uppercase tracking-[0.25em] transition-all duration-300 rounded-none active:scale-95 cursor-pointer shadow-[0_0_30px_rgba(245,158,11,0.25)] overflow-hidden"
-          >
-            {/* Hover overlay sheen */}
-            <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out" />
-            
-            <Play className="w-4 h-4 text-black group-hover:scale-125 transition-transform duration-300" />
-            <span className="flex flex-col sm:flex-row items-center sm:gap-1.5 text-center leading-tight">
-              <span>{isStarting ? "LOADING THEME" : "BOOT UP SYSTEM"}</span>
-              <span className="hidden sm:inline">//</span>
-              <span>{isStarting ? "主題曲載入中…" : "啟動診斷系統"}</span>
-            </span>
-          </button>
-          {startError && <p className="mt-3 text-xs font-bold text-red-400">{startError}</p>}
-        </div>
-
-        {/* Friendly Interaction Hint */}
-        {!userInteracted && (
-          <p className="text-[10px] text-amber-500 animate-pulse font-mono tracking-wider">
-            ⚡ 點擊螢幕任意處以解除靜音播放背景音軌 (TOUCH ANYWHERE TO UNMUTE)
-          </p>
-        )}
+        <p className="text-sm text-amber-500 animate-pulse font-mono tracking-wider pt-2">
+          {isStarting ? "遊戲載入中…" : "⚡ 點擊螢幕任一處開始遊戲"}
+        </p>
 
         {/* Technical spec credits */}
         <div className="text-[9px] text-zinc-600 font-mono flex items-center justify-center gap-6 pt-4">

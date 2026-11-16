@@ -5,7 +5,6 @@ import {
   Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock, Menu
 } from "lucide-react";
 import { SpriteAnimator } from "./SpriteAnimator";
-import { drawAdventureSceneAtmosphere, drawAdventureSceneForeground } from "./adventureSceneAtmosphere";
 import { ChapterTransition } from "./ChapterTransition";
 import { CHAPTER_ONE_TO_TWO } from "../data/chapterTransitions";
 import { MAIN_STORY_SCENES } from "../data/mainStory";
@@ -538,7 +537,6 @@ export function MissionGame({
   const [selectedChapter, setSelectedChapter] = useState<number>(resumeBossChapter || 1);
   const [startStep, setStartStep] = useState<number>(1);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true); // Demo mode enabled by default (30s round) for faster testing
-  const [sceneAtmosphereEnabled, setSceneAtmosphereEnabled] = useState(true);
   const [assemblyTab, setAssemblyTab] = useState<"lamps" | "specs">("lamps");
 
   // Touch controls state for mobile/tablets
@@ -556,6 +554,10 @@ export function MissionGame({
   const [isMobileGameMenuOpen, setIsMobileGameMenuOpen] = useState(false);
   const [joystickPosition, setJoystickPosition] = useState({ x: 0, y: 0 });
   const joystickRef = useRef<HTMLDivElement>(null);
+  const roamingPointerRef = useRef<number | null>(null);
+  const roamingOriginRef = useRef({ x: 0, y: 0 });
+  const [roamingOrigin, setRoamingOrigin] = useState<{ x: number; y: number } | null>(null);
+  const tutorialDistanceRef = useRef(0);
 
   const handleConfirmTip = () => {
     keysRef.current = {};
@@ -1460,7 +1462,7 @@ export function MissionGame({
   // Adventure work-light cycle: OFF → LOW → HIGH → OFF. Boss combat retains
   // its existing two-mode behavior so this UI change cannot alter robot balance.
   const toggleBatteryMode = () => {
-    if (stage === "PLAYING" && firstMissionLightGuideStep !== null) return;
+    if (stage === "PLAYING" && firstMissionLightGuideStep === 0) return;
     if (stage === "PLAYING" && engineRef.current.player.batteryVal <= 0.1) {
       setBatteryMode("OFF");
       triggerSound("low_battery");
@@ -1473,6 +1475,12 @@ export function MissionGame({
       recordAction("useWorkLight");
       if (next === "HIGH") recordAction("highBeamActivated");
       triggerSound(next === "HIGH" ? "power" : "click");
+      if (firstMissionLightGuideStep === 1 && next === "LOW") setFirstMissionLightGuideStep(2);
+      if (firstMissionLightGuideStep === 2 && next === "HIGH") {
+        try { localStorage.setItem(FIRST_MISSION_LIGHT_GUIDE_KEY, "true"); } catch { /* optional progress */ }
+        engineRef.current.playerDialogueText = null;
+        setFirstMissionLightGuideStep(null);
+      }
       return next;
     });
   };
@@ -1578,11 +1586,12 @@ export function MissionGame({
 
   const moveJoystick = (clientX: number, clientY: number) => {
     const pad = joystickRef.current;
-    if (!pad) return;
-    const rect = pad.getBoundingClientRect();
-    const dx = clientX - (rect.left + rect.width / 2);
-    const dy = clientY - (rect.top + rect.height / 2);
-    const maxDistance = rect.width * 0.3;
+    const origin = stage === "BOSSBATTLE" && pad
+      ? { x: pad.getBoundingClientRect().left + pad.getBoundingClientRect().width / 2, y: pad.getBoundingClientRect().top + pad.getBoundingClientRect().height / 2 }
+      : roamingOriginRef.current;
+    const dx = clientX - origin.x;
+    const dy = clientY - origin.y;
+    const maxDistance = 28;
     const distance = Math.hypot(dx, dy);
     const scale = distance > maxDistance ? maxDistance / distance : 1;
     const x = dx * scale;
@@ -1593,6 +1602,25 @@ export function MissionGame({
     keysRef.current.arrowright = x > threshold;
     keysRef.current.arrowup = y < -threshold;
     keysRef.current.arrowdown = y > threshold;
+  };
+
+  const beginRoamingMovement = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" || stage !== "PLAYING" || roamingPointerRef.current !== null) return;
+    if (firstMissionLightGuideStep !== null && firstMissionLightGuideStep !== 0) return;
+    if (showTipModal || startTitleActive || isGamePaused) return;
+    roamingPointerRef.current = event.pointerId;
+    roamingOriginRef.current = { x: event.clientX, y: event.clientY };
+    setRoamingOrigin(roamingOriginRef.current);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const updateRoamingMovement = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (roamingPointerRef.current === event.pointerId) moveJoystick(event.clientX, event.clientY);
+  };
+  const endRoamingMovement = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (roamingPointerRef.current !== event.pointerId) return;
+    roamingPointerRef.current = null;
+    setRoamingOrigin(null);
+    releaseJoystick();
   };
 
   // Keyboard and mouse handlers
@@ -1630,13 +1658,7 @@ export function MissionGame({
         return;
       }
 
-      if (firstMissionLightGuideStep !== null) {
-        if (e.code === "Enter" || e.code === "Space" || e.code === "KeyZ") {
-          e.preventDefault();
-          if (!e.repeat) advanceFirstMissionLightGuide();
-        }
-        return;
-      }
+      if (firstMissionLightGuideStep !== null && firstMissionLightGuideStep > 0) return;
 
       if (bossCombatTutorialStep !== null) {
         if (e.code === "Enter" || e.code === "Space" || e.code === "KeyZ") {
@@ -1905,6 +1927,7 @@ export function MissionGame({
       try { return localStorage.getItem(FIRST_MISSION_LIGHT_GUIDE_KEY) !== "true"; } catch { return true; }
     })();
     firstMissionLightGuidePendingRef.current = isFirstMissionLightGuide;
+    tutorialDistanceRef.current = 0;
     setFirstMissionLightGuideStep(null);
     onMissionMusicModeChange(chapterOneAlreadyCleared);
     setIsGamePaused(false);
@@ -2696,6 +2719,21 @@ export function MissionGame({
       const isUltimateCinematic = Boolean(cinematic && cinematicNow < cinematic.endAt);
       if (cinematic && !isUltimateCinematic) state.ultimateCinematic = null;
       const isPaused = isGamePaused || showTipModal || startTitleActive || bossIntroPhase !== null || memoryFollowUpStep !== null || chapterOneNpcEventStep !== null || chapterOneCompletionComm || chapterTransitionStep !== null || firstMissionLightGuideStep !== null || bossCombatTutorialStep !== null || isUltimateCinematic;
+      if (stage === "PLAYING" && firstMissionLightGuideStep === 0) {
+        const horizontal = Number(Boolean(keysRef.current.d || keysRef.current.arrowright)) - Number(Boolean(keysRef.current.a || keysRef.current.arrowleft));
+        const vertical = Number(Boolean(keysRef.current.s || keysRef.current.arrowdown)) - Number(Boolean(keysRef.current.w || keysRef.current.arrowup));
+        if (horizontal || vertical) {
+          const length = Math.hypot(horizontal, vertical);
+          moveWithinMissionMask(player, horizontal / length * selectedAgent.speed, vertical / length * selectedAgent.speed, player.radius);
+          player.lastAimX = horizontal / length;
+          player.lastAimY = vertical / length;
+          tutorialDistanceRef.current += selectedAgent.speed;
+          if (tutorialDistanceRef.current >= 100) {
+            keysRef.current = {};
+            setFirstMissionLightGuideStep(1);
+          }
+        }
+      }
 
       // The ultimate cut-in intentionally freezes combat time, but not the
       // camera. Dash Punch also interpolates the robot here so the camera can
@@ -5969,21 +6007,6 @@ export function MissionGame({
         ctx.restore();
       }
 
-      if (stage === "PLAYING" && selectedChapter === 1 && sceneAtmosphereEnabled) {
-        drawAdventureSceneAtmosphere(ctx, {
-          width: state.mapSize.width,
-          height: state.mapSize.height,
-          cameraX: state.camera.x,
-          cameraY: state.camera.y,
-          viewportWidth: canvas.width,
-          viewportHeight: canvas.height,
-          playerX: player.x,
-          playerY: player.y,
-          ticks: state.ticks,
-          lampStrength: batteryMode === "HIGH" ? 1 : batteryMode === "LOW" ? 0.55 : 0.18,
-        });
-      }
-
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
       if (stage === "PLAYING" && !isDawnCitySafe) {
         ctx.strokeStyle = activeChapter.gridColor;
@@ -7769,10 +7792,6 @@ export function MissionGame({
 
       ctx.restore(); // matches camera translate
 
-      if (stage === "PLAYING" && selectedChapter === 1 && sceneAtmosphereEnabled) {
-        drawAdventureSceneForeground(ctx, canvas.width, canvas.height, state.camera.x, state.ticks);
-      }
-
       if (isUltimateCinematic && state.ultimateFx) {
         const remaining = Math.max(0, Math.ceil((cinematic.endAt - cinematicNow) / 100));
         ctx.save();
@@ -7990,7 +8009,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, sceneAtmosphereEnabled, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, chapterTransitionStep, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
+  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, chapterTransitionStep, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -8085,7 +8104,7 @@ export function MissionGame({
   };
 
   const isFirstChapterClearRun = stage === "PLAYING" && selectedChapter === 1 && !chapterOnePeacefulRef.current;
-  const isLightGuideHighlightingControl = firstMissionLightGuideStep === 3 || firstMissionLightGuideStep === 4;
+  const isLightGuideHighlightingControl = firstMissionLightGuideStep === 1 || firstMissionLightGuideStep === 2;
   const advanceChapterTransition = () => {
     if (chapterTransitionStep === null) return;
     triggerSound("click");
@@ -8367,15 +8386,6 @@ export function MissionGame({
       {/* 2. SURVIVORS PLAYING STATE */}
       {stage === "PLAYING" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none overflow-hidden" ref={containerRef}>
-          {selectedChapter === 1 && <button
-            type="button"
-            onClick={() => setSceneAtmosphereEnabled((enabled) => !enabled)}
-            className="absolute right-2 top-11 z-40 rounded border border-cyan-400/60 bg-slate-950/90 px-2 py-1 font-mono text-[10px] font-bold text-cyan-100 sm:top-12"
-            aria-pressed={sceneAtmosphereEnabled}
-            title="比較第一章場景光影試作與原始畫面"
-          >
-            場景光影試作：{sceneAtmosphereEnabled ? "開" : "關"}
-          </button>}
           {/* Streamlined, Compact Top Status Bar */}
           <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-2 select-none sm:flex">
             {/* Left Column: Mission Stats */}
@@ -8607,6 +8617,9 @@ export function MissionGame({
           )}
 
           {/* Mobile HUD: all controls float above the full-height map. */}
+          <div className="absolute inset-0 z-[35] sm:hidden touch-none" onPointerDown={beginRoamingMovement} onPointerMove={updateRoamingMovement} onPointerUp={endRoamingMovement} onPointerCancel={endRoamingMovement} onLostPointerCapture={endRoamingMovement}>
+            {roamingOrigin && <div className="pointer-events-none absolute h-[88px] w-[88px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/65 bg-black/35" style={{ left: roamingOrigin.x, top: roamingOrigin.y }}><div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-300 bg-orange-500/45" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} /></div>}
+          </div>
           <div className="pointer-events-none absolute inset-0 z-40 sm:hidden" style={{ paddingTop: "max(8px, env(safe-area-inset-top))", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
             <div className="pointer-events-auto absolute left-2 top-[max(8px,env(safe-area-inset-top))] flex max-w-[48%] items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-[rgba(10,10,14,0.65)] px-2 py-1.5 shadow-lg backdrop-blur-[6px]">
               <div className="min-w-0">
@@ -8633,9 +8646,7 @@ export function MissionGame({
 
             <div className="pointer-events-auto absolute bottom-[max(12px,env(safe-area-inset-bottom))] left-3">
               <div className="mb-1 ml-1 inline-flex items-center gap-1 rounded bg-black/65 px-2 py-1 font-mono text-[10px] text-zinc-200 backdrop-blur-sm"><span>🔋</span><b>{batteryPercent}%</b>{batteryMode === "OFF" && batteryPercent < 15 ? <span className="font-black text-emerald-300">回充中</span> : batteryPercent <= 20 && <span className="font-black text-rose-400">LOW</span>}</div>
-              <div ref={joystickRef} className="relative h-[88px] w-[88px] touch-none rounded-full border border-orange-500/40 bg-black/45 shadow-[inset_0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[3px]" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveJoystick(event.clientX, event.clientY); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) moveJoystick(event.clientX, event.clientY); }} onPointerUp={releaseJoystick} onPointerCancel={releaseJoystick} onLostPointerCapture={releaseJoystick}>
-                <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/80 bg-orange-500/35 shadow-[0_0_14px_rgba(249,115,22,.35)]" style={{ marginLeft: joystickPosition.x, marginTop: joystickPosition.y }} />
-              </div>
+              <p className="rounded bg-black/55 px-2 py-1 text-[9px] text-orange-200">在地圖任意處拖曳移動</p>
             </div>
 
             {stage === "PLAYING" && <button type="button" onPointerDown={(event) => { event.preventDefault(); beginInteractionHold(); }} onPointerUp={endInteractionHold} onPointerCancel={endInteractionHold} className="pointer-events-auto absolute bottom-[max(25px,env(safe-area-inset-bottom))] right-24 grid h-14 w-14 place-items-center rounded-full border border-cyan-500/70 bg-cyan-950/75 text-center text-cyan-100 shadow-[0_0_16px_rgba(34,211,238,.2)] backdrop-blur-[4px]" aria-label="互動：點擊或長按"><span><Sparkles className="mx-auto h-4 w-4" /><b className="mt-0.5 block text-[8px]">互動 Z</b></span></button>}
@@ -9471,17 +9482,10 @@ export function MissionGame({
       )}
 
       {stage === "PLAYING" && firstMissionLightGuideStep !== null && (
-        <div className="absolute inset-0 z-[78] flex items-end justify-center bg-black/60 p-4 pb-[max(24px,env(safe-area-inset-bottom))] backdrop-blur-[1px] sm:items-center sm:p-8" role="dialog" aria-modal="true" aria-label="工作燈新手教學">
-          <div className="w-full max-w-xl border border-amber-300/80 bg-zinc-950/95 p-4 shadow-[0_0_54px_rgba(251,191,36,.24)] sm:p-6">
-            <p className="font-mono text-[10px] font-black tracking-[.26em] text-amber-300">WORK LIGHT // BASIC TRAINING</p>
-            <div className="mt-3 flex items-center justify-between gap-4"><h2 className="text-xl font-black tracking-wider text-white sm:text-2xl">工作燈操作教學</h2><span className="shrink-0 font-mono text-xs text-amber-200">{firstMissionLightGuideStep + 1} / {FIRST_MISSION_LIGHT_GUIDE_LINES.length}</span></div>
-            <p className="mt-4 min-h-16 text-sm leading-7 text-zinc-100 sm:text-base">{storyText(gameConfig.storyText, `tutorial.light.${firstMissionLightGuideStep}`, FIRST_MISSION_LIGHT_GUIDE_LINES[firstMissionLightGuideStep])}</p>
-            {isLightGuideHighlightingControl && <p className="mt-2 border-l-2 border-amber-300 pl-3 text-xs leading-5 text-amber-100">右下角的工作燈按鈕已發光標示。現在先閱讀說明，完成教學後才會開放操作。</p>}
-            <p className="mt-3 text-[10px] leading-5 text-zinc-500">教學期間，時間、敵人與角色操作皆已暫停。</p>
-            <button type="button" onClick={advanceFirstMissionLightGuide} autoFocus className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 border border-amber-300 bg-amber-300 px-4 py-3 text-sm font-black tracking-widest text-zinc-950 hover:bg-amber-200">
-              {firstMissionLightGuideStep >= FIRST_MISSION_LIGHT_GUIDE_LINES.length - 1 ? "開始清除任務" : "我了解了，繼續"}
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        <div className="pointer-events-none absolute inset-x-0 top-16 z-[78] flex justify-center px-4" aria-live="polite">
+          <div className="max-w-md rounded border border-amber-300/80 bg-zinc-950/90 px-4 py-3 text-center shadow-xl">
+            <p className="text-[10px] text-amber-300">第一章實作教學 · {firstMissionLightGuideStep + 1}/3</p>
+            <p className="mt-1 text-sm font-bold text-white">{firstMissionLightGuideStep === 0 ? "用方向鍵／WASD 移動，手機在地圖任意處拖曳移動" : firstMissionLightGuideStep === 1 ? "按工作燈按鈕切換成弱光" : "再按一次工作燈按鈕切換成強光"}</p>
           </div>
         </div>
       )}
