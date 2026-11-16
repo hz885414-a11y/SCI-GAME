@@ -5,6 +5,7 @@ import {
   Flame, Battery, BatteryCharging, Cpu, Award, Sparkles, AlertTriangle, Clock, Menu
 } from "lucide-react";
 import { SpriteAnimator } from "./SpriteAnimator";
+import { drawAdventureSceneAtmosphere, drawAdventureSceneForeground } from "./adventureSceneAtmosphere";
 import { ChapterTransition } from "./ChapterTransition";
 import { CHAPTER_ONE_TO_TWO } from "../data/chapterTransitions";
 import { MAIN_STORY_SCENES } from "../data/mainStory";
@@ -537,6 +538,7 @@ export function MissionGame({
   const [selectedChapter, setSelectedChapter] = useState<number>(resumeBossChapter || 1);
   const [startStep, setStartStep] = useState<number>(1);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(true); // Demo mode enabled by default (30s round) for faster testing
+  const [sceneAtmosphereEnabled, setSceneAtmosphereEnabled] = useState(true);
   const [assemblyTab, setAssemblyTab] = useState<"lamps" | "specs">("lamps");
 
   // Touch controls state for mobile/tablets
@@ -5967,6 +5969,21 @@ export function MissionGame({
         ctx.restore();
       }
 
+      if (stage === "PLAYING" && selectedChapter === 1 && sceneAtmosphereEnabled) {
+        drawAdventureSceneAtmosphere(ctx, {
+          width: state.mapSize.width,
+          height: state.mapSize.height,
+          cameraX: state.camera.x,
+          cameraY: state.camera.y,
+          viewportWidth: canvas.width,
+          viewportHeight: canvas.height,
+          playerX: player.x,
+          playerY: player.y,
+          ticks: state.ticks,
+          lampStrength: batteryMode === "HIGH" ? 1 : batteryMode === "LOW" ? 0.55 : 0.18,
+        });
+      }
+
       // Grid lines remain exclusive to the exploration map so the boss artwork stays unobstructed.
       if (stage === "PLAYING" && !isDawnCitySafe) {
         ctx.strokeStyle = activeChapter.gridColor;
@@ -7752,6 +7769,10 @@ export function MissionGame({
 
       ctx.restore(); // matches camera translate
 
+      if (stage === "PLAYING" && selectedChapter === 1 && sceneAtmosphereEnabled) {
+        drawAdventureSceneForeground(ctx, canvas.width, canvas.height, state.camera.x, state.ticks);
+      }
+
       if (isUltimateCinematic && state.ultimateFx) {
         const remaining = Math.max(0, Math.ceil((cinematic.endAt - cinematicNow) / 100));
         ctx.save();
@@ -7969,7 +7990,7 @@ export function MissionGame({
       document.removeEventListener("visibilitychange", resetFrameClock);
       cancelAnimationFrame(animId);
     };
-  }, [stage, selectedChapter, batteryMode, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, chapterTransitionStep, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
+  }, [stage, selectedChapter, batteryMode, sceneAtmosphereEnabled, weaponLevels, adventureUpgradeLevels, showUpgradeChoice, showTipModal, startTitleActive, bossIntroPhase, isGamePaused, evacuationPhase, memoryFollowUpStep, chapterOneNpcEventStep, chapterOneCompletionComm, chapterTransitionStep, firstMissionLightGuideStep, bossCombatTutorialStep, equippedRobotUltimate]);
 
   // Handle Level-up/Success actions
   const handleVictory = () => {
@@ -8346,6 +8367,15 @@ export function MissionGame({
       {/* 2. SURVIVORS PLAYING STATE */}
       {stage === "PLAYING" && (
         <div className="flex-1 flex flex-col relative w-full h-full select-none overflow-hidden" ref={containerRef}>
+          {selectedChapter === 1 && <button
+            type="button"
+            onClick={() => setSceneAtmosphereEnabled((enabled) => !enabled)}
+            className="absolute right-2 top-11 z-40 rounded border border-cyan-400/60 bg-slate-950/90 px-2 py-1 font-mono text-[10px] font-bold text-cyan-100 sm:top-12"
+            aria-pressed={sceneAtmosphereEnabled}
+            title="比較第一章場景光影試作與原始畫面"
+          >
+            場景光影試作：{sceneAtmosphereEnabled ? "開" : "關"}
+          </button>}
           {/* Streamlined, Compact Top Status Bar */}
           <div className="absolute left-2 right-2 top-2 z-30 hidden flex-wrap items-center justify-between gap-2 select-none sm:flex">
             {/* Left Column: Mission Stats */}
